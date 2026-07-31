@@ -63,7 +63,7 @@
 ## 工作流程
 
 ### 修改代码前
-1. 阅读相关文档（如 `powersave_optimization.md`）
+1. 阅读相关文档（如 `docs/powersave_optimization.md`）
 2. 理解现有架构和参数含义
 3. 确认修改影响范围
 
@@ -73,7 +73,7 @@
 3. 遵循现有命名规范
 
 ### 修改代码后
-1. 更新 `worklog.md` 记录修改
+1. 更新 `docs/worklog.md` 记录修改
 2. 如有配置变更，更新相关文档
 3. 确保日志输出清晰可读
 
@@ -100,9 +100,9 @@ cargo test
 
 | 文件 | 用途 |
 |:---|:---|
-| `powersave_optimization.md` | 省电优化方案文档 |
-| `worklog.md` | 修改工作日志（记录省电优化实施状态） |
-| `PROJECT_MAP.md` | 项目结构地图 |
+| `docs/powersave_optimization.md` | 省电优化方案文档 |
+| `docs/worklog.md` | 修改工作日志（记录省电优化实施状态） |
+| `docs/PROJECT_MAP.md` | 项目结构地图 |
 | `README.md` | 项目说明文档 |
 | `src/scheduler/config.rs` | 调度器配置定义 |
 | `src/scheduler/mod.rs` | 调度器状态机与事件处理 |
