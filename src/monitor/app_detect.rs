@@ -252,7 +252,6 @@ pub fn app_detection_loop(
             if current_screen_state {
                 last_package.clear();
                 pending_package.clear();
-                last_mode.clear();
                 force_refresh_arc.store(true, Ordering::SeqCst);
             }
         }
@@ -297,7 +296,7 @@ pub fn app_detection_loop(
                 // 使用已获取的 config_snapshot，不再重复加锁
                 let new_mode = determine_mode(&config_snapshot, &final_pkg);
 
-                if last_mode != new_mode || force_refresh {
+                if last_mode != new_mode {
                     info!("{}", t_with_args("app-detect-mode-change-pkg", &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())));
                     // ModeChange 事件现在携带 pid 字段
                     let _ = tx.send(DaemonEvent::ModeChange {
