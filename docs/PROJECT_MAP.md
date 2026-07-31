@@ -15,7 +15,7 @@
 | `README.en.md` | 📄 | 英文版项目文档。 |
 | `LICENSE` | 📄 | GNU GPL v3.0 开源许可证。 |
 | `.gitignore` | 📄 | Git 忽略规则 (target/, .idea/, *.zip, output/ 等)。 |
-| `PROJECT_MAP.md` | 📄 | **本文件** — 项目结构地图。 |
+| `docs/PROJECT_MAP.md` | 📄 | **本文件** — 项目结构地图。 |
 
 ---
 

@@ -1,6 +1,6 @@
 # yumi 省电优化工作日志
 
-> 记录 powersave_optimization.md 中所有修改项的实施状态
+> 记录 docs/powersave_optimization.md 中所有修改项的实施状态
 
 ---
 
@@ -171,11 +171,11 @@
 
 **注意**: 由于当前环境编译限制（sdcard 文件系统无法执行编译生成的二进制文件），需要在有完整编译环境的机器上重新编译。
 
-**编译指南**: 参见 `BUILD_INSTRUCTIONS.md`
+**编译指南**: 参见 `docs/BUILD_INSTRUCTIONS.md`
 
 **编译脚本**: `build_and_pack.sh`
 
 ---
 
 *最后更新: 2026-07-31*
-*基于 powersave_optimization.md v1.0*
+*基于 docs/powersave_optimization.md v1.0*
