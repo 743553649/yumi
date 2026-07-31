@@ -1,0 +1,7 @@
+id=yumi
+name=yumi
+version=v2.0.1
+versionCode=20001
+author=yuki
+description=yumi - 智能 CPU 调度控制器 | eBPF 内核级监控 + FAS 帧感知调度 + CLG 负载调速器
+updateJson=https://raw.githubusercontent.com/imacte/yumi/main/updateInformation/update.json
