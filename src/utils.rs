@@ -63,7 +63,7 @@ pub fn enable_perm <P: AsRef<Path>>(path: P) -> Result<()> {
 /// 监控指定路径的文件/目录事件
 pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
     let mut inotify = Inotify::init()?;
-    inotify.watches().add(path_to_watch, WatchMask::CLOSE_WRITE)?;
+    inotify.watches().add(path_to_watch, WatchMask::CLOSE_WRITE | WatchMask::MODIFY)?;
     
     let mut buffer = [0u8; 1024];
     inotify.read_events_blocking(&mut buffer)?;
