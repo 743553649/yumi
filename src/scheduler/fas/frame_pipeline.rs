@@ -163,8 +163,9 @@ impl FasController {
             let fps_dampen = (60.0 / self.current_target_fps.max(30.0)).powf(0.40);
             // 衰减步长额外乘以 0.75，降低高刷下的衰减激进度
             let decay_scale = if self.current_target_fps > 90.0 { 0.75 } else { 1.0 };
-            let step = ((self.perf_index - 0.50) / 0.50 * self.cfg.fast_decay_max_step * fps_dampen * decay_scale)
-                .clamp(self.cfg.fast_decay_min_step * fps_dampen, self.cfg.fast_decay_max_step * fps_dampen * decay_scale);
+            let decay_max = self.cfg.fast_decay_max_step.max(self.cfg.fast_decay_min_step);
+            let step = ((self.perf_index - 0.50) / 0.50 * decay_max * fps_dampen * decay_scale)
+                .clamp(self.cfg.fast_decay_min_step * fps_dampen, decay_max * fps_dampen * decay_scale);
             self.perf_index -= step;
             self.consecutive_normal_frames = 0;
         }

@@ -1,5 +1,3 @@
-[Read this document in English](README.en.md)
-
 # yumi - 智能 CPU 调度控制器
 
 <div align="center">
@@ -355,6 +353,14 @@ powersave:
     perf_floor: 0.10
     perf_ceil: 0.70
     perf_init: 0.30
+    headroom_ramp: 0.15
+    up_jump_threshold: 0.35
+    slow_up_scale: 0.02
+    slow_down_scale: 0.5
+    down_fast_threshold: 0.15
+    down_fast_mult: 3.0
+    spike_jump_threshold: 0.35
+    spike_decay: 0.5
 
 # 均衡模式 — 日常使用
 balance:
@@ -369,6 +375,14 @@ balance:
     perf_floor: 0.15
     perf_ceil: 1.0
     perf_init: 0.50
+    headroom_ramp: 0.15
+    up_jump_threshold: 0.35
+    slow_up_scale: 0.02
+    slow_down_scale: 0.5
+    down_fast_threshold: 0.15
+    down_fast_mult: 3.0
+    spike_jump_threshold: 0.35
+    spike_decay: 0.5
 
 # 性能模式 — 优先响应
 performance:
@@ -378,11 +392,19 @@ performance:
     smoothing_up: 0.80
     smoothing_down: 0.20
     down_rate_limit_ticks: 5
-    up_rate_limit_ticks: 2
+    up_rate_limit_ticks: 1
     headroom_factor: 1.40
     perf_floor: 0.35
     perf_ceil: 1.0
     perf_init: 0.60
+    headroom_ramp: 0.10
+    up_jump_threshold: 0.30
+    slow_up_scale: 0.03
+    slow_down_scale: 0.6
+    down_fast_threshold: 0.10
+    down_fast_mult: 2.5
+    spike_jump_threshold: 0.40
+    spike_decay: 0.6
 
 # 极速模式 — 最大性能释放
 fast:
@@ -392,11 +414,19 @@ fast:
     smoothing_up: 1.0
     smoothing_down: 0.01
     down_rate_limit_ticks: 10
-    up_rate_limit_ticks: 2
+    up_rate_limit_ticks: 1
     headroom_factor: 2.0
     perf_floor: 1.0
     perf_ceil: 1.0
     perf_init: 1.0
+    headroom_ramp: 0.05
+    up_jump_threshold: 0.20
+    slow_up_scale: 0.10
+    slow_down_scale: 0.8
+    down_fast_threshold: 0.05
+    down_fast_mult: 1.5
+    spike_jump_threshold: 0.50
+    spike_decay: 0.8
 ```
 
 | 参数 | 类型 | 默认值 | 描述 |
@@ -407,10 +437,18 @@ fast:
 | `smoothing_down` | float | 0.30 | 降频平滑系数（越大越快）。 |
 | `down_rate_limit_ticks` | int | 3 | 降频速率限制（tick 数，每 tick 200ms）。 |
 | `up_rate_limit_ticks` | int | 2 | 升频速率限制（tick 数）。连续 N tick 高负载才升频，防止瞬时毛刺。 |
-| `headroom_factor` | float | 1.25 | 目标性能 = 实际负载 × headroom，提供频率余量。仅在负载≥up_threshold 时生效。 |
+| `headroom_factor` | float | 1.25 | 目标性能 = 实际负载 × headroom，提供频率余量。在 up_threshold 附近通过 headroom_ramp 线性渐变。 |
 | `perf_floor` | float | 0.15 | 性能下限。 |
 | `perf_ceil` | float | 1.0 | 性能上限。 |
 | `perf_init` | float | 0.50 | 初始性能值。 |
+| `headroom_ramp` | float | 0.15 | headroom 在 up_threshold 附近的过渡带宽度。越大渐变越平缓，越小越接近二值切换。 |
+| `up_jump_threshold` | float | 0.35 | 快速升频通道的跳变幅度阈值。target_perf 超过当前 perf 此值时走快速升频路径。 |
+| `slow_up_scale` | float | 0.02 | 滞回带内升频的最低速率基准。负载在 down_threshold 附近时以此系数升频。 |
+| `slow_down_scale` | float | 0.5 | 滞回带内降频的缩放系数。负载在 down_threshold ~ up_threshold 之间时，降频速度 = smoothing_down × 此系数。 |
+| `down_fast_threshold` | float | 0.15 | 极低负载快速降频的触发阈值。util 低于此值时跳过降频确认期立即快速回落。 |
+| `down_fast_mult` | float | 3.0 | 极低负载降频放大倍数。降频速度 = smoothing_down × 此系数。 |
+| `spike_jump_threshold` | float | 0.35 | 单 tick 尖峰抑制的跳变阈值。util 单次跳升超过此值时衰减其增量。 |
+| `spike_decay` | float | 0.5 | 尖峰衰减比例。尖峰增量 × 此系数 = 实际生效增量。越小抑制越强。 |
 
 -----
 

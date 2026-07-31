@@ -46,6 +46,15 @@ pub struct CpuLoadGovernorConfig {
     #[serde(default = "d_clg_floor")] pub perf_floor: f32,
     #[serde(default = "d_clg_ceil")] pub perf_ceil: f32,
     #[serde(default = "d_clg_init")] pub perf_init: f32,
+
+    #[serde(default = "d_clg_hramp")] pub headroom_ramp: f32,
+    #[serde(default = "d_clg_upjump")] pub up_jump_threshold: f32,
+    #[serde(default = "d_clg_slow_up")] pub slow_up_scale: f32,
+    #[serde(default = "d_clg_slow_dn")] pub slow_down_scale: f32,
+    #[serde(default = "d_clg_dn_fast_t")] pub down_fast_threshold: f32,
+    #[serde(default = "d_clg_dn_fast_m")] pub down_fast_mult: f32,
+    #[serde(default = "d_clg_spike_t")] pub spike_jump_threshold: f32,
+    #[serde(default = "d_clg_spike_d")] pub spike_decay: f32,
 }
 
 fn d_clg_up_thresh() -> f32 { 0.80 }
@@ -58,6 +67,14 @@ fn d_clg_headroom() -> f32 { 1.25 }
 fn d_clg_floor() -> f32 { 0.15 }
 fn d_clg_ceil() -> f32 { 1.0 }
 fn d_clg_init() -> f32 { 0.50 }
+fn d_clg_hramp() -> f32 { 0.15 }
+fn d_clg_upjump() -> f32 { 0.35 }
+fn d_clg_slow_up() -> f32 { 0.02 }
+fn d_clg_slow_dn() -> f32 { 0.5 }
+fn d_clg_dn_fast_t() -> f32 { 0.15 }
+fn d_clg_dn_fast_m() -> f32 { 3.0 }
+fn d_clg_spike_t() -> f32 { 0.35 }
+fn d_clg_spike_d() -> f32 { 0.5 }
 
 impl Default for CpuLoadGovernorConfig {
     fn default() -> Self {
@@ -73,6 +90,14 @@ impl Default for CpuLoadGovernorConfig {
             perf_floor: d_clg_floor(),
             perf_ceil: d_clg_ceil(),
             perf_init: d_clg_init(),
+            headroom_ramp: d_clg_hramp(),
+            up_jump_threshold: d_clg_upjump(),
+            slow_up_scale: d_clg_slow_up(),
+            slow_down_scale: d_clg_slow_dn(),
+            down_fast_threshold: d_clg_dn_fast_t(),
+            down_fast_mult: d_clg_dn_fast_m(),
+            spike_jump_threshold: d_clg_spike_t(),
+            spike_decay: d_clg_spike_d(),
         }
     }
 }
@@ -82,7 +107,6 @@ impl Default for CpuLoadGovernorConfig {
 // ════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Deserialize, Default, Clone)]
-#[serde(rename_all = "PascalCase")]
 pub struct Mode {
     #[serde(default)]
     pub cpu_load_governor: CpuLoadGovernorConfig,

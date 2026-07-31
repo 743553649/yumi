@@ -112,3 +112,4 @@ main-config-watch-thread-create = Main config watcher thread created.
 
 # --- Logger ---
 log-level-updated = Log level updated to: { $level }
+scheduler-ipc-panicked = [Scheduler] IPC thread panicked: { $error }

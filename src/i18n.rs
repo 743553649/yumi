@@ -47,7 +47,8 @@ fn load_bundle(lang: &str) -> Result<FluentBundle<FluentResource, IntlLangMemoiz
     let resource = FluentResource::try_new(ftl_string)
         .map_err(|e| anyhow::anyhow!("Failed to parse FTL resource {:?}: {:?}", ftl_path, e))?;
 
-    let mut bundle = FluentBundle::new_concurrent(vec![lang.parse().unwrap()]);
+    let lang_id = lang.parse().unwrap_or_else(|_| "en".parse().unwrap());
+    let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
 
     bundle.add_resource(resource)
         .map_err(|e| anyhow::anyhow!("Failed to add FTL resource: {:?}", e))?;

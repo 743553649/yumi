@@ -41,6 +41,11 @@ struct ClusterState {
     current_freq: u32,
     down_wait: u32,
     up_wait: u32,
+    prev_util: f32,
+    // 接管前状态快照 (3.3)
+    pre_takeover_gov: String,
+    pre_takeover_min_freq: u32,
+    pre_takeover_max_freq: u32,
 }
 
 impl ClusterState {
@@ -165,7 +170,22 @@ impl CpuLoadGovernor {
                 continue;
             }
 
-            let init_perf = self.cfg.perf_init.clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
+            let (safe_floor, safe_ceil) = if self.cfg.perf_floor > self.cfg.perf_ceil {
+                (self.cfg.perf_ceil, self.cfg.perf_ceil)
+            } else {
+                (self.cfg.perf_floor, self.cfg.perf_ceil)
+            };
+            let init_perf = self.cfg.perf_init.clamp(safe_floor, safe_ceil);
+            // 保存接管前状态快照 (3.3)
+            let pre_gov = fs::read_to_string(&gov_path)
+                .unwrap_or_default().trim().to_string();
+            let pre_min = fs::read_to_string(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_min_freq", pid))
+                .unwrap_or_default().trim().parse::<u32>().unwrap_or(0);
+            let pre_max = fs::read_to_string(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_max_freq", pid))
+                .unwrap_or_default().trim().parse::<u32>().unwrap_or(0);
+
             let mut cluster = ClusterState {
                 policy_id: pid,
                 affected_cpus: affected.clone(),
@@ -179,6 +199,10 @@ impl CpuLoadGovernor {
                 current_freq: 0,
                 down_wait: 0,
                 up_wait: 0,
+                prev_util: 0.0,
+                pre_takeover_gov: pre_gov,
+                pre_takeover_min_freq: pre_min,
+                pre_takeover_max_freq: pre_max,
             };
 
             let init_freq = cluster.find_nearest_freq(init_perf);
@@ -207,7 +231,25 @@ impl CpuLoadGovernor {
     }
 
     pub fn release(&mut self) {
-        if self.active { info!("{}", t("clg-deactivated")); }
+        if self.active {
+            // 恢复接管前的 governor 和频率
+            for c in &self.clusters {
+                let gov_path = format!(
+                    "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
+                    c.policy_id);
+                if !c.pre_takeover_gov.is_empty() {
+                    let _ = crate::utils::try_write_file(&gov_path, c.pre_takeover_gov.as_bytes());
+                }
+                // 恢复频率范围，读取失败不写退化值
+                if c.pre_takeover_min_freq > 0 {
+                    let _ = c.min_writer.write_value_force(c.pre_takeover_min_freq);
+                }
+                if c.pre_takeover_max_freq > 0 {
+                    let _ = c.max_writer.write_value_force(c.pre_takeover_max_freq);
+                }
+            }
+            info!("{}", t("clg-deactivated"));
+        }
         self.clusters.clear();
         self.active = false;
         self.log_counter = 0;
@@ -223,47 +265,86 @@ impl CpuLoadGovernor {
 
         for cluster in &mut self.clusters {
             let util = cluster.max_util(core_utils);
+            let old_perf = cluster.current_perf;
+            let raw_util = util;
 
-            // headroom 仅在负载超过升频阈值时才生效，避免低负载放大
-            let headroom = if util >= self.cfg.up_threshold {
+            // ── 尖峰抑制 ──
+            // 单 tick 负载跳升超过阈值时衰减其增量，
+            // 孤立瞬时尖峰（如单核 0↔100%）不再瞬间拉满性能；
+            // 持续负载下一 tick 即全量生效
+            let util = {
+                let delta = util - cluster.prev_util;
+                if delta > self.cfg.spike_jump_threshold {
+                    cluster.prev_util + delta * self.cfg.spike_decay
+                } else {
+                    util
+                }
+            };
+            cluster.prev_util = raw_util;
+
+            // ── headroom 平滑过渡 ──
+            // 在 up_threshold 附近线性渐变，消除负载临界时的频率振荡
+            let ramp = self.cfg.headroom_ramp.max(0.01);
+            let hr_factor = if util >= self.cfg.up_threshold {
                 self.cfg.headroom_factor
+            } else if util >= self.cfg.up_threshold - ramp {
+                let t = (util - (self.cfg.up_threshold - ramp)) / ramp;
+                1.0 + (self.cfg.headroom_factor - 1.0) * t
             } else {
                 1.0
             };
 
-            let target_perf = (util * headroom)
+            let target_perf = (util * hr_factor)
                 .clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
-            let old_perf = cluster.current_perf;
 
             if target_perf > old_perf {
+                // ── 升频路径 ──
                 cluster.down_wait = 0;
                 cluster.up_wait += 1;
 
-                // 升频速率限制：必须连续 up_rate_limit_ticks 才执行
                 if cluster.up_wait < self.cfg.up_rate_limit_ticks {
                     continue;
                 }
 
                 let is_high_load = util >= self.cfg.up_threshold;
-                let is_significant_jump = target_perf > old_perf + 0.50;
+                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold;
 
                 if is_high_load || is_significant_jump {
+                    // 高负载或大跳变：正常升频
                     cluster.current_perf += (target_perf - old_perf) * self.cfg.smoothing_up;
                 } else {
-                    cluster.current_perf += (target_perf - old_perf) * (self.cfg.smoothing_up * 0.02); 
+                    // 滞回带内升频：速率随 util 接近 up_threshold 线性提升
+                    let proximity = ((util - self.cfg.down_threshold)
+                        / (self.cfg.up_threshold - self.cfg.down_threshold).max(0.01))
+                        .clamp(0.0, 1.0);
+                    let slow_scale = self.cfg.slow_up_scale
+                        + (self.cfg.smoothing_up - self.cfg.slow_up_scale) * proximity;
+                    cluster.current_perf += (target_perf - old_perf) * slow_scale;
                 }
             } else {
+                // ── 降频路径 ──
                 cluster.up_wait = 0;
                 cluster.down_wait += 1;
-                if cluster.down_wait >= self.cfg.down_rate_limit_ticks {
-                    if util < self.cfg.down_threshold {
-                        let active_smoothing_down = if util < 0.15 {
-                            self.cfg.smoothing_down * 3.0
-                        } else {
-                            self.cfg.smoothing_down
-                        };
-                        cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
-                    }
+
+                // 极低负载快速降频：跳过确认期
+                let fast_down = util < self.cfg.down_fast_threshold;
+                let can_down = fast_down
+                    || cluster.down_wait >= self.cfg.down_rate_limit_ticks;
+
+                if can_down && target_perf < old_perf {
+                    let smooth = if fast_down {
+                        // 极低负载：快速回落
+                        self.cfg.smoothing_down * self.cfg.down_fast_mult
+                    } else if util < self.cfg.down_threshold {
+                        // 低于 down_threshold：正常降频
+                        self.cfg.smoothing_down
+                    } else {
+                        // 滞回带内 (down_threshold ~ up_threshold)：
+                        // 目标低于当前即可降频，按慢速回落
+                        self.cfg.smoothing_down * self.cfg.slow_down_scale
+                    };
+                    cluster.current_perf += (target_perf - old_perf) * smooth;
+                    if fast_down { cluster.down_wait = 0; }
                 }
             }
 

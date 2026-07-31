@@ -212,7 +212,8 @@ impl FasController {
     pub(super) fn effective_perf_floor(&self) -> f32 {
         let base = self.cfg.perf_floor;
         let fps_bonus = ((self.current_target_fps - 60.0).max(0.0) * 0.004).min(0.25);
-        (base + fps_bonus).min(0.45)
+        let ceil = self.effective_perf_ceil();
+        (base + fps_bonus).min(0.45).min(ceil)
     }
 
     /// 获取有效 perf_ceil
@@ -289,8 +290,10 @@ impl FasController {
         if let Some(ref p) = profile {
             if let Some(m) = p.fps_margin { self.fps_margin = m; }
             if let Some(ref gears) = p.target_fps {
-                if !gears.is_empty() {
-                    self.fps_gears = gears.clone();
+                let valid_gears: Vec<f32> = gears.iter()
+                    .copied().filter(|&g| g.is_finite() && g > 0.0).collect();
+                if !valid_gears.is_empty() {
+                    self.fps_gears = valid_gears;
                     if !self.fps_gears.iter().any(|&g| (g - self.current_target_fps).abs() < 0.5) {
                         self.current_target_fps = self.fps_gears.iter().copied()
                             .fold(60.0_f32, f32::max);

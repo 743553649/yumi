@@ -111,3 +111,4 @@ main-config-watch-thread-create = 主配置监控线程已创建
 
 # --- Logger ---
 log-level-updated = 日志级别已更新为: { $level }
+scheduler-ipc-panicked = [调度器] IPC 线程发生 panic: { $error }

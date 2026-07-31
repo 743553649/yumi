@@ -177,5 +177,82 @@
 
 ---
 
+## 阶段一：Bug 修复 (2026-07-31)
+
+### 1.1 PascalCase 反序列化修复
+- **文件**: src/scheduler/config.rs:84
+- **问题**: Mode 结构体的 rename_all = "PascalCase" 导致 YAML cpu_load_governor 键无法匹配，用户 CLG 配置从未生效
+- **修复**: 删除 rename_all 属性
+
+### 1.2 perf_floor > perf_ceil clamp panic
+- **文件**: src/scheduler/cpu_load_governor.rs:168
+- **问题**: clamp(perf_floor, perf_ceil) 当 floor > ceil 时 panic
+- **修复**: clamp 前规范化，floor > ceil 时回退到 ceil
+
+### 1.3 未知/空模式意外启用 CLG
+- **文件**: src/scheduler/mod.rs:186
+- **问题**: get_mode("fas") 返回 None → unwrap_or_default() 产生 enabled: true
+- **修复**: 未知模式返回 enabled: false 的默认配置
+
+### 1.4 i18n 非法 language 标签 panic
+- **文件**: src/i18n.rs:50
+- **问题**: lang.parse().unwrap() 对非法标签 panic
+- **修复**: unwrap_or_else 回退到 "en"
+
+---
+
+## 阶段二：FAS 安全加固 (2026-07-31)
+
+### 2.1 FAS clamp panic 规范化
+- **文件**: src/scheduler/fas/controller.rs:212 + frame_pipeline.rs:166
+- **问题**: perf_floor > perf_ceil 或 fast_decay_max_step < min_step 时 .clamp() panic
+- **修复**: effective_perf_floor() 保证 <= effective_perf_ceil()；fast_decay 步长取 max 保底
+
+### 2.2 floor-rescue 不被 max_inc 截断
+- **文件**: src/scheduler/fas/pid_jank.rs:214
+- **问题**: floor-rescue 将 perf 设为 perf_cold_boot，但被 max_inc 截断回 old+0.09，自救失效
+- **修复**: max_inc 判断中排除 "floor-rescue"，允许直接跳到目标值
+
+### 2.3 PID 系数非法 target_fps 保护
+- **文件**: src/scheduler/fas/pid.rs:49
+- **问题**: adapt_to_target_fps() 对 0/负数/NaN 的 target_fps 未防护
+- **修复**: 入口处 guard，非法值回退到 60.0
+
+### 2.4 per-app 帧率档位过滤非法值
+- **文件**: src/scheduler/fas/controller.rs:293
+- **问题**: per-app 配置中的 target_fps 可能包含 0/负数/NaN
+- **修复**: 加载后过滤，仅保留 is_finite() && > 0.0 的值
+
+---
+
+## 阶段三：CLG 重构 (2026-07-31)
+
+### 3.1 新增 8 个 CLG 配置参数
+- **文件**: src/scheduler/config.rs
+- **新增**: headroom_ramp(0.15), up_jump_threshold(0.35), slow_up_scale(0.02), slow_down_scale(0.5), down_fast_threshold(0.15), down_fast_mult(3.0), spike_jump_threshold(0.35), spike_decay(0.5)
+
+### 3.2 重写 on_load_update()
+- **文件**: src/scheduler/cpu_load_governor.rs
+- **变更**:
+  - headroom 二值切换 → 线性渐变（headroom_ramp 控制过渡带）
+  - 滞回带内降频：目标低于当前即可降频，按 slow/normal/fast 三档回落
+  - 中等负载升频提速：util 接近 up_threshold 时线性提升升频速率
+  - 尖峰抑制：单 tick 跳升超阈值时衰减增量
+  - 极低负载快速降频：低于 down_fast_threshold 跳过确认期
+
+### 3.3 release() 状态快照与恢复
+- **文件**: src/scheduler/cpu_load_governor.rs
+- **变更**: ClusterState 新增 pre_takeover_gov/min_freq/max_freq；release() 恢复接管前状态
+
+### 3.4 热重载优先
+- **文件**: src/scheduler/mod.rs
+- **变更**: 模式切换/亮屏恢复时优先 reload_config() 而非 init_policies()
+
+### 3.5 IPC catch_unwind
+- **文件**: src/scheduler/mod.rs
+- **变更**: IPC 线程事件循环包裹 catch_unwind，panic 时输出日志
+
+---
+
 *最后更新: 2026-07-31*
 *基于 docs/powersave_optimization.md v1.0*

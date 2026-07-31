@@ -36,6 +36,14 @@ powersave:
     perf_floor: 0.10
     perf_ceil: 0.70
     perf_init: 0.30
+    headroom_ramp: 0.15
+    up_jump_threshold: 0.35
+    slow_up_scale: 0.02
+    slow_down_scale: 0.5
+    down_fast_threshold: 0.15
+    down_fast_mult: 3.0
+    spike_jump_threshold: 0.35
+    spike_decay: 0.5
 
 # 均衡模式
 balance:
@@ -50,6 +58,14 @@ balance:
     perf_floor: 0.15
     perf_ceil: 1.0
     perf_init: 0.50
+    headroom_ramp: 0.15
+    up_jump_threshold: 0.35
+    slow_up_scale: 0.02
+    slow_down_scale: 0.5
+    down_fast_threshold: 0.15
+    down_fast_mult: 3.0
+    spike_jump_threshold: 0.35
+    spike_decay: 0.5
 
 # 性能模式
 performance:
@@ -64,6 +80,14 @@ performance:
     perf_floor: 0.35
     perf_ceil: 1.0
     perf_init: 0.60
+    headroom_ramp: 0.10
+    up_jump_threshold: 0.30
+    slow_up_scale: 0.03
+    slow_down_scale: 0.6
+    down_fast_threshold: 0.10
+    down_fast_mult: 2.5
+    spike_jump_threshold: 0.40
+    spike_decay: 0.6
 
 # 极速模式
 fast:
@@ -78,3 +102,11 @@ fast:
     perf_floor: 1.0
     perf_ceil: 1.0
     perf_init: 1.0
+    headroom_ramp: 0.05
+    up_jump_threshold: 0.20
+    slow_up_scale: 0.10
+    slow_down_scale: 0.8
+    down_fast_threshold: 0.05
+    down_fast_mult: 1.5
+    spike_jump_threshold: 0.50
+    spike_decay: 0.8

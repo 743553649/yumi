@@ -163,7 +163,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
         .name("scheduler_ipc".to_string())
         .spawn(move || {
             log::info!("{}", t("scheduler-ipc-started"));
-            
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+
             let root = common::get_module_root();
             let mode_file_path = root.join("current_mode.txt");
             
@@ -184,7 +186,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             let mut last_temp_update = Instant::now();
 
             let get_clg_cfg = |config: &Config, mode: &str| -> crate::scheduler::config::CpuLoadGovernorConfig {
-                config.get_mode(mode).map(|m| m.cpu_load_governor.clone()).unwrap_or_default()
+                config.get_mode(mode)
+                    .map(|m| m.cpu_load_governor.clone())
+                    .unwrap_or(crate::scheduler::config::CpuLoadGovernorConfig {
+                        enabled: false,
+                        ..Default::default()
+                    })
             };
 
             // 启动时初始化
@@ -237,8 +244,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                             
                             if current_mode != "fas" {
-                                if clg_cfg.enabled { cpu_governor.init_policies(&clg_cfg); } 
-                                else { cpu_governor.release(); }
+                                if clg_cfg.enabled {
+                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
+                                    else { cpu_governor.init_policies(&clg_cfg); }
+                                } else { cpu_governor.release(); }
                             } else {
                                 cpu_governor.release(); 
                                 *mode_clone.lock().unwrap() = String::new();
@@ -306,7 +315,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                     let config_lock = config_clone.read().unwrap();
                                     let clg_cfg = get_clg_cfg(&config_lock, &mode);
                                     if clg_cfg.enabled {
-                                        cpu_governor.init_policies(&clg_cfg);
+                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
+                                        else { cpu_governor.init_policies(&clg_cfg); }
                                     } else {
                                         cpu_governor.release();
                                     }
@@ -383,6 +393,20 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 }
             }
             log::warn!("{}", t("scheduler-channel-closed"));
+
+            })); // end catch_unwind
+
+            if let Err(e) = result {
+                let msg = if let Some(s) = e.downcast_ref::<String>() {
+                    s.clone()
+                } else if let Some(s) = e.downcast_ref::<&str>() {
+                    s.to_string()
+                } else {
+                    "unknown panic".to_string()
+                };
+                log::error!("{}", t_with_args("scheduler-ipc-panicked",
+                    &fluent_args!("error" => msg)));
+            }
         })?;
 
     Ok(())

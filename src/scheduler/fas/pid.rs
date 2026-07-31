@@ -46,6 +46,7 @@ impl PidController {
     /// 因此 P/I/D 三个通道的增益都需要随 target_fps 缩放，
     /// 但缩放系数不同：P 最激进，D 最保守 (高刷噪声大)。
     pub(super) fn adapt_to_target_fps(&mut self, target_fps: f32) {
+        let target_fps = if target_fps.is_finite() && target_fps > 0.0 { target_fps } else { 60.0 };
         if (target_fps - self.adapted_fps).abs() < 0.5 { return; }
         self.adapted_fps = target_fps;
 

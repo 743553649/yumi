@@ -211,7 +211,7 @@ impl FasController {
         // crit 和 emergency 不受常规 max_inc 限制，允许单帧大幅拉升
         // 原版 max_inc ≈ 0.092 在 120fps 下需要 7-8 帧才能从 floor 爬到 1.0，
         // 超大帧(139ms)已经卡了 16+ 个 vsync，不能再用渐进式爬升
-        let max_inc = if act == "crit" || act == "emergency-inc" {
+        let max_inc = if act == "crit" || act == "emergency-inc" || act == "floor-rescue" {
             (self.cfg.max_inc_normal * scale * 2.5).max(0.15)
         } else if damped {
             (self.cfg.max_inc_damped * scale).max(0.040)
