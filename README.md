@@ -343,43 +343,43 @@ CpuIdle:
 # 省电模式 — 极致续航
 powersave:
   cpu_load_governor:
-    up_threshold: 0.85
-    down_threshold: 0.60
-    smoothing_up: 0.40
-    smoothing_down: 0.50
+    up_threshold: 0.90
+    down_threshold: 0.55
+    smoothing_up: 0.30
+    smoothing_down: 0.70
     down_rate_limit_ticks: 2
-    up_rate_limit_ticks: 2
-    headroom_factor: 1.10
-    perf_floor: 0.10
-    perf_ceil: 0.70
-    perf_init: 0.30
-    headroom_ramp: 0.15
-    up_jump_threshold: 0.35
-    slow_up_scale: 0.02
-    slow_down_scale: 0.5
-    down_fast_threshold: 0.15
-    down_fast_mult: 3.0
-    spike_jump_threshold: 0.35
-    spike_decay: 0.5
+    up_rate_limit_ticks: 3
+    headroom_factor: 1.05
+    perf_floor: 0.08
+    perf_ceil: 0.65
+    perf_init: 0.25
+    headroom_ramp: 0.20
+    up_jump_threshold: 0.40
+    slow_up_scale: 0.01
+    slow_down_scale: 0.4
+    down_fast_threshold: 0.20
+    down_fast_mult: 4.0
+    spike_jump_threshold: 0.30
+    spike_decay: 0.3
 
 # 均衡模式 — 日常使用
 balance:
   cpu_load_governor:
-    up_threshold: 0.80
-    down_threshold: 0.50
-    smoothing_up: 0.60
-    smoothing_down: 0.30
+    up_threshold: 0.75
+    down_threshold: 0.45
+    smoothing_up: 0.55
+    smoothing_down: 0.35
     down_rate_limit_ticks: 3
     up_rate_limit_ticks: 2
-    headroom_factor: 1.25
-    perf_floor: 0.15
+    headroom_factor: 1.20
+    perf_floor: 0.12
     perf_ceil: 1.0
-    perf_init: 0.50
+    perf_init: 0.40
     headroom_ramp: 0.15
     up_jump_threshold: 0.35
     slow_up_scale: 0.02
     slow_down_scale: 0.5
-    down_fast_threshold: 0.15
+    down_fast_threshold: 0.12
     down_fast_mult: 3.0
     spike_jump_threshold: 0.35
     spike_decay: 0.5
@@ -387,21 +387,21 @@ balance:
 # 性能模式 — 优先响应
 performance:
   cpu_load_governor:
-    up_threshold: 0.65
-    down_threshold: 0.40
-    smoothing_up: 0.80
-    smoothing_down: 0.20
-    down_rate_limit_ticks: 5
+    up_threshold: 0.60
+    down_threshold: 0.35
+    smoothing_up: 0.70
+    smoothing_down: 0.25
+    down_rate_limit_ticks: 4
     up_rate_limit_ticks: 1
-    headroom_factor: 1.40
-    perf_floor: 0.35
+    headroom_factor: 1.35
+    perf_floor: 0.25
     perf_ceil: 1.0
-    perf_init: 0.60
+    perf_init: 0.50
     headroom_ramp: 0.10
     up_jump_threshold: 0.30
     slow_up_scale: 0.03
-    slow_down_scale: 0.6
-    down_fast_threshold: 0.10
+    slow_down_scale: 0.55
+    down_fast_threshold: 0.08
     down_fast_mult: 2.5
     spike_jump_threshold: 0.40
     spike_decay: 0.6
@@ -419,14 +419,14 @@ fast:
     perf_floor: 1.0
     perf_ceil: 1.0
     perf_init: 1.0
-    headroom_ramp: 0.05
-    up_jump_threshold: 0.20
-    slow_up_scale: 0.10
-    slow_down_scale: 0.8
-    down_fast_threshold: 0.05
-    down_fast_mult: 1.5
-    spike_jump_threshold: 0.50
-    spike_decay: 0.8
+    headroom_ramp: 0.01
+    up_jump_threshold: 0.15
+    slow_up_scale: 0.20
+    slow_down_scale: 0.9
+    down_fast_threshold: 0.01
+    down_fast_mult: 1.0
+    spike_jump_threshold: 0.80
+    spike_decay: 0.9
 ```
 
 | 参数 | 类型 | 默认值 | 描述 |

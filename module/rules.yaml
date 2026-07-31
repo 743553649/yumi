@@ -7,18 +7,20 @@ app_modes:
   com.tencent.tmgp.sgame: "fas"
   com.tencent.tmgp.speedmobile: "fas"
   com.tencent.lolm: "fas"
+  com.tencent.tmgp.pubgmhd: "fas"
+  com.hypergryph.arknights: "fas"
+  com.miHoYo.hkrpg: "fas"
+  com.kurogame.mingchao: "fas"
 
 ignored_apps:
   - com.android.systemui
 
 fas_rules:
-  # ── 全局默认档位 (未在 per_app_profiles 中配置的游戏使用) ──
+  # ── 全局默认档位 ──
   fps_gears: [30.0, 60.0, 90.0, 120.0, 144.0]
   fps_margin: 3.0
 
   # ── 每游戏 FAS 配置 ──
-  # target_fps: 该游戏会渲染到的目标帧率数组，运行时动态匹配
-  # fps_margin: 该游戏的帧率余量 (可选，不设则用全局值)
   per_app_profiles:
     "com.miHoYo.GenshinImpact":
       target_fps: [30, 60]
@@ -38,79 +40,87 @@ fas_rules:
 
     "com.hypergryph.arknights":
       target_fps: [30, 60]
+      fps_margin: 3.0
 
     "com.miHoYo.hkrpg":
       target_fps: [30, 60]
+      fps_margin: 3.0
 
     "com.kurogame.mingchao":
-      target_fps: [24, 30, 45, 60]
+      target_fps: [30, 45, 60]
+      fps_margin: 3.5
 
     "com.tencent.lolm":
       target_fps: [60, 90, 120, 144]
       fps_margin: 3.0
 
   # ── PID 控制器核心系数 ──
+  # 降低 kp/ki 让 PID 更保守，减少无效拉频
   pid:
-    kp: 0.05
-    ki: 0.01
-    kd: 0.006
+    kp: 0.040
+    ki: 0.008
+    kd: 0.005
 
   # ── 集群算力感知 ──
   auto_capacity_weight: true
   cluster_profiles:
-    - capacity_weight: 1.0   # 小核
-    - capacity_weight: 1.5   # 中核
-    - capacity_weight: 2.5   # 大核
-    - capacity_weight: 3.5   # 超大核
+    - capacity_weight: 1.0
+    - capacity_weight: 1.5
+    - capacity_weight: 2.5
+    - capacity_weight: 3.5
 
-  # ── 归一化性能 (Perf) 范围 ──
-  perf_floor: 0.22
+  # ── 归一化性能范围 ──
+  # 降低 perf_init 和 perf_floor，更积极省电
+  perf_floor: 0.18
   perf_ceil: 1.0
-  perf_init: 0.45
-  perf_cold_boot: 0.85
-  freq_hysteresis: 0.015
+  perf_init: 0.35
+  perf_cold_boot: 0.80
+  freq_hysteresis: 0.020
 
   # ── 重帧 / 硬加载 ──
-  heavy_frame_threshold_ms: 150.0
-  loading_cumulative_ms: 2500.0
+  heavy_frame_threshold_ms: 120.0
+  loading_cumulative_ms: 2000.0
   loading_normal_tolerance: 3
-  loading_perf_floor: 0.60
-  loading_perf_ceiling: 0.70
+  loading_perf_floor: 0.55
+  loading_perf_ceiling: 0.65
 
   # ── 加载后保护 ──
   post_loading_ignore_frames: 5
-  post_loading_perf: 0.65
+  post_loading_perf: 0.55
   post_loading_downgrade_guard: 90
 
   # ── 齿轮切换与阻尼 ──
-  upgrade_confirm_frames: 60
-  downgrade_confirm_frames: 90
-  upgrade_cooldown_after_downgrade: 90
+  # 提高确认帧数，减少误升降档
+  upgrade_confirm_frames: 75
+  downgrade_confirm_frames: 100
+  upgrade_cooldown_after_downgrade: 100
   gear_dampen_frames: 60
 
-  # ── 降档紧急提频 (Boost) ──
-  downgrade_boost_perf_inc: 0.18
-  downgrade_boost_duration: 45
+  # ── 降档紧急提频 ──
+  downgrade_boost_perf_inc: 0.15
+  downgrade_boost_duration: 40
 
-  # ── 连续稳态快速衰减 (省电核心) ──
-  fast_decay_frame_threshold: 75
-  fast_decay_perf_threshold: 0.70
-  fast_decay_max_step: 0.022
-  fast_decay_min_step: 0.004
+  # ── 连续稳态快速衰减（省电核心）──
+  # 更激进的衰减：阈值降低、步长增大
+  fast_decay_frame_threshold: 60
+  fast_decay_perf_threshold: 0.65
+  fast_decay_max_step: 0.028
+  fast_decay_min_step: 0.005
 
   # ── Jank 卡顿保护冷却 ──
-  jank_cooldown_frames: 15
+  jank_cooldown_frames: 18
 
-  # ── PID 输出限幅 (防过冲) ──
-  max_inc_damped: 0.045
-  max_inc_normal: 0.075
-  damped_perf_cap: 0.92
+  # ── PID 输出限幅 ──
+  # 降低上限，防止单帧过度拉频
+  max_inc_damped: 0.040
+  max_inc_normal: 0.065
+  damped_perf_cap: 0.88
 
   # ── 应用切换 / 息屏检测 ──
   app_switch_gap_ms: 3000.0
-  app_switch_resume_perf: 0.60
+  app_switch_resume_perf: 0.50
 
   # ── 其他底层机制 ──
   freq_force_reapply_interval: 30
   fixed_max_frame_ms: 500.0
-  cold_boot_ms: 3500
+  cold_boot_ms: 3000
