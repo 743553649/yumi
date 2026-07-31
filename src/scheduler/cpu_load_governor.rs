@@ -233,7 +233,7 @@ impl CpuLoadGovernor {
     pub fn release(&mut self) {
         if self.active {
             // 恢复接管前的 governor 和频率
-            for c in &self.clusters {
+            for c in &mut self.clusters {
                 let gov_path = format!(
                     "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
                     c.policy_id);
@@ -355,7 +355,7 @@ impl CpuLoadGovernor {
 
         self.log_counter += 1;
         if self.log_counter % 25 == 0 {
-            for c in &self.clusters {
+            for c in &mut self.clusters {
                 debug!("{}", t_with_args("clg-tick-log", &fluent_args!(
                     "pid" => c.policy_id.to_string(),
                     "util" => format!("{:.0}", c.max_util(core_utils) * 100.0),
