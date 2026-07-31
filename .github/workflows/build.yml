@@ -51,11 +51,12 @@ jobs:
         with:
           ndk-version: r29
 
-      # 6. 配置 NDK 环境变量并安装 cargo-ndk
-      - name: Setup cargo-ndk
+      # 6. 配置 NDK 环境变量并安装 cargo-ndk 和 bpf-linker
+      - name: Setup cargo-ndk and bpf-linker
         run: |
           echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
           cargo install cargo-ndk
+          cargo install bpf-linker
 
       # 7. 运行 xtask 构建脚本
       - name: Run xtask build
