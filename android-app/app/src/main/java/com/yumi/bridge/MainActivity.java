@@ -54,7 +54,12 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class MainActivity extends Activity {
+import androidx.activity.ComponentActivity;
+import androidx.lifecycle.ViewTreeLifecycleOwner;
+import androidx.lifecycle.ViewTreeViewModelStoreOwner;
+import androidx.savedstate.ViewTreeSavedStateRegistryOwner;
+
+public class MainActivity extends ComponentActivity {
 
     // Tab 常量
     public static final int TAB_HOME = 0;
@@ -163,6 +168,10 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        ViewTreeLifecycleOwner.set(getWindow().getDecorView(), this);
+        ViewTreeViewModelStoreOwner.set(getWindow().getDecorView(), this);
+        ViewTreeSavedStateRegistryOwner.set(getWindow().getDecorView(), this);
 
         initViews();
         setupFullscreenAndInsets();
