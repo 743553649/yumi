@@ -99,9 +99,11 @@
 
 ---
 
-## 阶段四：AppDetect 优化（尚未实施）
+## 阶段四：AppDetect 优化 (2026-08-01)
 
-- 同模式 ModeChange 去重：配置重载/亮屏恢复不再产生 balance → balance 冗余事件
+### 4.1 同模式 ModeChange 去重
+- **文件**: src/monitor/app_detect.rs:255,299
+- **修复**: 移除亮屏时 `last_mode.clear()`；ModeChange 仅在 `last_mode != new_mode` 时发送
 
 ---
 
@@ -121,4 +123,4 @@
 | `module/config/i18n/en.ftl` | 三 | 新增 panic 日志 key |
 | `module/config/i18n/zh.ftl` | 三 | 新增 panic 日志 key |
 | `README.md` | 三 | 同步参数文档 |
-| `docs/worklog.md` | 一/二/三 | 工作日志更新 |
+| `docs/工作日志.md` | 一/二/三 | 工作日志更新 |
