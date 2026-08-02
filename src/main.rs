@@ -22,6 +22,10 @@ mod scheduler;
 pub mod i18n;
 pub mod utils;
 pub mod fas_types;
+pub mod cpuset_manager;
+pub mod idle_dive;
+pub mod touch_boost;
+pub mod ipc_server;
 use std::sync::mpsc;
 use std::thread;
 use anyhow::Result;
@@ -62,7 +66,20 @@ fn main() -> Result<()> {
     }
     info!("{}", t("scheduler-module-started"));
 
-    // 5. 启动 Monitor
+    // 5. 启动 IPC Server
+    if config.ipc.enabled {
+        let ipc_tx = tx.clone();
+        let ipc_root = root.clone();
+        let ipc_port = config.ipc.port;
+        thread::Builder::new()
+            .name("ipc_server".to_string())
+            .spawn(move || {
+                ipc_server::start(ipc_tx, ipc_root, ipc_port);
+            })?;
+        info!("IPC server starting on port {}", config.ipc.port);
+    }
+
+    // 6. 启动 Monitor
     let monitor_thread = thread::Builder::new()
         .name("monitor_core".to_string())
         .spawn(move || {

@@ -11,7 +11,11 @@ done
 # 2. 定义路径
 [ -z "$MODDIR" ] && MODDIR=${0%/*}
 
-DAEMON_PATH="$MODDIR/core/bin/yumi"
+if [ -f "$MODDIR/core/bin/yumi" ]; then
+  DAEMON_PATH="$MODDIR/core/bin/yumi"
+else
+  DAEMON_PATH="$MODDIR/yumi"
+fi
 SCRIPTS_DIR="$MODDIR/scripts"
 LOG_DIR="$MODDIR/logs"
 LOG_FILE="$LOG_DIR/service.log"

@@ -48,14 +48,43 @@ pub enum DaemonEvent {
 
 /// 获取模块根目录的绝对路径
 pub fn get_module_root() -> PathBuf {
-    // 获取当前执行文件的绝对路径
+    // 1. 优先校验当前工作目录 (cwd)
+    if let Ok(cwd) = env::current_dir() {
+        if cwd.join("rules.yaml").exists() || cwd.join("config/config.yaml").exists() {
+            return cwd;
+        }
+        if cwd.join("module/rules.yaml").exists() || cwd.join("module/config/config.yaml").exists() {
+            return cwd.join("module");
+        }
+    }
+
+    // 2. 检查常见部署与运行路径
+    let candidate_paths = [
+        PathBuf::from("/data/adb/modules/yumi"),
+        PathBuf::from("/storage/emulated/0/yumi"),
+        PathBuf::from("/sdcard/yumi"),
+        PathBuf::from("/mnt/sdcard/yumi"),
+        PathBuf::from("/storage/emulated/0/yumi/module"),
+    ];
+    for p in &candidate_paths {
+        if p.join("rules.yaml").exists() || p.join("config/config.yaml").exists() {
+            return p.clone();
+        }
+    }
+
+    // 3. 回溯 exe 路径
     let exe_path = env::current_exe().unwrap_or_else(|_| PathBuf::from("/"));
-    
-    // 回溯两级目录:
-    // core/bin/yumi -> core/bin -> core -> yumi
-    exe_path
-        .parent().unwrap_or(&exe_path) // .../core/bin
-        .parent().unwrap_or(&exe_path) // .../core
-        .parent().unwrap_or(&exe_path) // .../yumi (Root)
-        .to_path_buf()
+    let mut curr = exe_path.as_path();
+    while let Some(parent) = curr.parent() {
+        if parent.join("rules.yaml").exists() || parent.join("config/config.yaml").exists() {
+            return parent.to_path_buf();
+        }
+        if parent == curr {
+            break;
+        }
+        curr = parent;
+    }
+
+    // 4. 默认退回到 Magisk/KernelSU 部署路径
+    PathBuf::from("/data/adb/modules/yumi")
 }

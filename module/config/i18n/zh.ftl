@@ -70,6 +70,38 @@ config-apply-tweaks-failed = [Config] 应用重载的系统微调失败: { $erro
 sysfs-open-failed = [SysFS] 打开 { $path } 失败: { $error }
 sysfs-umount2-failed = [SysFS] umount2({ $path }) 失败: { $error }
 sysfs-write-freq-failed = [SysFS] 写入频率 { $freq } 失败: { $error }
+sysfs-write-text-failed = [SysFS] 写入文本 { $value } 失败: { $error }
+
+# --- CPUSet ---
+cpuset-init = [CPUSet] 初始化完成 | 根路径={ $path } | 可用组={ $count }
+cpuset-init-failed = [CPUSet] 初始化失败: { $error }
+cpuset-no-root = [CPUSet] 未找到 cpuset 挂载点，CPUSet 管理不可用
+cpuset-no-groups = [CPUSet] 未找到任何可用的 cpuset 组，CPUSet 管理不可用
+cpuset-not-initialized = [CPUSet] 尚未初始化，跳过模式应用
+cpuset-applied = [CPUSet] 已应用 { $mode } 模式: { $detail }
+cpuset-apply-failed = [CPUSet] 应用模式失败: { $error }
+cpuset-partial-failed = [CPUSet] { $mode } 模式有 { $failed } 个组写入失败
+
+# --- IdleDive (CPU 静止下潜) ---
+idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成
+idle-dive-init-failed = [IdleDive] 初始化失败: { $error }
+idle-dive-unavailable = [IdleDive] cpuidle 节点不可用，CPU 静止下潜已禁用
+idle-dive-enter = [IdleDive] 进入下潜状态
+idle-dive-exit = [IdleDive] 退出下潜状态
+idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
+idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
+
+# --- TouchBoost (触摸提频) ---
+touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成
+touch-boost-init-failed = [TouchBoost] 初始化失败: { $error }
+touch-boost-no-device = [TouchBoost] 未找到触摸输入设备，TouchBoost 已禁用
+touch-boost-epoll-failed = [TouchBoost] epoll 创建失败
+touch-boost-listener-started = [TouchBoost] 监听器已启动，监听 { $count } 个设备
+touch-boost-thread-started = [TouchBoost] 线程已启动
+touch-boost-start = [TouchBoost] 触摸开始，应用 boost
+touch-boost-release = [TouchBoost] 松手，开始衰减恢复
+touch-boost-recovered = [TouchBoost] 恢复完成
+touch-boost-reapply = [TouchBoost] 恢复中再次触摸，重新 boost
 
 # --- CLG ---
 clg-init = [CLG] P{ $pid } 初始化 | 核心={ $cpus } | 频率={ $fmin }-{ $fmax } MHz | P={ $perf } -> { $freq } kHz
@@ -108,7 +140,12 @@ settings-applied-success = 模式 '{ $mode }' 的设置已成功应用
 apply-cpu-idle-governor-start = CPU 空闲调速器设置已完成
 apply-io-settings-start = I/O 设置已完成
 main-config-watch-thread-create = 主配置监控线程已创建
+config-file-changed = [配置] 检测到文件变更: { $file }
+cpuset-config-reloaded = [CPUSet] 配置已热重载
+idle-dive-config-reloaded = [IdleDive] 配置已热重载
+touch-boost-config-reloaded = [TouchBoost] 配置已热重载
 
 # --- Logger ---
 log-level-updated = 日志级别已更新为: { $level }
 scheduler-ipc-panicked = [调度器] IPC 线程发生 panic: { $error }
+touch-boost-channel-disconnected = [TouchBoost] 触摸事件通道已断开，TouchBoost 功能失效

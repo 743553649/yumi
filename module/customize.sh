@@ -31,10 +31,16 @@ if echo "$CURRENT_LOCALE" | $BUSYBOX grep -qi "zh"; then
   MSG_WELCOME="欢迎使用 Yumi 调度！"
 fi
 
-# --- 仅输出欢迎信息 ---
-ui_print " "
-ui_print "$MSG_WELCOME"
-ui_print " "
+# --- 自动安装控制 App ---
+if [ -f "$MODPATH/yumi-bridge.apk" ]; then
+    ui_print "正在自动安装 yumi Bridge 控制 App..."
+    pm install -r "$MODPATH/yumi-bridge.apk" >/dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        ui_print "✓ yumi Bridge 控制 App 安装成功！"
+    else
+        ui_print "! yumi Bridge 控制 App 自动安装跳过"
+    fi
+fi
 
 # --- 结束 ---
 # 保留模块默认配置不变，不进行任何文件操作

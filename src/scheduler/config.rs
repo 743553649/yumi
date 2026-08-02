@@ -147,6 +147,26 @@ pub struct FunctionToggles {
     #[serde(rename = "IOOptimization")] pub io_optimization: bool,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct IpcConfig {
+    #[serde(default = "default_ipc_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_ipc_port")]
+    pub port: u16,
+}
+
+impl Default for IpcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ipc_enabled(),
+            port: default_ipc_port(),
+        }
+    }
+}
+
+fn default_ipc_enabled() -> bool { true }
+fn default_ipc_port() -> u16 { 14567 }
+
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     #[serde(default, alias = "Meta")]
@@ -157,6 +177,8 @@ pub struct Config {
     pub io_settings: IOSettings,
     #[serde(default, rename = "CpuIdle")]
     pub cpu_idle: CpuIdle,
+    #[serde(default)]
+    pub ipc: IpcConfig,
     
     // 按场景划分的性能模式
     #[serde(default)] pub powersave: Mode,

@@ -2,7 +2,7 @@
 meta:
   name: "default_config"
   author: "yuki"
-  language: "en"
+  language: "zh"
   loglevel: "INFO"
 
 # 主要功能开关
@@ -20,6 +20,11 @@ IO_Settings:
 # CPU 空闲设置
 CpuIdle:
   current_governor: ""
+
+# IPC 接口设置
+ipc:
+  enabled: true
+  port: 14567
 
 # --- 性能模式 ---
 

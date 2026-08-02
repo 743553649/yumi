@@ -71,6 +71,38 @@ config-apply-tweaks-failed = [Config] Failed to apply reloaded system tweaks: { 
 sysfs-open-failed = [SysFS] Failed to open { $path }: { $error }
 sysfs-umount2-failed = [SysFS] umount2({ $path }) failed: { $error }
 sysfs-write-freq-failed = [SysFS] Write freq { $freq } failed: { $error }
+sysfs-write-text-failed = [SysFS] Write text { $value } failed: { $error }
+
+# --- CPUSet ---
+cpuset-init = [CPUSet] init done | root={ $path } | groups={ $count }
+cpuset-init-failed = [CPUSet] init failed: { $error }
+cpuset-no-root = [CPUSet] cpuset mount point not found, CPUSet management unavailable
+cpuset-no-groups = [CPUSet] no usable cpuset groups found, CPUSet management unavailable
+cpuset-not-initialized = [CPUSet] not initialized, skipping mode apply
+cpuset-applied = [CPUSet] applied { $mode } mode: { $detail }
+cpuset-apply-failed = [CPUSet] failed to apply mode: { $error }
+cpuset-partial-failed = [CPUSet] { $mode } mode: { $failed } group(s) failed to write
+
+# --- IdleDive (CPU Idle Dive) ---
+idle-dive-init = [IdleDive] CPU idle dive controller initialized
+idle-dive-init-failed = [IdleDive] init failed: { $error }
+idle-dive-unavailable = [IdleDive] cpuidle node unavailable, CPU idle dive disabled
+idle-dive-enter = [IdleDive] entering dive state
+idle-dive-exit = [IdleDive] exiting dive state
+idle-dive-enter-dozed = [IdleDive] entering doze dive state
+idle-dive-exit-dozed = [IdleDive] exiting doze dive state
+
+# --- TouchBoost (Touch Boost) ---
+touch-boost-init = [TouchBoost] touch boost controller initialized
+touch-boost-init-failed = [TouchBoost] init failed: { $error }
+touch-boost-no-device = [TouchBoost] no touch input device found, TouchBoost disabled
+touch-boost-epoll-failed = [TouchBoost] epoll creation failed
+touch-boost-listener-started = [TouchBoost] listener started, watching { $count } device(s)
+touch-boost-thread-started = [TouchBoost] thread started
+touch-boost-start = [TouchBoost] touch start, applying boost
+touch-boost-release = [TouchBoost] released, starting decay recovery
+touch-boost-recovered = [TouchBoost] recovery complete
+touch-boost-reapply = [TouchBoost] re-touch during recovery, reapplying boost
 
 # --- CLG ---
 clg-init = [CLG] P{ $pid } init | cores={ $cpus } | freqs={ $fmin }-{ $fmax } MHz | P={ $perf } -> { $freq } kHz
@@ -109,7 +141,12 @@ settings-applied-success = Settings for mode '{ $mode }' applied successfully.
 apply-cpu-idle-governor-start = CPU idle governor settings applied.
 apply-io-settings-start = I/O settings applied.
 main-config-watch-thread-create = Main config watcher thread created.
+config-file-changed = [Config] File changed: { $file }
+cpuset-config-reloaded = [CPUSet] Config reloaded
+idle-dive-config-reloaded = [IdleDive] Config reloaded
+touch-boost-config-reloaded = [TouchBoost] Config reloaded
 
 # --- Logger ---
 log-level-updated = Log level updated to: { $level }
 scheduler-ipc-panicked = [Scheduler] IPC thread panicked: { $error }
+touch-boost-channel-disconnected = [TouchBoost] Touch event channel disconnected, TouchBoost disabled

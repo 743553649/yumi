@@ -118,35 +118,84 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     // ==========================================
     let config_clone = shared_config.clone();
     let sys_path_clone = sys_path_exist.clone();
+
+    // CPUSet 共享配置（支持热重载）
+    let cpuset_path = config_dir.join("cpuset.yaml");
+    let shared_cpuset_config = Arc::new(std::sync::RwLock::new(
+        crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path).unwrap_or_default()
+    ));
+    let cpuset_config_watcher = shared_cpuset_config.clone();
+
+    // CPU 静止下潜共享配置（支持热重载）
+    let idle_dive_path = config_dir.join("idle_dive.yaml");
+    let shared_idle_dive_config = Arc::new(std::sync::RwLock::new(
+        crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path).unwrap_or_default()
+    ));
+    let idle_dive_config_watcher = shared_idle_dive_config.clone();
+
+    // TouchBoost 共享配置（支持热重载）
+    let touch_boost_path = config_dir.join("touch_boost.yaml");
+    let shared_touch_boost_config = Arc::new(std::sync::RwLock::new(
+        crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path).unwrap_or_default()
+    ));
+    let touch_boost_config_watcher = shared_touch_boost_config.clone();
     
     thread::Builder::new()
         .name("config_watcher".to_string())
         .spawn(move || {
             loop {
-                if let Err(e) = utils::watch_path(&config_dir) {
-                    log::error!("{}", t_with_args("config-watch-error", &fluent_args!("error" => e.to_string())));
-                    continue;
-                }
-                log::info!("{}", t("config-reloading"));
-
-                let old_lang = config_clone.read().unwrap().meta.language.clone();
-                
-                match Config::from_file(config_path.to_str().unwrap()) {
-                    Ok(new_config) => {
-                        logger::update_level(&new_config.meta.loglevel);
-                        *config_clone.write().unwrap() = new_config;
-                        
-                        let new_lang = config_clone.read().unwrap().meta.language.clone();
-                        if old_lang != new_lang { load_language(&new_lang); }
-
-                        log::info!("{}", t("config-reloaded-success"));
-
-                        let scheduler = CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
-                        if let Err(e) = scheduler.apply_system_tweaks() {
-                            log::error!("{}", t_with_args("config-apply-tweaks-failed", &fluent_args!("error" => e.to_string())));
-                        }
+                let changed_file = match utils::watch_path_for_file(&config_dir) {
+                    Ok(file) => file,
+                    Err(e) => {
+                        log::error!("{}", t_with_args("config-watch-error", &fluent_args!("error" => e.to_string())));
+                        continue;
                     }
-                    Err(load_err) => log::error!("{}", t_with_args("config-reload-fail", &fluent_args!("error" => load_err.to_string()))),
+                };
+                
+                log::info!("{}", t_with_args("config-file-changed", &fluent_args!("file" => changed_file.clone())));
+
+                // 主配置文件变更
+                if changed_file == "config.yaml" || changed_file.is_empty() {
+                    let old_lang = config_clone.read().unwrap().meta.language.clone();
+                    
+                    match Config::from_file(config_path.to_str().unwrap()) {
+                        Ok(new_config) => {
+                            logger::update_level(&new_config.meta.loglevel);
+                            *config_clone.write().unwrap() = new_config;
+                            
+                            let new_lang = config_clone.read().unwrap().meta.language.clone();
+                            if old_lang != new_lang { load_language(&new_lang); }
+
+                            log::info!("{}", t("config-reloaded-success"));
+
+                            let scheduler = CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
+                            if let Err(e) = scheduler.apply_system_tweaks() {
+                                log::error!("{}", t_with_args("config-apply-tweaks-failed", &fluent_args!("error" => e.to_string())));
+                            }
+                        }
+                        Err(load_err) => log::error!("{}", t_with_args("config-reload-fail", &fluent_args!("error" => load_err.to_string()))),
+                    }
+                }
+
+                // CPUSet 配置变更
+                if changed_file == "cpuset.yaml" || changed_file.is_empty() {
+                    let new_cpuset = crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path).unwrap_or_default();
+                    *cpuset_config_watcher.write().unwrap() = new_cpuset;
+                    log::info!("{}", t("cpuset-config-reloaded"));
+                }
+
+                // IdleDive 配置变更
+                if changed_file == "idle_dive.yaml" || changed_file.is_empty() {
+                    let new_idle_dive = crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path).unwrap_or_default();
+                    *idle_dive_config_watcher.write().unwrap() = new_idle_dive;
+                    log::info!("{}", t("idle-dive-config-reloaded"));
+                }
+
+                // TouchBoost 配置变更
+                if changed_file == "touch_boost.yaml" || changed_file.is_empty() {
+                    let new_touch_boost = crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path).unwrap_or_default();
+                    *touch_boost_config_watcher.write().unwrap() = new_touch_boost;
+                    log::info!("{}", t("touch-boost-config-reloaded"));
                 }
             }
         })?;
@@ -171,6 +220,32 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             
             let mut fas_controller = crate::scheduler::fas::FasController::new();
             let mut cpu_governor = crate::scheduler::cpu_load_governor::CpuLoadGovernor::new();
+
+            // CPUSet 管理器：动态调整进程 CPU 核心绑定
+            let cpuset_mgr_config = shared_cpuset_config.clone();
+            let mut cpuset_manager = crate::cpuset_manager::CpuSetManager::new(cpuset_mgr_config);
+            if let Err(e) = cpuset_manager.init() {
+                log::error!("{}", t_with_args("cpuset-init-failed", &fluent_args!("error" => e.to_string())));
+            }
+
+            // CPU 静止下潜：低负载时主动让 CPU 进入更深的 C-state
+            let idle_dive_config = shared_idle_dive_config.clone();
+            let mut idle_dive = crate::idle_dive::IdleDiveController::new(idle_dive_config);
+            if let Err(e) = idle_dive.init() {
+                log::error!("{}", t_with_args("idle-dive-init-failed", &fluent_args!("error" => e.to_string())));
+            }
+
+            // TouchBoost：触摸提频
+            let touch_boost_config = shared_touch_boost_config.clone();
+            let policies_for_touch = get_cpu_policies();
+            let (touch_tx, touch_rx) = mpsc::channel::<bool>();
+            if !policies_for_touch.is_empty() {
+                crate::touch_boost::start_touch_listener_thread(
+                    touch_boost_config,
+                    policies_for_touch,
+                    touch_tx,
+                );
+            }
 
             let rules_path = crate::monitor::config::get_rules_path();
             let mut current_rules = crate::utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path).unwrap_or_default();
@@ -205,6 +280,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
                     }
                 }
+                // 启动时应用当前模式的 CPUSet 分配
+                let _ = cpuset_manager.apply_mode(&current_mode);
             }
             
             for msg in rx {
@@ -216,6 +293,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                         if !is_screen_on {
                             log::info!("{}", t("scheduler-doze-enable"));
+
+                            // CPU 静止下潜：息屏进入更深的下潜状态
+                            idle_dive.enter_doze();
                             
                             // 息屏立刻剥夺 FAS 的频率控制权
                             if current_mode == "fas" {
@@ -237,8 +317,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             doze_cfg.up_rate_limit_ticks = 5;       // 升频速率限制从 3 提高到 5
                             
                             cpu_governor.init_policies(&doze_cfg);
+                            cpuset_manager.on_screen_off();
                         } else {
                             log::info!("{}", t("scheduler-doze-restore"));
+
+                            // CPU 静止下潜：亮屏退出息屏下潜
+                            idle_dive.exit_doze();
                             
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
@@ -252,6 +336,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 cpu_governor.release(); 
                                 *mode_clone.lock().unwrap() = String::new();
                             }
+
+                            // 亮屏恢复 CPUSet 分配（游戏模式使用 performance 策略）
+                            let restore_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&current_mode);
+                            cpuset_manager.on_screen_on(restore_mode);
                         }
                     },
 
@@ -269,6 +357,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             drop(current_mode_lock); 
 
                             let _ = utils::try_write_file(&mode_file_path, mode.as_bytes());
+
+                            // CPUSet 跟随模式切换（游戏模式使用 performance 策略）
+                            // 息屏时跳过：不能覆盖 doze 的核心约束（与 CLG 的 is_screen_on 保护对齐）
+                            if is_screen_on && cpuset_manager.current_mode() != mode {
+                                let cpuset_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&mode);
+                                cpuset_manager.on_mode_change(cpuset_mode);
+                            }
 
                             if mode == "fas" {
                                 // 进游戏：释放 CLG 控制权，激活 FAS
@@ -339,6 +434,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         if cpu_governor.is_active() {
                             cpu_governor.on_load_update(&core_utils);
                         }
+
+                        // CPU 静止下潜：投喂系统平均负载（息屏 DozeDiving 状态下由状态机忽略）。
+                        // 数据缺失时跳过而非合成 0.0，避免把 eBPF 故障误判为"零负载"触发下潜
+                        if !core_utils.is_empty() {
+                            let avg_util =
+                                core_utils.iter().sum::<f32>() / core_utils.len() as f32;
+                            idle_dive.update(avg_util);
+                        }
                     },
 
                     // --- 4. 帧率事件 (eBPF 驱动) ---
@@ -389,6 +492,21 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         fas_controller.policies.clear();
                         fas_suspended_at = None;
                         fas_suspended_package.clear();
+                    }
+                }
+
+                // 非阻塞处理 TouchBoost 事件（监听线程通过 channel 推送）
+                loop {
+                    match touch_rx.try_recv() {
+                        Ok(_touching) => {
+                            // TouchBoost 控制器在监听线程内部管理状态，
+                            // 这里预留接口供未来 FAS/CLG 联动使用
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            log::warn!("{}", t("touch-boost-channel-disconnected"));
+                            break;
+                        }
                     }
                 }
             }

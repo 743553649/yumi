@@ -142,7 +142,6 @@ fun LiquidMeshBackground(
                 )
             )
         }
-        }
 
         content()
     }

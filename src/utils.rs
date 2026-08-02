@@ -70,6 +70,24 @@ pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
     Ok(())
 }
 
+/// 监听目录变更，返回变更的文件名
+pub fn watch_path_for_file<P: AsRef<Path>>(path_to_watch: P) -> Result<String> {
+    let mut inotify = Inotify::init()?;
+    inotify.watches().add(&path_to_watch, WatchMask::CLOSE_WRITE | WatchMask::MODIFY)?;
+    
+    let mut buffer = [0u8; 1024];
+    let events = inotify.read_events_blocking(&mut buffer)?;
+    
+    for event in events {
+        if let Some(name) = event.name {
+            return Ok(name.to_string_lossy().to_string());
+        }
+    }
+    
+    // 如果没有文件名（理论上不会发生），返回空字符串
+    Ok(String::new())
+}
+
 // 通用的读取文件为 f64 的函数
 pub fn read_f64_from_file(path: &str) -> Result<f64> {
     let mut content = String::new();
@@ -174,6 +192,7 @@ impl SysPathExist {
 
 pub struct FastWriter {
     file: Option<File>,
+    // buf 大小限制 cpuset 字符串为 19 字节（如 "0-1,2-3,4-5,6-7" 为 17 字节）
     buf: [u8; 20],
     path: PathBuf,
 }
@@ -207,30 +226,51 @@ impl FastWriter {
     pub fn re_unmount(&self) { Self::try_unmount(&self.path); }
 
     pub fn write_value_force(&mut self, value: u32) -> bool {
-        self.do_write(value)
+        let len = Self::u32_to_buf(value, &mut self.buf);
+        let mut local = [0u8; 20];
+        local[..len].copy_from_slice(&self.buf[..len]);
+        self.do_write_bytes(&local[..len], false)
+    }
+
+    /// 写入字符串值（自动追加换行），用于 cpuset 等需要文本内容的节点
+    /// EINVAL 对文本节点是永久性错误（非法掩码），按 warn 级别记录
+    pub fn write_value_force_str(&mut self, value: &str) -> bool {
+        let bytes = value.as_bytes();
+        if bytes.is_empty() || bytes.len() > self.buf.len() - 1 {
+            log::warn!("write str to {:?} skipped: length overflow ({})", self.path, bytes.len());
+            return false;
+        }
+        self.buf[..bytes.len()].copy_from_slice(bytes);
+        self.buf[bytes.len()] = b'\n';
+        let mut local = [0u8; 20];
+        local[..bytes.len() + 1].copy_from_slice(&self.buf[..bytes.len() + 1]);
+        self.do_write_bytes(&local[..bytes.len() + 1], true)
     }
 
     pub fn is_valid(&self) -> bool { self.file.is_some() }
 
-    fn do_write(&mut self, value: u32) -> bool {
+    fn do_write_bytes(&mut self, bytes: &[u8], text_node: bool) -> bool {
         if let Some(file) = &mut self.file {
-            let len = Self::u32_to_buf(value, &mut self.buf);
             let _ = file.seek(SeekFrom::Start(0));
-            match file.write_all(&self.buf[..len]) {
+            match file.write_all(bytes) {
                 Ok(()) => {
                     true
                 }
                 Err(e) => {
-                    // EINVAL(22): 内核拒绝该频率 (热限频 / 范围收窄)
+                    // EINVAL(22): 对频率节点是热限频/范围收窄（预期瞬态，debug 即可）
+                    //            对文本节点（cpuset 掩码）则是永久性非法值，需要 warn
                     // EBUSY(16): sysfs 节点短暂被占用
-                    // 两者均为预期内的瞬态错误，降级为 debug 并且不缓存，下次 tick 自动重试
                     match e.raw_os_error() {
+                        Some(libc::EINVAL) if text_node => {
+                            log::warn!("{}", t_with_args("sysfs-write-text-failed",
+                                &fluent_args!("value" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())));
+                        }
                         Some(libc::EINVAL) | Some(libc::EBUSY) => {
-                            log::debug!("write freq {} to {:?} skipped: {}", value, self.path, e);
+                            log::debug!("write to {:?} skipped: {}", self.path, e);
                         }
                         _ => {
                             log::warn!("{}", t_with_args("sysfs-write-freq-failed",
-                                &fluent_args!("freq" => value.to_string(), "error" => e.to_string())));
+                                &fluent_args!("freq" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())));
                         }
                     }
                     // 写入失败不更新 last_value，确保下次 tick 会重试
