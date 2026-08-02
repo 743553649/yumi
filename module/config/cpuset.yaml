@@ -1,0 +1,50 @@
+# ════════════════════════════════════════════════════════════════
+#  CPUSet 管理配置
+#
+#  动态调整各 cgroup 组可使用的 CPU 核心，实现前台绑大核、后台绑小核。
+#  cpus 值使用 Linux cpuset 语法，如 "0-3"、"0,2,4"、"0-1,4-7"。
+#  骁龙 8 Elite: CPU 0-1 超大核, CPU 2-7 大核
+# ════════════════════════════════════════════════════════════════
+
+enabled: true
+
+modes:
+  # ── 省电模式：后台限制到大核，减少小任务抢大核 ──
+  powersave:
+    top_app: "0-7"
+    foreground: "0-7"
+    background: "4-7"
+    system_background: "6-7"
+    restricted: "6-7"
+
+  # ── 均衡模式：后台可用更多核心，兼顾流畅与省电 ──
+  balance:
+    top_app: "0-7"
+    foreground: "0-7"
+    background: "2-7"
+    system_background: "4-7"
+    restricted: "6-7"
+
+  # ── 性能模式：所有组都可用全部核心 ──
+  performance:
+    top_app: "0-7"
+    foreground: "0-7"
+    background: "0-7"
+    system_background: "2-7"
+    restricted: "4-7"
+
+  # ── 极速模式：全部核心开放 ──
+  fast:
+    top_app: "0-7"
+    foreground: "0-7"
+    background: "0-7"
+    system_background: "0-7"
+    restricted: "0-7"
+
+  # ── 息屏模式：极致省电，后台限制到大核末端 ──
+  doze:
+    top_app: "2-3"
+    foreground: "2-5"
+    background: "4-7"
+    system_background: "6-7"
+    restricted: "7"

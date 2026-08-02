@@ -1,0 +1,36 @@
+# ════════════════════════════════════════════════════════════════
+#  TouchBoost 配置
+#
+#  触摸屏幕时临时提升 CPU scaling_min_freq，确保触摸操作的
+#  响应速度。松手后频率逐步衰减恢复到正常调度状态。
+#
+#  boost_freqs 按 policy id 索引:
+#    [0] → Policy 0 (超大核), [2] → Policy 2 (大核)
+#    值为 0 或缺失表示不对该集群 boost。
+# ════════════════════════════════════════════════════════════════
+
+enabled: true
+
+# ── 各集群 boost 目标频率 (kHz) ──
+# 骁龙 8 Elite: Policy 0 (超大核 4.32GHz), Policy 2 (大核 3.53GHz)
+boost_freqs:
+  - 2500000   # Policy 0: 超大核 boost 到 2.5GHz
+  - 0         # Policy 1: 不存在，填 0
+  - 2000000   # Policy 2: 大核 boost 到 2.0GHz
+
+# ── 松手后恢复延迟 (ms) ──
+# 防止快速点击时频繁切换
+release_delay_ms: 100
+
+# ── 恢复阶段的衰减步长 (0.0 ~ 1.0) ──
+# 每次 tick 降低当前 boost 频率的此比例
+# 值越大恢复越快，值越小过渡越平滑
+recover_decay: 0.15
+
+# ── 最小 boost 持续时间 (ms) ──
+# 防止误触导致的短暂 boost
+min_boost_duration_ms: 50
+
+# ── 触摸设备路径 ──
+# 留空则自动检测 (扫描 /sys/class/input/ 查找支持 ABS_MT 的设备)
+input_device: ""

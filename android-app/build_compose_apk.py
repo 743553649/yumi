@@ -22,10 +22,6 @@ KEYTOOL = "/data/data/com.termux/files/usr/lib/jvm/java-21-openjdk/bin/keytool"
 JARSIGNER = "/data/data/com.termux/files/usr/lib/jvm/java-21-openjdk/bin/jarsigner"
 
 MERGED_RES_DIR = os.path.join(BUILD_DIR, "res_merged")
-os.makedirs(MERGED_RES_DIR, exist_ok=True)
-
-# Copy app resources first
-shutil.copytree(os.path.join(APP_DIR, "app/src/main/res"), MERGED_RES_DIR, dirs_exist_ok=True)
 
 print("===> [1/7] Initializing build directories...")
 shutil.rmtree(BUILD_DIR, ignore_errors=True)
@@ -35,15 +31,15 @@ os.makedirs(DEX_DIR, exist_ok=True)
 os.makedirs(GEN_DIR, exist_ok=True)
 os.makedirs(MERGED_RES_DIR, exist_ok=True)
 
-# Copy app resources first
+# Copy app resources as base
 shutil.copytree(os.path.join(APP_DIR, "app/src/main/res"), MERGED_RES_DIR, dirs_exist_ok=True)
+
 
 print("===> [2/7] Extracting AAR and JAR dependencies from Gradle Cache...")
 jar_paths = [ANDROID_JAR]
 
 # Collect all jars and aars
 counter = 0
-aar_res_zips = []
 
 EXCLUDED_KEYWORDS = [
     "bundletool", "aaptcompiler", "gradle-plugin",
@@ -58,6 +54,35 @@ ALLOWED_PATH_PATTERNS = [
     "kotlin",
     "kyant"
 ]
+
+# AARs whose res/ has complex style chains referencing undefined attrs/styles
+# These must be excluded from res merging to avoid aapt2 link errors
+SKIP_RES_AARS = [
+    "appcompat", "material-1", "constraintlayout", "drawerlayout",
+    "viewpager2", "recyclerview", "coordinatorlayout", "transition-",
+    "fragment-", "cardview", "core-1", "core-ktx", "emoji2"
+]
+
+# Collect and merge XML resource elements from AARs into a single merged XML file
+import xml.etree.ElementTree as ET
+
+merged_aar_root = ET.Element("resources")
+seen_res_keys = set()
+
+# Pre-populate seen_res_keys from app's own res/values
+app_res_dir = os.path.join(APP_DIR, "app/src/main/res/values")
+if os.path.exists(app_res_dir):
+    for f in os.listdir(app_res_dir):
+        if f.endswith(".xml"):
+            try:
+                tree = ET.parse(os.path.join(app_res_dir, f))
+                for child in tree.getroot():
+                    res_type = child.attrib.get("type", child.tag)
+                    res_name = child.attrib.get("name")
+                    if res_name:
+                        seen_res_keys.add((res_type, res_name))
+            except Exception:
+                pass
 
 for root, dirs, files in os.walk(GRADLE_CACHE):
     for f in files:
@@ -75,7 +100,7 @@ for root, dirs, files in os.walk(GRADLE_CACHE):
                             zip_ref.extract('classes.jar', LIBS_DIR)
                             os.rename(os.path.join(LIBS_DIR, 'classes.jar'), out_jar)
                             
-                            # Strip stub R classes from AAR jar to prevent duplicate stub R class collisions
+                            # Strip stub R classes from AAR jar
                             try:
                                 with zipfile.ZipFile(out_jar, 'r') as j_in:
                                     j_files = j_in.namelist()
@@ -91,23 +116,48 @@ for root, dirs, files in os.walk(GRADLE_CACHE):
 
                             jar_paths.append(out_jar)
 
-                        
-                        # Extract res/ entries from AAR and compile individually
-                        res_entries = [name for name in zip_ref.namelist() if name.startswith("res/")]
-                        if res_entries and ("poolingcontainer" in f or "activity" in f or "lifecycle" in f):
-                            aar_target_res = os.path.join(BUILD_DIR, f"tmp_aar_res_{counter}")
-                            for res_file in res_entries:
-                                zip_ref.extract(res_file, aar_target_res)
-                            res_dir = os.path.join(aar_target_res, "res")
-                            if os.path.exists(res_dir):
-                                out_zip = os.path.join(BUILD_DIR, f"res_aar_{counter}.zip")
-                                cmd_c = ["aapt2", "compile", "--dir", res_dir, "-o", out_zip]
-                                res_c = subprocess.run(cmd_c, capture_output=True, text=True)
-                                if res_c.returncode == 0 and os.path.exists(out_zip):
-                                    aar_res_zips.append(out_zip)
+                        # Merge AAR res/ entries into MERGED_RES_DIR
+                        skip_res = any(pat in f for pat in SKIP_RES_AARS)
+                        if not skip_res:
+                            res_entries = [name for name in zip_ref.namelist() if name.startswith("res/") and name != "res/"]
+                            if res_entries:
+                                tmp_dir = os.path.join(BUILD_DIR, f"tmp_aar_res_{counter}")
+                                for res_file in res_entries:
+                                    zip_ref.extract(res_file, tmp_dir)
+                                res_dir = os.path.join(tmp_dir, "res")
+                                if os.path.exists(res_dir):
+                                    for sub_root, sub_dirs, sub_files in os.walk(res_dir):
+                                        rel_path = os.path.relpath(sub_root, res_dir)
+                                        target_sub = os.path.join(MERGED_RES_DIR, rel_path)
+                                        os.makedirs(target_sub, exist_ok=True)
+                                        for sf in sub_files:
+                                            src_f = os.path.join(sub_root, sf)
+                                            if rel_path == "values" and sf.endswith(".xml"):
+                                                try:
+                                                    tree = ET.parse(src_f)
+                                                    for child in tree.getroot():
+                                                        res_type = child.attrib.get("type", child.tag)
+                                                        res_name = child.attrib.get("name")
+                                                        if res_name:
+                                                            key = (res_type, res_name)
+                                                            if key not in seen_res_keys:
+                                                                seen_res_keys.add(key)
+                                                                merged_aar_root.append(child)
+                                                except Exception as e_xml:
+                                                    print(f"Warning parsing XML {src_f}: {e_xml}")
+                                            elif not rel_path.startswith("values"):
+                                                dst_f = os.path.join(target_sub, sf)
+                                                if not os.path.exists(dst_f):
+                                                    shutil.copy2(src_f, dst_f)
 
                 except Exception as e:
                     print(f"Warning extracting {f}: {e}")
+
+# Write merged AAR values XML file into MERGED_RES_DIR/values/merged_aar_values.xml
+merged_values_file = os.path.join(MERGED_RES_DIR, "values/merged_aar_values.xml")
+os.makedirs(os.path.dirname(merged_values_file), exist_ok=True)
+ET.ElementTree(merged_aar_root).write(merged_values_file, encoding="utf-8", xml_declaration=True)
+
 
 
 # Deduplicate jar_paths by artifact name
@@ -120,7 +170,7 @@ for j in jar_paths:
 
 jar_paths = list(jar_dict.values())
 
-# Strip stub R classes from ALL input jars before d8 to ensure no stub R class conflicts
+# Strip stub R classes from ALL input jars before d8
 def strip_r_from_jar(jpath):
     if not os.path.exists(jpath) or jpath == ANDROID_JAR:
         return jpath
@@ -148,28 +198,47 @@ jar_paths = clean_jar_paths
 classpath_str = ":".join(jar_paths)
 
 
-print("===> [3/7] Compiling Android resources with AAPT2...")
-app_res_zip = os.path.join(BUILD_DIR, "res_app.zip")
-cmd_aapt_compile = ["aapt2", "compile", "--dir", os.path.join(APP_DIR, "app/src/main/res"), "-o", app_res_zip]
+print("===> [3/7] Compiling merged Android resources with AAPT2...")
+merged_res_zip = os.path.join(BUILD_DIR, "res_merged.zip")
+cmd_aapt_compile = ["aapt2", "compile", "--dir", MERGED_RES_DIR, "-o", merged_res_zip]
 subprocess.run(cmd_aapt_compile, check=True)
-
-all_res_zips = [app_res_zip] + aar_res_zips
 
 unaligned_apk = os.path.join(BUILD_DIR, "unaligned.apk")
 manifest_file = os.path.join(APP_DIR, "app/src/main/AndroidManifest.xml")
 extra_pkgs = [
     "androidx.customview.poolingcontainer",
     "androidx.compose.ui",
+    "androidx.compose.ui.graphics",
     "androidx.compose.material3",
+    "androidx.compose.material.icons",
+    "androidx.compose.material.ripple",
     "androidx.compose.foundation",
     "androidx.compose.runtime",
     "androidx.compose.animation",
     "androidx.activity",
+    "androidx.activity.compose",
     "androidx.lifecycle",
     "androidx.lifecycle.runtime",
+    "androidx.lifecycle.runtime.compose",
     "androidx.lifecycle.viewmodel",
+    "androidx.lifecycle.viewmodel.savedstate",
+    "androidx.lifecycle.livedata",
+    "androidx.lifecycle.livedata.core",
+    "androidx.lifecycle.process",
     "androidx.appcompat",
     "androidx.core",
+    "androidx.core.ktx",
+    "androidx.core.viewtree",
+    "androidx.savedstate",
+    "androidx.savedstate.ktx",
+    "androidx.startup",
+    "androidx.emoji2",
+    "androidx.emoji2.viewshelper",
+    "androidx.profileinstaller",
+    "androidx.tracing",
+    "androidx.annotation.experimental",
+    "androidx.arch.core.runtime",
+    "androidx.graphics.path",
     "com.google.android.material"
 ]
 
@@ -178,11 +247,11 @@ cmd_aapt_link = [
     "--manifest", manifest_file,
     "--min-sdk-version", "26",
     "--target-sdk-version", "34",
-    "--auto-add-overlay",
     "--extra-packages", ":".join(extra_pkgs),
     "-o", unaligned_apk,
-    "--java", GEN_DIR
-] + all_res_zips
+    "--java", GEN_DIR,
+    merged_res_zip
+]
 subprocess.run(cmd_aapt_link, check=True)
 
 print("===> [4/7] Compiling Kotlin and Java sources...")

@@ -1,0 +1,32 @@
+# ════════════════════════════════════════════════════════════════
+#  CPU 静止下潜配置 (Idle Dive)
+#
+#  在 CPU 平均负载极低时，通过切换 cpuidle governor 并放宽
+#  latency_us 上限，允许 CPU 进入更深的 C-state 空闲状态，
+#  降低日用轻负载与息屏待机功耗。
+#
+#  latency_us 语义: 允许的 idle 延迟上限 (μs)，值越大允许
+#  进入越深的空闲状态，唤醒延迟也越大。
+# ════════════════════════════════════════════════════════════════
+
+enabled: true
+
+# ── 触发/退出阈值 (0.0 ~ 1.0，系统平均 CPU 利用率) ──
+dive_threshold: 0.15      # 平均负载低于 15% 时触发下潜
+exit_threshold: 0.30      # 平均负载高于 30% 时退出下潜
+
+# ── 延迟设置 (ms) ──
+dive_delay_ms: 2000       # 持续低负载 2 秒后触发
+exit_delay_ms: 500        # 持续高负载 500ms 后退出
+
+# ── cpuidle governor (Android 常见: menu / ladder / powersave) ──
+governors:
+  normal: "menu"          # 正常状态
+  diving: "menu"          # 下潜状态 (主要靠 latency 参数调整深度)
+  doze: "menu"            # 息屏状态
+
+# ── idle latency 参数 (μs) ──
+params:
+  normal_latency_us: 100   # 正常状态允许的 idle 延迟
+  diving_latency_us: 500   # 下潜状态允许的 idle 延迟 (更深的 C-state)
+  doze_latency_us: 1000    # 息屏状态允许的 idle 延迟 (最深)
