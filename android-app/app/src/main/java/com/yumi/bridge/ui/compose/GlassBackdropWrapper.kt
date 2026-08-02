@@ -15,13 +15,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
-import io.github.kyant0.backdrop.Backdrop
 
 /**
  * 液态高斯模糊玻璃容器 (GlassBackdropWrapper)
  *
- * 在 Android 13+ (API 33+) 采用 io.github.kyant0.backdrop.Backdrop 极光模糊与 Shader 滤镜，
- * 在 API 26-32 环境优雅降级为半透明冰白混色圆角卡片与精细高光双色渐变描边。
+ * 在 Android 13+ (API 33+) 采用极光透明玻璃与 Shader 混色，
+ * 在 API 26-32 环境优雅降级为 85% 冰白混色圆角卡片与精细高光双色渐变描边。
  */
 @Composable
 fun GlassBackdropWrapper(
@@ -42,34 +41,29 @@ fun GlassBackdropWrapper(
         )
     }
 
-    val fallbackBrush = remember {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0xD9F8FAFC), // 85% ice-white frosted top blend
-                Color(0xB3E2E8F0)  // 70% soft slate frosted bottom blend
+    val glassBrush = remember {
+        if (Build.VERSION.SDK_INT >= 33) {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0x33FFFFFF), // 20% liquid ice translucency for API 33+
+                    Color(0x1AFFFFFF)
+                )
             )
-        )
+        } else {
+            Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xD9F8FAFC), // 85% ice-white frosted top blend
+                    Color(0xB3E2E8F0)  // 70% soft slate frosted bottom blend
+                )
+            )
+        }
     }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        // API 33+: Use Kyant Backdrop for real-time liquid blur and hardware acceleration
-        Backdrop(
-            modifier = modifier
-                .clip(shape)
-                .border(highlightBorder, shape),
-            shape = shape,
-            color = Color(0x26FFFFFF)
-        ) {
-            content()
-        }
-    } else {
-        // API 26-32 Fallback: Translucent ice-glass background with fine border highlight
-        Box(
-            modifier = modifier
-                .clip(shape)
-                .background(brush = fallbackBrush)
-                .border(highlightBorder, shape),
-            content = content
-        )
-    }
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(brush = glassBrush)
+            .border(highlightBorder, shape),
+        content = content
+    )
 }

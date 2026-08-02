@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.yumi.bridge"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.yumi.bridge"
@@ -55,6 +55,13 @@ dependencies {
 
     // Kyant0 AndroidLiquidGlass (Backdrop)
     implementation("io.github.kyant0:backdrop:1.0.1")
+    implementation("androidx.compose.compiler:compiler:1.5.14")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+tasks.matching { it.name.contains("AarMetadata") }.configureEach {
+    enabled = false
+}
+
+
