@@ -19,6 +19,36 @@ import androidx.compose.ui.graphics.Color
 import kotlin.math.cos
 import kotlin.math.sin
 
+private val Blob1Colors = listOf(
+    Color(0xFF3F51B5).copy(alpha = 0.50f),
+    Color(0xFF1A237E).copy(alpha = 0.22f),
+    Color.Transparent
+)
+
+private val Blob2Colors = listOf(
+    Color(0xFF00E5FF).copy(alpha = 0.42f),
+    Color(0xFF00838F).copy(alpha = 0.18f),
+    Color.Transparent
+)
+
+private val Blob3Colors = listOf(
+    Color(0xFF7C4DFF).copy(alpha = 0.45f),
+    Color(0xFF4A148C).copy(alpha = 0.20f),
+    Color.Transparent
+)
+
+private val Blob4Colors = listOf(
+    Color(0xFF00E676).copy(alpha = 0.38f),
+    Color(0xFF004D40).copy(alpha = 0.15f),
+    Color.Transparent
+)
+
+private val ScrimColors = listOf(
+    Color(0x66080912),
+    Color(0x22080912),
+    Color(0x88080912)
+)
+
 /**
  * 动态彩色流体天幕背景组件 (LiquidMeshBackground)
  * 绘制包含 4 个平滑漂浮弥散光斑 (Deep Indigo, Neon Cyan, Electric Violet, Emerald) 的全屏 Canvas 动态极光流体背景。
@@ -55,11 +85,7 @@ fun LiquidMeshBackground(
             val b1Radius = w * 0.70f
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF3F51B5).copy(alpha = 0.50f),
-                        Color(0xFF1A237E).copy(alpha = 0.22f),
-                        Color.Transparent
-                    ),
+                    colors = Blob1Colors,
                     center = Offset(b1X, b1Y),
                     radius = b1Radius
                 ),
@@ -73,11 +99,7 @@ fun LiquidMeshBackground(
             val b2Radius = w * 0.60f
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF00E5FF).copy(alpha = 0.42f),
-                        Color(0xFF00838F).copy(alpha = 0.18f),
-                        Color.Transparent
-                    ),
+                    colors = Blob2Colors,
                     center = Offset(b2X, b2Y),
                     radius = b2Radius
                 ),
@@ -91,11 +113,7 @@ fun LiquidMeshBackground(
             val b3Radius = w * 0.65f
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF7C4DFF).copy(alpha = 0.45f),
-                        Color(0xFF4A148C).copy(alpha = 0.20f),
-                        Color.Transparent
-                    ),
+                    colors = Blob3Colors,
                     center = Offset(b3X, b3Y),
                     radius = b3Radius
                 ),
@@ -109,11 +127,7 @@ fun LiquidMeshBackground(
             val b4Radius = w * 0.55f
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF00E676).copy(alpha = 0.38f),
-                        Color(0xFF004D40).copy(alpha = 0.15f),
-                        Color.Transparent
-                    ),
+                    colors = Blob4Colors,
                     center = Offset(b4X, b4Y),
                     radius = b4Radius
                 ),
@@ -124,13 +138,10 @@ fun LiquidMeshBackground(
             // Top-to-bottom dark gradient scrim to elevate foreground contrast & depth
             drawRect(
                 brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0x66080912),
-                        Color(0x22080912),
-                        Color(0x88080912)
-                    )
+                    colors = ScrimColors
                 )
             )
+        }
         }
 
         content()

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -28,16 +29,27 @@ fun GlassBackdropWrapper(
     shape: Shape = RoundedCornerShape(24.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    val highlightBorder = BorderStroke(
-        width = 1.dp,
-        brush = Brush.linearGradient(
-            colors = listOf(
-                Color(0x66FFFFFF), // Ice white top-left highlight
-                Color(0x1AFFFFFF), // Mid translucent body
-                Color(0x4000E5FF)  // Neon cyan bottom-right reflection
+    val highlightBorder = remember {
+        BorderStroke(
+            width = 1.dp,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0x66FFFFFF), // Ice white top-left highlight
+                    Color(0x1AFFFFFF), // Mid translucent body
+                    Color(0x4000E5FF)  // Neon cyan bottom-right reflection
+                )
             )
         )
-    )
+    }
+
+    val fallbackBrush = remember {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xD9F8FAFC), // 85% ice-white frosted top blend
+                Color(0xB3E2E8F0)  // 70% soft slate frosted bottom blend
+            )
+        )
+    }
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // API 33+: Use Kyant Backdrop for real-time liquid blur and hardware acceleration
@@ -55,14 +67,7 @@ fun GlassBackdropWrapper(
         Box(
             modifier = modifier
                 .clip(shape)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0x26FFFFFF), // Ice white frosted top
-                            Color(0x1A0F172A)  // Deep slate translucent bottom
-                        )
-                    )
-                )
+                .background(brush = fallbackBrush)
                 .border(highlightBorder, shape),
             content = content
         )
