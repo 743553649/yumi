@@ -77,8 +77,8 @@ fun updateHomeScreenState(
     uptimeText: String
 ) {
     globalHomeState.currentMode = currentMode
-    globalHomeState.cpuFreqs = cpuFreqs
-    globalHomeState.cpuUsages = cpuUsages
+    globalHomeState.cpuFreqs = cpuFreqs.copyOf()
+    globalHomeState.cpuUsages = cpuUsages.copyOf()
     globalHomeState.ramPercent = ramPercent
     globalHomeState.ramDetailText = ramDetailText
     globalHomeState.uptimeText = uptimeText
