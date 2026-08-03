@@ -223,8 +223,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
             // CPUSet 管理器：动态调整进程 CPU 核心绑定
             let cpuset_mgr_config = shared_cpuset_config.clone();
-            let mut cpuset_manager = crate::cpuset_manager::CpuSetManager::new(cpuset_mgr_config);
-            if let Err(e) = cpuset_manager.init() {
+            let cpuset_manager = Arc::new(RwLock::new(crate::cpuset_manager::CpuSetManager::new(cpuset_mgr_config)));
+            if let Err(e) = cpuset_manager.write().unwrap().init() {
                 log::error!("{}", t_with_args("cpuset-init-failed", &fluent_args!("error" => e.to_string())));
             }
 
@@ -281,7 +281,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     }
                 }
                 // 启动时应用当前模式的 CPUSet 分配
-                let _ = cpuset_manager.apply_mode(&current_mode);
+                let _ = cpuset_manager.write().unwrap().apply_mode(&current_mode);
             }
             
             for msg in rx {
@@ -317,7 +317,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             doze_cfg.up_rate_limit_ticks = 5;       // 升频速率限制从 3 提高到 5
                             
                             cpu_governor.init_policies(&doze_cfg);
-                            cpuset_manager.on_screen_off();
+                            cpuset_manager.write().unwrap().on_screen_off();
                         } else {
                             log::info!("{}", t("scheduler-doze-restore"));
 
@@ -339,7 +339,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             // 亮屏恢复 CPUSet 分配（游戏模式使用 performance 策略）
                             let restore_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&current_mode);
-                            cpuset_manager.on_screen_on(restore_mode);
+                            cpuset_manager.write().unwrap().on_screen_on(restore_mode);
                         }
                     },
 
@@ -360,9 +360,16 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             // CPUSet 跟随模式切换（游戏模式使用 performance 策略）
                             // 息屏时跳过：不能覆盖 doze 的核心约束（与 CLG 的 is_screen_on 保护对齐）
-                            if is_screen_on && cpuset_manager.current_mode() != mode {
+                            if is_screen_on && cpuset_manager.read().unwrap().current_mode() != mode {
                                 let cpuset_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&mode);
-                                cpuset_manager.on_mode_change(cpuset_mode);
+                                cpuset_manager.write().unwrap().on_mode_change(cpuset_mode);
+                            }
+
+                            if mode != "fas" {
+                                let cpuset_mgr = cpuset_manager.clone();
+                                std::thread::spawn(move || {
+                                    cpuset_mgr.read().unwrap().apply_ui_qos(pid);
+                                });
                             }
 
                             if mode == "fas" {

@@ -293,7 +293,73 @@ impl CpuSetManager {
     pub fn current_mode(&self) -> &str {
         &self.current_mode
     }
+
+    /// 对指定线程名分类 QoS 分组
+    pub fn classify_thread_qos(comm: &str) -> Option<ThreadQosGroup> {
+        let comm_trimmed = comm.trim();
+        if comm_trimmed == "UI Thread"
+            || comm_trimmed == "RenderThread"
+            || comm_trimmed.starts_with("mali-")
+            || comm_trimmed.starts_with("KGSL-")
+        {
+            Some(ThreadQosGroup::Foreground)
+        } else if comm_trimmed.contains("async")
+            || comm_trimmed.contains("log")
+            || comm_trimmed.contains("Rx")
+        {
+            Some(ThreadQosGroup::SystemBackground)
+        } else {
+            None
+        }
+    }
+
+    /// 读取前台进程的线程并分类绑定 QoS
+    pub fn apply_ui_qos(&self, pid: i32) {
+        if pid <= 0 {
+            return;
+        }
+        let cpuset_root = if !self.cpuset_root.as_os_str().is_empty() {
+            self.cpuset_root.clone()
+        } else if let Ok(root) = Self::detect_cpuset_root() {
+            root
+        } else {
+            return;
+        };
+
+        let task_dir = format!("/proc/{}/task", pid);
+        let entries = match std::fs::read_dir(&task_dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+
+        let fg_tasks = cpuset_root.join("foreground/tasks");
+        let sys_bg_tasks = cpuset_root.join("system-background/tasks");
+
+        for entry in entries.flatten() {
+            let tid_str = entry.file_name();
+            let comm_path = entry.path().join("comm");
+            if let Ok(comm) = std::fs::read_to_string(comm_path) {
+                match Self::classify_thread_qos(&comm) {
+                    Some(ThreadQosGroup::Foreground) => {
+                        let _ = std::fs::write(&fg_tasks, tid_str.to_string_lossy().as_bytes());
+                    }
+                    Some(ThreadQosGroup::SystemBackground) => {
+                        let _ = std::fs::write(&sys_bg_tasks, tid_str.to_string_lossy().as_bytes());
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
 }
+
+/// 线程 QoS 隔离分组
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThreadQosGroup {
+    Foreground,
+    SystemBackground,
+}
+
 
 impl CpuSetPolicy {
     /// 根据组名返回对应的 cpuset 值
@@ -380,4 +446,42 @@ modes:
         assert_eq!(policy.value_for_group("background").unwrap(), "2-7");
         assert!(policy.value_for_group("unknown").is_none());
     }
+
+    /// 验证线程 QoS 分割逻辑
+    #[test]
+    fn test_classify_thread_qos() {
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("UI Thread"),
+            Some(ThreadQosGroup::Foreground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("RenderThread"),
+            Some(ThreadQosGroup::Foreground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("mali-cmar-worker"),
+            Some(ThreadQosGroup::Foreground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("KGSL-3D-Context"),
+            Some(ThreadQosGroup::Foreground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("async_task_1"),
+            Some(ThreadQosGroup::SystemBackground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("logcat_writer"),
+            Some(ThreadQosGroup::SystemBackground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("RxCachedThreadS"),
+            Some(ThreadQosGroup::SystemBackground)
+        );
+        assert_eq!(
+            CpuSetManager::classify_thread_qos("other_worker"),
+            None
+        );
+    }
 }
+
