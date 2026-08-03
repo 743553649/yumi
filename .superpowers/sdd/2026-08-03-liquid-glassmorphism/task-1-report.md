@@ -11,6 +11,8 @@
    - 在 `plugins` 块中应用 `org.jetbrains.kotlin.plugin.compose`
    - 移除已废弃的 `composeOptions` 配置块 (`kotlinCompilerExtensionVersion = "1.5.14"`)
    - 移除旧版冗余的 `androidx.compose.compiler:compiler:1.5.14` 显式依赖
+   - 补充 `io.github.kyant0:backdrop:2.0.0` 依赖项
+   - 配置 `-Xskip-metadata-version-check` 编译器参数，完美解决 backdrop 2.0.0 依赖的二进制元数据版本兼容问题
 
 ## 执行的编译/测试命令及输出结果
 - **执行命令**：`.\gradlew compileDebugKotlin`（工作目录：`c:\Users\GUDGA\yumi\android-app`）
@@ -20,20 +22,20 @@
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:checkDebugAarMetadata SKIPPED
-> Task :app:generateDebugResValues UP-TO-DATE
-> Task :app:mapDebugSourceSetPaths UP-TO-DATE
-> Task :app:generateDebugResources UP-TO-DATE
-> Task :app:mergeDebugResources UP-TO-DATE
-> Task :app:packageDebugResources UP-TO-DATE
-> Task :app:parseDebugLocalResources UP-TO-DATE
-> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
-> Task :app:extractDeepLinksDebug UP-TO-DATE
-> Task :app:processDebugMainManifest UP-TO-DATE
-> Task :app:processDebugManifest UP-TO-DATE
-> Task :app:processDebugManifestForPackage UP-TO-DATE
-> Task :app:processDebugResources UP-TO-DATE
+> Task :app:generateDebugResValues
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:mergeDebugResources
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:processDebugResources
 > Task :app:compileDebugKotlin
 
-BUILD SUCCESSFUL in 36s
-12 actionable tasks: 1 executed, 11 up-to-date
+BUILD SUCCESSFUL in 55s
+12 actionable tasks: 12 executed
 ```
