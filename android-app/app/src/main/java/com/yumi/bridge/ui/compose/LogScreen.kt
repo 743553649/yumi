@@ -21,14 +21,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yumi.bridge.MainActivity
+import com.yumi.bridge.R
 import com.yumi.bridge.ui.theme.YumiTheme
 
 /**
@@ -48,8 +52,8 @@ fun LogScreen(
     state: HomeUiState,
     onClearClick: () -> Unit
 ) {
-    val filteredLogs = remember(state.realLogs.toList(), state.currentFilterLevel) {
-        filterLogs(state.realLogs, state.currentFilterLevel)
+    val filteredLogs by remember(state.currentFilterLevel) {
+        derivedStateOf { filterLogs(state.realLogs, state.currentFilterLevel) }
     }
 
     YumiTheme {
@@ -91,13 +95,13 @@ private fun LogHeader(onClearClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "运行日志",
+            text = stringResource(R.string.section_terminal),
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF0F172A)
         )
         TextButton(onClick = onClearClick) {
-            Text(text = "清除", color = Color(0xFF0284C7))
+            Text(text = stringResource(R.string.btn_clear_log), color = Color(0xFF0284C7))
         }
     }
 }
@@ -139,11 +143,11 @@ fun LogFilterChips(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val filters = listOf(
-            MainActivity.LEVEL_ALL to "全部",
-            MainActivity.LEVEL_DEBUG to "调试",
-            MainActivity.LEVEL_INFO to "信息",
-            MainActivity.LEVEL_WARN to "警告",
-            MainActivity.LEVEL_ERROR to "错误"
+            MainActivity.LEVEL_ALL to stringResource(R.string.log_level_all),
+            MainActivity.LEVEL_DEBUG to stringResource(R.string.log_level_debug),
+            MainActivity.LEVEL_INFO to stringResource(R.string.log_level_info),
+            MainActivity.LEVEL_WARN to stringResource(R.string.log_level_warn),
+            MainActivity.LEVEL_ERROR to stringResource(R.string.log_level_error)
         )
 
         filters.forEach { (level, title) ->

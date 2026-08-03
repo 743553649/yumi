@@ -44,6 +44,7 @@
     <string name="app_mode_performance">性能 (Performance)</string>
     <string name="app_mode_fast">极速 (Fast)</string>
     <string name="app_mode_fas">FAS 帧感知 (FAS)</string>
+    <string name="select_mode_title">选择调度模式</string>
     <!-- 首页 CPU 看板与 Widget 字符串 -->
     <string name="section_cpu_dashboard">核心与调度引擎</string>
     <string name="cpu_arch_title">CPU 集群状态</string>

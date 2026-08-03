@@ -215,10 +215,7 @@ fun attachBackgroundHost(composeView: ComposeView) {
     }
 }
 
-/**
- * Initialize ComposeView render tree.
- */
-fun attachHomeScreen(
+fun attachMainScreen(
     composeView: ComposeView,
     onModeSelectedListener: OnModeSelectedListener,
     onAppModeChangedListener: AppRuleChangeListener,
@@ -229,46 +226,13 @@ fun attachHomeScreen(
     )
     composeView.setContent {
         YumiTheme {
-            androidx.compose.material3.Scaffold(
-                bottomBar = {
-                    GlassBackdropWrapper {
-                        NavigationBar(
-                            containerColor = Color.Transparent,
-                            tonalElevation = 0.dp
-                        ) {
-                            val tabs = listOf("首页" to 0, "日志" to 1, "应用" to 2)
-                            tabs.forEach { (title, index) ->
-                                NavigationBarItem(
-                                    selected = globalHomeState.activeTab == index,
-                                    onClick = { 
-                                        globalHomeState.activeTab = index
-                                        onTabSelectedListener.onTabSelected(index)
-                                    },
-                                    icon = { Text(title) }
-                                )
-                            }
-                        }
-                    }
-                },
-                containerColor = Color.Transparent
-            ) { padding ->
-                Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-                    when (globalHomeState.activeTab) {
-                        0 -> HomeScreen(
-                            state = globalHomeState,
-                            onModeSelected = { onModeSelectedListener.onModeSelected(it) }
-                        )
-                        1 -> LogScreen(
-                            state = globalHomeState,
-                            onClearClick = { globalHomeState.realLogs.clear() }
-                        )
-                        2 -> AppRulesScreen(
-                            state = globalHomeState,
-                            onAppModeChanged = { pkg, mode -> onAppModeChangedListener.onAppModeChanged(pkg, mode) }
-                        )
-                    }
-                }
-            }
+            MainNavigationScreen(
+                state = globalHomeState,
+                onModeSelected = { onModeSelectedListener.onModeSelected(it) },
+                onAppModeChanged = { pkg, mode -> onAppModeChangedListener.onAppModeChanged(pkg, mode) },
+                onClearLogs = { globalHomeState.realLogs.clear() },
+                onTabSelected = { onTabSelectedListener.onTabSelected(it) }
+            )
         }
     }
 }

@@ -17,12 +17,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import com.yumi.bridge.MainActivity
+import com.yumi.bridge.R
 import com.yumi.bridge.ui.theme.YumiTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,8 +65,8 @@ fun AppRulesScreen(
             )
 
             GlassBackdropWrapper(modifier = Modifier.weight(1f)) {
-                val filteredApps = remember(state.installedApps.toList(), state.appSearchQuery) {
-                    filterAppRules(state.installedApps, state.appSearchQuery)
+                val filteredApps by remember(state.appSearchQuery) {
+                    derivedStateOf { filterAppRules(state.installedApps, state.appSearchQuery) }
                 }
                 
                 LazyColumn(
@@ -89,7 +91,7 @@ private fun AppRulesSearchCard(
     GlassBackdropWrapper {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "应用规则管理",
+                text = stringResource(id = R.string.app_rules_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF0F172A),
@@ -99,7 +101,7 @@ private fun AppRulesSearchCard(
                 value = query,
                 onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("搜索应用名或包名") },
+                placeholder = { Text(stringResource(id = R.string.search_apps_hint)) },
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedContainerColor = Color.Transparent,
@@ -170,15 +172,14 @@ fun AppIcon(packageName: String, appName: String) {
     
     LaunchedEffect(packageName) {
         iconDrawable = null
-        withContext(Dispatchers.IO) {
+        val drawable = withContext(Dispatchers.IO) {
             try {
-                val pm = context.packageManager
-                val drawable = pm.getApplicationIcon(packageName)
-                iconDrawable = drawable
-            } catch (e: PackageManager.NameNotFoundException) {
-                // Ignore missing package icon
+                context.packageManager.getApplicationIcon(packageName)
+            } catch (e: Exception) {
+                null
             }
         }
+        iconDrawable = drawable
     }
     
     Box(
@@ -214,12 +215,12 @@ fun AppIcon(packageName: String, appName: String) {
 @Composable
 fun ModeButton(mode: String, onClick: () -> Unit) {
     val (text, color) = when (mode.lowercase()) {
-        "powersave" -> "省电 (Powersave)" to Color(0xFF16A34A)
-        "balance" -> "均衡 (Balance)" to Color(0xFF0284C7)
-        "performance" -> "性能 (Performance)" to Color(0xFFEA580C)
-        "fast" -> "极速 (Fast)" to Color(0xFFDC2626)
-        "fas" -> "FAS 帧感知 (FAS)" to Color(0xFF9333EA)
-        else -> "跟随全局 (Default)" to Color(0xFF475569)
+        "powersave" -> stringResource(R.string.app_mode_powersave) to Color(0xFF16A34A)
+        "balance" -> stringResource(R.string.app_mode_balance) to Color(0xFF0284C7)
+        "performance" -> stringResource(R.string.app_mode_performance) to Color(0xFFEA580C)
+        "fast" -> stringResource(R.string.app_mode_fast) to Color(0xFFDC2626)
+        "fas" -> stringResource(R.string.app_mode_fas) to Color(0xFF9333EA)
+        else -> stringResource(R.string.app_mode_default) to Color(0xFF475569)
     }
     
     Text(
@@ -241,12 +242,12 @@ fun ModeSelectionDialog(
     onModeSelected: (String) -> Unit
 ) {
     val modes = listOf(
-        "default" to "跟随全局 (Default)",
-        "powersave" to "省电 (Powersave)",
-        "balance" to "均衡 (Balance)",
-        "performance" to "性能 (Performance)",
-        "fast" to "极速 (Fast)",
-        "fas" to "FAS 帧感知 (FAS)"
+        "default" to stringResource(R.string.app_mode_default),
+        "powersave" to stringResource(R.string.app_mode_powersave),
+        "balance" to stringResource(R.string.app_mode_balance),
+        "performance" to stringResource(R.string.app_mode_performance),
+        "fast" to stringResource(R.string.app_mode_fast),
+        "fas" to stringResource(R.string.app_mode_fas)
     )
     
     Dialog(onDismissRequest = onDismiss) {
@@ -258,7 +259,7 @@ fun ModeSelectionDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "选择调度模式",
+                    text = stringResource(R.string.select_mode_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)

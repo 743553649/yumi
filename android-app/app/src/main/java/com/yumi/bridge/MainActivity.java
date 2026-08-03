@@ -67,12 +67,12 @@ import androidx.savedstate.ViewTreeSavedStateRegistryOwner;
 
 public class MainActivity extends ComponentActivity {
 
-    // Tab 常量
+    // Tab constants
     public static final int TAB_HOME = 0;
     public static final int TAB_LOGS = 1;
     public static final int TAB_APPS = 2;
 
-    // 日志等级常量
+    // Log level constants
     public static final int LEVEL_ALL = 0;
     public static final int LEVEL_DEBUG = 1;
     public static final int LEVEL_INFO = 2;
@@ -106,39 +106,10 @@ public class MainActivity extends ComponentActivity {
     private View rootContainer;
     private ComposeView composeBackgroundHost;
     private ComposeView composeContentHost;
-    private View tabHomeContainer;
-    private View tabLogsContainer;
-    private View tabAppsContainer;
 
-    // 底部导航栏 View
-    private LinearLayout btnTabHome;
-    private LinearLayout btnTabLogs;
-    private LinearLayout btnTabApps;
-    private ImageView ivTabHome;
-    private ImageView ivTabLogs;
-    private ImageView ivTabApps;
-    private TextView tvTabHome;
-    private TextView tvTabLogs;
-    private TextView tvTabApps;
-
-    // 应用规则管理 View
-    private EditText etSearchApp;
-    private LinearLayout llAppsListContainer;
-
-    // 日志相关 View
-    private TextView tvLog;
-    private ScrollView svLogScroll;
-    private TextView btnClearLog;
-
-    // 5 级筛选 Chip 控件
-    private TextView btnLevelAll;
-    private TextView btnLevelDebug;
-    private TextView btnLevelInfo;
-    private TextView btnLevelWarn;
-    private TextView btnLevelError;
     private int currentFilterLevel = LEVEL_ALL;
 
-    // 真实模块运行日志缓存列表
+    // Real module runtime log cache list
     private final List<RealLogEntry> realLogs = new ArrayList<>();
 
     private final long[] prevCpuTotal = new long[8];
@@ -180,25 +151,22 @@ public class MainActivity extends ComponentActivity {
 
         initViews();
         setupFullscreenAndInsets();
-        setupNavigationTabs();
-        setupListeners();
-        setupNestedScrollFix();
         loadAppRulesFromYaml();
 
-        // 绑定 Compose 全局天幕背景与首页视图
+        // Attach Compose global backdrop background and main screen view
         if (composeBackgroundHost != null) {
             ComposeHomeBridgeKt.attachBackgroundHost(composeBackgroundHost);
         }
-        ComposeHomeBridgeKt.attachHomeScreen(composeContentHost, this::setGlobalMode, this::onAppModeChanged, this::switchTab);
+        ComposeHomeBridgeKt.attachMainScreen(composeContentHost, this::setGlobalMode, this::onAppModeChanged, this::onTabSelected);
 
-        // 初始化通信与拉取模式日志
+        // Initialize IPC communication and fetch mode logs
         sendCommand("get_mode");
         fetchRealModuleLogs();
 
-        // 默认显示首页 Tab
-        switchTab(TAB_HOME);
+        // Default to home tab
+        onTabSelected(TAB_HOME);
 
-        // 启动后台轮询 (1 秒刷新)
+        // Start background polling (1 second refresh)
         pollHandler.postDelayed(logPollRunnable, 2000);
     }
 
@@ -206,34 +174,6 @@ public class MainActivity extends ComponentActivity {
         rootContainer = findViewById(R.id.rootContainer);
         composeBackgroundHost = findViewById(R.id.composeBackgroundHost);
         composeContentHost = findViewById(R.id.composeContentHost);
-        /* 
-        tabHomeContainer = findViewById(R.id.tabHomeContainer);
-        tabLogsContainer = findViewById(R.id.tabLogsContainer);
-        tabAppsContainer = findViewById(R.id.tabAppsContainer);
-
-        btnTabHome = findViewById(R.id.btnTabHome);
-        btnTabLogs = findViewById(R.id.btnTabLogs);
-        btnTabApps = findViewById(R.id.btnTabApps);
-        ivTabHome = findViewById(R.id.ivTabHome);
-        ivTabLogs = findViewById(R.id.ivTabLogs);
-        ivTabApps = findViewById(R.id.ivTabApps);
-        tvTabHome = findViewById(R.id.tvTabHome);
-        tvTabLogs = findViewById(R.id.tvTabLogs);
-        tvTabApps = findViewById(R.id.tvTabApps);
-
-        etSearchApp = findViewById(R.id.etSearchApp);
-        llAppsListContainer = findViewById(R.id.llAppsListContainer);
-
-        tvLog = findViewById(R.id.tvLog);
-        svLogScroll = findViewById(R.id.svLogScroll);
-        btnClearLog = findViewById(R.id.btnClearLog);
-
-        btnLevelAll = findViewById(R.id.btnLevelAll);
-        btnLevelDebug = findViewById(R.id.btnLevelDebug);
-        btnLevelInfo = findViewById(R.id.btnLevelInfo);
-        btnLevelWarn = findViewById(R.id.btnLevelWarn);
-        btnLevelError = findViewById(R.id.btnLevelError);
-        */
     }
 
     private String readProcMemInfo() {
@@ -292,7 +232,7 @@ public class MainActivity extends ComponentActivity {
         int[] usagePercents = new int[8];
         long[] curFreqs = new long[8];
 
-        // 1. RAM & Swap 内存读取 (/proc/meminfo)
+        // 1. Read RAM & Swap memory stats (/proc/meminfo)
         try {
             String memInfo = readProcMemInfo();
             SystemStatsParser.MemoryStats memStats = SystemStatsParser.parseMemInfo(memInfo);
@@ -302,7 +242,7 @@ public class MainActivity extends ComponentActivity {
             swapDetailText = memStats.getSwapDetailText();
         } catch (Exception ignored) {}
 
-        // 2. 电池实时信息读取 (Level, Power, Temperature)
+        // 2. Read real-time battery stats (Level, Power, Temperature)
         try {
             long currentRaw = 0;
             long voltageUv = 4000000L;
@@ -330,7 +270,7 @@ public class MainActivity extends ComponentActivity {
             batteryPowerText = SystemStatsParser.formatPowerWatts(currentRaw, voltageUv);
         } catch (Exception ignored) {}
 
-        // 3. 系统运行时长 (格式：天:小时:分钟)
+        // 3. System uptime (format: Days:Hours:Minutes)
         try {
             long elapsedSec = android.os.SystemClock.elapsedRealtime() / 1000;
             long days = elapsedSec / 86400;
@@ -339,7 +279,7 @@ public class MainActivity extends ComponentActivity {
             uptimeText = String.format(Locale.getDefault(), "%d天:%02d小时:%02d分钟", days, hours, mins);
         } catch (Exception ignored) {}
 
-        // 4. 8 张 CPU 核心动态数据读取
+        // 4. Read 8 CPU core dynamic stats
         try {
             readCpuStatsAndFreqs(usagePercents, curFreqs);
         } catch (Exception ignored) {}
@@ -434,109 +374,11 @@ public class MainActivity extends ComponentActivity {
         );
     }
 
-    private void setupNavigationTabs() {
-        /*
-        btnTabHome.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                switchTab(TAB_HOME);
-            }
-        });
-
-        btnTabLogs.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                switchTab(TAB_LOGS);
-            }
-        });
-
-        btnTabApps.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                switchTab(TAB_APPS);
-            }
-        });
-        */
-    }
-
-    private void switchTab(int tabIndex) {
+    private void onTabSelected(int tabIndex) {
         activeTab = tabIndex;
         if (tabIndex == TAB_APPS && allAppItems.isEmpty()) {
             loadInstalledAppsList();
         }
-    }
-
-    private void updateTabStyle(TextView tv, ImageView iv, boolean selected) {
-        if (selected) {
-            tv.setTextColor(getResources().getColor(R.color.ios_text_primary));
-            iv.setAlpha(1.0f);
-        } else {
-            tv.setTextColor(getResources().getColor(R.color.ios_text_muted));
-            iv.setAlpha(0.5f);
-        }
-    }
-
-    private void setupNestedScrollFix() {
-        /*
-        svLogScroll.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    if (v.canScrollVertically(1) || v.canScrollVertically(-1)) {
-                        v.getParent().requestDisallowInterceptTouchEvent(true);
-                    }
-                }
-                return false;
-            }
-        });
-        */
-    }
-
-    private void setupListeners() {
-        /*
-        btnClearLog.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                realLogs.clear();
-                renderLogDisplay();
-            }
-        });
-
-        btnLevelAll.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { setLogLevelFilter(LEVEL_ALL); }
-        });
-        btnLevelDebug.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { setLogLevelFilter(LEVEL_DEBUG); }
-        });
-        btnLevelInfo.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { setLogLevelFilter(LEVEL_INFO); }
-        });
-        btnLevelWarn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { setLogLevelFilter(LEVEL_WARN); }
-        });
-        btnLevelError.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) { setLogLevelFilter(LEVEL_ERROR); }
-        });
-
-        etSearchApp.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                currentSearchQuery = s != null ? s.toString().trim().toLowerCase() : "";
-                renderAppRulesList();
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {}
-        });
-        */
     }
 
     private void setGlobalMode(String mode) {
@@ -562,7 +404,7 @@ public class MainActivity extends ComponentActivity {
         sendCommand("set_app_mode " + packageName + " " + mode);
     }
 
-    // ==================== 应用规则管理 (App Rules) ====================
+    // ==================== App Rules Management ====================
 
     private void loadAppRulesFromYaml() {
         appModesMap.clear();
@@ -611,10 +453,27 @@ public class MainActivity extends ComponentActivity {
 
     private void loadInstalledAppsList() {
         allAppItems.clear();
+        Map<String, String> appNameMap = getInstalledAppsMap();
+
+        scanAppsViaRoot(appNameMap);
+
+        // Fallback preset app list when all previous scans return empty
+        if (appNameMap.isEmpty()) {
+            appNameMap.put("com.tencent.tmgp.sgame", "王者荣耀");
+            appNameMap.put("com.tencent.tmgp.pubgmhd", "和平精英");
+            appNameMap.put("com.tencent.lolm", "英雄联盟手游");
+            appNameMap.put("com.miHoYo.GenshinImpact", "原神");
+            appNameMap.put("com.miHoYo.hkrpg", "崩坏：星穹铁道");
+            appNameMap.put("com.kurogame.mingchao", "鸣潮");
+            appNameMap.put("com.hypergryph.arknights", "明日方舟");
+        }
+
+        sortAndPublishAppList(appNameMap);
+    }
+
+    private Map<String, String> getInstalledAppsMap() {
         PackageManager pm = getPackageManager();
         Map<String, String> appNameMap = new LinkedHashMap<>();
-
-        // 扫描已安装第三方应用及升级版系统应用
         try {
             List<ApplicationInfo> installed = pm.getInstalledApplications(PackageManager.GET_META_DATA);
             if (installed != null) {
@@ -633,44 +492,37 @@ public class MainActivity extends ComponentActivity {
                 }
             }
         } catch (Exception ignored) {}
+        return appNameMap;
+    }
 
-        // Root Shell 降级扫描（当 PackageManager 返回列表为空时，触发 su 命令扫描所有第三方应用包名）
-        if (appNameMap.isEmpty()) {
-            try {
-                Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "pm list packages -3"});
-                BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.startsWith("package:")) {
-                        String pkg = line.substring(8).trim();
-                        if (!pkg.isEmpty()) {
-                            try {
-                                ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
-                                String label = pm.getApplicationLabel(ai).toString();
-                                appNameMap.put(pkg, label);
-                            } catch (Exception e) {
-                                appNameMap.put(pkg, pkg);
-                            }
+    private void scanAppsViaRoot(Map<String, String> appNameMap) {
+        if (!appNameMap.isEmpty()) return;
+        PackageManager pm = getPackageManager();
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "pm list packages -3"});
+            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.startsWith("package:")) {
+                    String pkg = line.substring(8).trim();
+                    if (!pkg.isEmpty()) {
+                        try {
+                            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+                            String label = pm.getApplicationLabel(ai).toString();
+                            appNameMap.put(pkg, label);
+                        } catch (Exception e) {
+                            appNameMap.put(pkg, pkg);
                         }
                     }
                 }
-                p.waitFor();
-            } catch (Exception ignored) {}
-        }
+            }
+            p.waitFor();
+        } catch (Exception ignored) {}
+    }
 
-        // 保留预置游戏列表作为最底层的降级备选项（仅在上述所有扫描均为空时作为补充）
-        if (appNameMap.isEmpty()) {
-            appNameMap.put("com.tencent.tmgp.sgame", "王者荣耀");
-            appNameMap.put("com.tencent.tmgp.pubgmhd", "和平精英");
-            appNameMap.put("com.tencent.lolm", "英雄联盟手游");
-            appNameMap.put("com.miHoYo.GenshinImpact", "原神");
-            appNameMap.put("com.miHoYo.hkrpg", "崩坏：星穹铁道");
-            appNameMap.put("com.kurogame.mingchao", "鸣潮");
-            appNameMap.put("com.hypergryph.arknights", "明日方舟");
-        }
-
-        // 将 appModesMap 中已有的配置包名也确保包含进列表
+    private void sortAndPublishAppList(Map<String, String> appNameMap) {
+        PackageManager pm = getPackageManager();
         for (String pkg : appModesMap.keySet()) {
             if (!appNameMap.containsKey(pkg)) {
                 try {
@@ -690,7 +542,6 @@ public class MainActivity extends ComponentActivity {
             allAppItems.add(new AppRuleItem(pkg, name, mode != null ? mode : "default"));
         }
 
-        // 排序：已设置规则的置顶，其次按名称排序
         Collections.sort(allAppItems, new Comparator<AppRuleItem>() {
             @Override
             public int compare(AppRuleItem a, AppRuleItem b) {
@@ -714,7 +565,6 @@ public class MainActivity extends ComponentActivity {
                 new File("/data/adb/modules/yumi/module/rules.yaml")
         };
 
-        // 确保 SD 卡持久化路径存在
         File defaultSdFile = new File("/storage/emulated/0/yumi/rules.yaml");
         try {
             if (!defaultSdFile.exists()) {
@@ -725,52 +575,8 @@ public class MainActivity extends ComponentActivity {
 
         for (File targetFile : possibleFiles) {
             if (targetFile != null && (targetFile.exists() || targetFile.equals(defaultSdFile))) {
-                try {
-                    List<String> lines = new ArrayList<>();
-                    boolean hasAppModesSection = false;
-                    boolean inAppModesSection = false;
-
-                    if (targetFile.exists() && targetFile.length() > 0) {
-                        try (BufferedReader br = new BufferedReader(new FileReader(targetFile))) {
-                            String line;
-                            while ((line = br.readLine()) != null) {
-                                String trimmed = line.trim();
-                                if (trimmed.startsWith("app_modes:")) {
-                                    hasAppModesSection = true;
-                                    inAppModesSection = true;
-                                    lines.add("app_modes:");
-                                    for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
-                                        lines.add("  " + entry.getKey() + ": " + entry.getValue());
-                                    }
-                                    continue;
-                                }
-
-                                if (inAppModesSection) {
-                                    if (line.startsWith("  ") || trimmed.isEmpty()) {
-                                        continue;
-                                    } else {
-                                        inAppModesSection = false;
-                                    }
-                                }
-                                lines.add(line);
-                            }
-                        }
-                    }
-
-                    if (!hasAppModesSection) {
-                        lines.add("");
-                        lines.add("app_modes:");
-                        for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
-                            lines.add("  " + entry.getKey() + ": " + entry.getValue());
-                        }
-                    }
-
-                    try (PrintWriter pw = new PrintWriter(new FileWriter(targetFile))) {
-                        for (String l : lines) {
-                            pw.println(l);
-                        }
-                    }
-                } catch (Exception ignored) {}
+                List<String> lines = buildUpdatedYamlLines(targetFile);
+                writeLinesToFile(targetFile, lines);
             }
         }
 
@@ -778,63 +584,70 @@ public class MainActivity extends ComponentActivity {
         Toast.makeText(this, "应用规则持久化保存成功", Toast.LENGTH_SHORT).show();
     }
 
-    // ==================== 日志与状态通信控制 (保持原有逻辑不变) ====================
+    private List<String> buildUpdatedYamlLines(File targetFile) {
+        List<String> lines = new ArrayList<>();
+        boolean hasAppModesSection = false;
+        boolean inAppModesSection = false;
 
-    private void setLogLevelFilter(int level) {
-        currentFilterLevel = level;
+        if (targetFile.exists() && targetFile.length() > 0) {
+            try (BufferedReader br = new BufferedReader(new FileReader(targetFile))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("app_modes:")) {
+                        hasAppModesSection = true;
+                        inAppModesSection = true;
+                        lines.add("app_modes:");
+                        for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
+                            lines.add("  " + entry.getKey() + ": " + entry.getValue());
+                        }
+                        continue;
+                    }
 
-        int activeTextColor = 0xFFFFFFFF;    // 亮蓝背景上的纯白文字
-        int inactiveTextColor = 0xFF475569;  // 冰粹极简深色文字
+                    if (inAppModesSection) {
+                        if (line.startsWith("  ") || trimmed.isEmpty()) {
+                            continue;
+                        } else {
+                            inAppModesSection = false;
+                        }
+                    }
+                    lines.add(line);
+                }
+            } catch (Exception ignored) {}
+        }
 
-        btnLevelAll.setBackgroundResource(level == LEVEL_ALL ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
-        btnLevelAll.setTextColor(level == LEVEL_ALL ? activeTextColor : inactiveTextColor);
-
-        btnLevelDebug.setBackgroundResource(level == LEVEL_DEBUG ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
-        btnLevelDebug.setTextColor(level == LEVEL_DEBUG ? activeTextColor : inactiveTextColor);
-
-        btnLevelInfo.setBackgroundResource(level == LEVEL_INFO ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
-        btnLevelInfo.setTextColor(level == LEVEL_INFO ? activeTextColor : inactiveTextColor);
-
-        btnLevelWarn.setBackgroundResource(level == LEVEL_WARN ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
-        btnLevelWarn.setTextColor(level == LEVEL_WARN ? activeTextColor : inactiveTextColor);
-
-        btnLevelError.setBackgroundResource(level == LEVEL_ERROR ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
-        btnLevelError.setTextColor(level == LEVEL_ERROR ? activeTextColor : inactiveTextColor);
-
-        renderLogDisplay();
+        if (!hasAppModesSection) {
+            lines.add("");
+            lines.add("app_modes:");
+            for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
+                lines.add("  " + entry.getKey() + ": " + entry.getValue());
+            }
+        }
+        return lines;
     }
+
+    private void writeLinesToFile(File file, List<String> lines) {
+        try (PrintWriter pw = new PrintWriter(new FileWriter(file))) {
+            for (String l : lines) {
+                pw.println(l);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    // ==================== Log & Communication Control ====================
+
+
 
     private void fetchRealModuleLogs() {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final List<RealLogEntry> fetched = new ArrayList<>();
+                final List<RealLogEntry> fetched = fetchLogsViaTcp();
 
-                // 1. 优先通过 TCP IPC 接口获取守护进程日志 (get_log 150)
-                try (Socket socket = new Socket("127.0.0.1", daemonPort)) {
-                    socket.setSoTimeout(2500);
-                    PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
-
-                    writer.println("get_log 150");
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        if (line.equals("---END_LOG---")) break;
-                        String trimmed = line.trim();
-                        if (!trimmed.isEmpty()) {
-                            if (trimmed.startsWith("err:")) continue; // 过滤 err:unknown_command 等异常单行回响
-                            int level = parseLogLevel(trimmed);
-                            fetched.add(new RealLogEntry(trimmed, formatLineToChinese(trimmed), level));
-                        }
-                    }
-                } catch (Exception ignored) {}
-
-                // 2. 如果 IPC 读取为空，扫描本地磁盘与 Magisk 模块日志路径
                 if (fetched.isEmpty()) {
-                    fetched.addAll(readModuleDaemonLogFile());
+                    fetched.addAll(fetchLogsViaLocalFiles());
                 }
 
-                // 3. 如果依然为空，显示系统守护线程就绪提示日志
                 if (fetched.isEmpty()) {
                     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
                     String timeStr = sdf.format(new Date());
@@ -855,10 +668,31 @@ public class MainActivity extends ComponentActivity {
         }).start();
     }
 
-    private List<RealLogEntry> readModuleDaemonLogFile() {
+    private List<RealLogEntry> fetchLogsViaTcp() {
+        List<RealLogEntry> fetched = new ArrayList<>();
+        try (Socket socket = new Socket("127.0.0.1", daemonPort)) {
+            socket.setSoTimeout(2500);
+            PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+
+            writer.println("get_log 150");
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.equals("---END_LOG---")) break;
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty()) {
+                    if (trimmed.startsWith("err:")) continue;
+                    int level = parseLogLevel(trimmed);
+                    fetched.add(new RealLogEntry(trimmed, formatLineToChinese(trimmed), level));
+                }
+            }
+        } catch (Exception ignored) {}
+        return fetched;
+    }
+
+    private List<RealLogEntry> fetchLogsViaLocalFiles() {
         List<RealLogEntry> result = new ArrayList<>();
 
-        // 1. 优先通过 Root Shell (su -c) 提权读取 Magisk 真实模块日志 /data/adb/modules/yumi/logs/daemon.log
         try {
             Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "tail -n 300 /data/adb/modules/yumi/logs/daemon.log"});
             BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"));
@@ -871,12 +705,9 @@ public class MainActivity extends ComponentActivity {
                 }
             }
             p.waitFor();
-            if (!result.isEmpty()) {
-                return result;
-            }
+            if (!result.isEmpty()) return result;
         } catch (Exception ignored) {}
 
-        // 2. 如果 Root 读取为空，扫描所有候选路径回退
         File[] candidateFiles = new File[]{
                 new File("/data/adb/modules/yumi/logs/daemon.log"),
                 new File("/storage/emulated/0/yumi/module/logs/daemon.log"),
