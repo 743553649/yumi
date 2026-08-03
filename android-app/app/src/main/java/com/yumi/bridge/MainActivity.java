@@ -91,12 +91,12 @@ public class MainActivity extends ComponentActivity {
         }
     }
 
-    private static class AppRuleItem {
-        final String packageName;
-        final String appName;
-        String currentMode; // default, powersave, balance, performance, fast, fas
+    public static class AppRuleItem {
+        public final String packageName;
+        public final String appName;
+        public String currentMode; // default, powersave, balance, performance, fast, fas
 
-        AppRuleItem(String packageName, String appName, String currentMode) {
+        public AppRuleItem(String packageName, String appName, String currentMode) {
             this.packageName = packageName;
             this.appName = appName;
             this.currentMode = currentMode != null ? currentMode : "default";
@@ -148,10 +148,8 @@ public class MainActivity extends ComponentActivity {
     private int daemonPort = 14567;
     private int activeTab = TAB_HOME;
 
-    // 应用规则内存映射
     private final Map<String, String> appModesMap = new LinkedHashMap<>();
     private final List<AppRuleItem> allAppItems = new ArrayList<>();
-    private String currentSearchQuery = "";
 
     private final Handler pollHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService backgroundIoExecutor = Executors.newSingleThreadExecutor();
@@ -191,7 +189,7 @@ public class MainActivity extends ComponentActivity {
         if (composeBackgroundHost != null) {
             ComposeHomeBridgeKt.attachBackgroundHost(composeBackgroundHost);
         }
-        ComposeHomeBridgeKt.attachHomeScreen(composeContentHost, this::setGlobalMode);
+        ComposeHomeBridgeKt.attachHomeScreen(composeContentHost, this::setGlobalMode, this::onAppModeChanged, this::switchTab);
 
         // 初始化通信与拉取模式日志
         sendCommand("get_mode");
@@ -463,20 +461,9 @@ public class MainActivity extends ComponentActivity {
 
     private void switchTab(int tabIndex) {
         activeTab = tabIndex;
-        /*
-        tabHomeContainer.setVisibility(tabIndex == TAB_HOME ? View.VISIBLE : View.GONE);
-        tabLogsContainer.setVisibility(tabIndex == TAB_LOGS ? View.VISIBLE : View.GONE);
-        tabAppsContainer.setVisibility(tabIndex == TAB_APPS ? View.VISIBLE : View.GONE);
-
-        // 高亮选中 Tab 样式
-        updateTabStyle(tvTabHome, ivTabHome, tabIndex == TAB_HOME);
-        updateTabStyle(tvTabLogs, ivTabLogs, tabIndex == TAB_LOGS);
-        updateTabStyle(tvTabApps, ivTabApps, tabIndex == TAB_APPS);
-
         if (tabIndex == TAB_APPS && allAppItems.isEmpty()) {
             loadInstalledAppsList();
         }
-        */
     }
 
     private void updateTabStyle(TextView tv, ImageView iv, boolean selected) {
@@ -556,6 +543,23 @@ public class MainActivity extends ComponentActivity {
         if (currentMode.equalsIgnoreCase(mode)) return;
         currentMode = mode;
         sendCommand("set_mode " + mode);
+    }
+
+    private void onAppModeChanged(String packageName, String mode) {
+        for (AppRuleItem item : allAppItems) {
+            if (item.packageName.equals(packageName)) {
+                item.currentMode = mode;
+                break;
+            }
+        }
+        if ("default".equalsIgnoreCase(mode)) {
+            appModesMap.remove(packageName);
+        } else {
+            appModesMap.put(packageName, mode);
+        }
+        ComposeHomeBridgeKt.updateInstalledApps(allAppItems);
+        saveAppRulesToYaml();
+        sendCommand("set_app_mode " + packageName + " " + mode);
     }
 
     // ==================== 应用规则管理 (App Rules) ====================
@@ -698,140 +702,9 @@ public class MainActivity extends ComponentActivity {
             }
         });
 
-        renderAppRulesList();
+        ComposeHomeBridgeKt.updateInstalledApps(allAppItems);
     }
 
-    private void renderAppRulesList() {
-        llAppsListContainer.removeAllViews();
-        LayoutInflater inflater = LayoutInflater.from(this);
-        PackageManager pm = getPackageManager();
-
-        for (final AppRuleItem item : allAppItems) {
-            if (!currentSearchQuery.isEmpty()) {
-                boolean matchName = item.appName.toLowerCase().contains(currentSearchQuery);
-                boolean matchPkg = item.packageName.toLowerCase().contains(currentSearchQuery);
-                if (!matchName && !matchPkg) continue;
-            }
-
-            View itemView = inflater.inflate(R.layout.item_app_rule, llAppsListContainer, false);
-            ImageView ivAppIcon = itemView.findViewById(R.id.ivAppIcon);
-            TextView tvIconText = itemView.findViewById(R.id.tvAppIconText);
-            TextView tvAppName = itemView.findViewById(R.id.tvAppName);
-            TextView tvAppPackage = itemView.findViewById(R.id.tvAppPackage);
-            final TextView btnAppMode = itemView.findViewById(R.id.btnAppMode);
-
-            // 尝试获取并渲染应用真实图标，无法获取时显示首字母回退
-            boolean loadedIcon = false;
-            try {
-                android.graphics.drawable.Drawable icon = pm.getApplicationIcon(item.packageName);
-                if (icon != null) {
-                    ivAppIcon.setImageDrawable(icon);
-                    ivAppIcon.setVisibility(View.VISIBLE);
-                    tvIconText.setVisibility(View.GONE);
-                    loadedIcon = true;
-                }
-            } catch (Exception ignored) {}
-
-            if (!loadedIcon) {
-                ivAppIcon.setVisibility(View.GONE);
-                tvIconText.setVisibility(View.VISIBLE);
-                String firstLetter = item.appName.isEmpty() ? "A" : item.appName.substring(0, 1).toUpperCase();
-                tvIconText.setText(firstLetter);
-            }
-
-            tvAppName.setText(item.appName);
-            tvAppPackage.setText(item.packageName);
-
-            updateAppModeBtnText(btnAppMode, item.currentMode);
-
-            btnAppMode.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    showAppModeSelectionDialog(item, btnAppMode);
-                }
-            });
-
-            llAppsListContainer.addView(itemView);
-        }
-    }
-
-    private void updateAppModeBtnText(TextView btn, String mode) {
-        switch (mode.toLowerCase()) {
-            case "powersave":
-                btn.setText("省电 (Powersave)");
-                btn.setTextColor(0xFF16A34A);
-                break;
-            case "balance":
-                btn.setText("均衡 (Balance)");
-                btn.setTextColor(0xFF0284C7);
-                break;
-            case "performance":
-                btn.setText("性能 (Performance)");
-                btn.setTextColor(0xFFEA580C);
-                break;
-            case "fast":
-                btn.setText("极速 (Fast)");
-                btn.setTextColor(0xFFDC2626);
-                break;
-            case "fas":
-                btn.setText("FAS 帧感知 (FAS)");
-                btn.setTextColor(0xFF9333EA);
-                break;
-            default:
-                btn.setText("跟随全局 (Default)");
-                btn.setTextColor(0xFF475569);
-                break;
-        }
-    }
-
-    private void showAppModeSelectionDialog(final AppRuleItem item, final TextView btnAppMode) {
-        final String[] options = new String[]{
-                "跟随全局 (Default)",
-                "省电 (Powersave)",
-                "均衡 (Balance)",
-                "性能 (Performance)",
-                "极速 (Fast)",
-                "FAS 帧感知 (FAS)"
-        };
-
-        final String[] modeKeys = new String[]{
-                "default",
-                "powersave",
-                "balance",
-                "performance",
-                "fast",
-                "fas"
-        };
-
-        int selectedIdx = 0;
-        for (int i = 0; i < modeKeys.length; i++) {
-            if (modeKeys[i].equalsIgnoreCase(item.currentMode)) {
-                selectedIdx = i;
-                break;
-            }
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle(item.appName + " 调度规则设置");
-        builder.setSingleChoiceItems(options, selectedIdx, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String chosenMode = modeKeys[which];
-                item.currentMode = chosenMode;
-                if ("default".equalsIgnoreCase(chosenMode)) {
-                    appModesMap.remove(item.packageName);
-                } else {
-                    appModesMap.put(item.packageName, chosenMode);
-                }
-                updateAppModeBtnText(btnAppMode, chosenMode);
-                saveAppRulesToYaml();
-                sendCommand("set_app_mode " + item.packageName + " " + chosenMode);
-                dialog.dismiss();
-            }
-        });
-        builder.setNegativeButton("取消", null);
-        builder.create().show();
-    }
 
     private void saveAppRulesToYaml() {
         File[] possibleFiles = new File[]{

@@ -9,6 +9,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +52,13 @@ class HomeUiState {
     // Logs state
     val realLogs = mutableStateListOf<com.yumi.bridge.MainActivity.RealLogEntry>()
     var currentFilterLevel by mutableStateOf(com.yumi.bridge.MainActivity.LEVEL_ALL)
+
+    // Apps state
+    val installedApps = mutableStateListOf<com.yumi.bridge.MainActivity.AppRuleItem>()
+    var appSearchQuery by mutableStateOf("")
+
+    // Tab State
+    var activeTab by mutableStateOf(0)
 }
 
 private val globalHomeState = HomeUiState()
@@ -210,18 +220,56 @@ fun attachBackgroundHost(composeView: ComposeView) {
  */
 fun attachHomeScreen(
     composeView: ComposeView,
-    onModeSelectedListener: OnModeSelectedListener
+    onModeSelectedListener: OnModeSelectedListener,
+    onAppModeChangedListener: AppRuleChangeListener,
+    onTabSelectedListener: OnTabSelectedListener
 ) {
     composeView.setViewCompositionStrategy(
         androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
     )
     composeView.setContent {
-        LogScreen(
-            state = globalHomeState,
-            onClearClick = {
-                globalHomeState.realLogs.clear()
+        YumiTheme {
+            androidx.compose.material3.Scaffold(
+                bottomBar = {
+                    GlassBackdropWrapper {
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp
+                        ) {
+                            val tabs = listOf("首页" to 0, "日志" to 1, "应用" to 2)
+                            tabs.forEach { (title, index) ->
+                                NavigationBarItem(
+                                    selected = globalHomeState.activeTab == index,
+                                    onClick = { 
+                                        globalHomeState.activeTab = index
+                                        onTabSelectedListener.onTabSelected(index)
+                                    },
+                                    icon = { Text(title) }
+                                )
+                            }
+                        }
+                    }
+                },
+                containerColor = Color.Transparent
+            ) { padding ->
+                Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+                    when (globalHomeState.activeTab) {
+                        0 -> HomeScreen(
+                            state = globalHomeState,
+                            onModeSelected = { onModeSelectedListener.onModeSelected(it) }
+                        )
+                        1 -> LogScreen(
+                            state = globalHomeState,
+                            onClearClick = { globalHomeState.realLogs.clear() }
+                        )
+                        2 -> AppRulesScreen(
+                            state = globalHomeState,
+                            onAppModeChanged = { pkg, mode -> onAppModeChangedListener.onAppModeChanged(pkg, mode) }
+                        )
+                    }
+                }
             }
-        )
+        }
     }
 }
 
@@ -270,6 +318,19 @@ fun updateFilterLevel(level: Int) {
     globalHomeState.currentFilterLevel = level
 }
 
+fun updateInstalledApps(apps: List<com.yumi.bridge.MainActivity.AppRuleItem>) {
+    globalHomeState.installedApps.clear()
+    globalHomeState.installedApps.addAll(apps)
+}
+
 fun interface OnModeSelectedListener {
     fun onModeSelected(mode: String)
+}
+
+interface AppRuleChangeListener {
+    fun onAppModeChanged(packageName: String, newMode: String)
+}
+
+fun interface OnTabSelectedListener {
+    fun onTabSelected(index: Int)
 }
