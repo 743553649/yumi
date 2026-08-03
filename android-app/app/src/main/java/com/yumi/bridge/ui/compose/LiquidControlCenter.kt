@@ -27,12 +27,11 @@ data class ModeConfig(
     val accentColor: Color
 )
 
-private val MODES = listOf(
+val SUPPORTED_MODES = listOf(
     ModeConfig("powersave", "省电", "低功耗运行", Color(0xFF16A34A)),
     ModeConfig("balance", "平衡", "标准预设", Color(0xFF0284C7)),
     ModeConfig("performance", "性能", "高吞吐量", Color(0xFFEA580C)),
-    ModeConfig("fast", "极速", "超低延迟", Color(0xFFDC2626)),
-    ModeConfig("fas", "FAS 帧感知", "游戏逐帧调频", Color(0xFF9333EA))
+    ModeConfig("fast", "极速", "超低延迟", Color(0xFFDC2626))
 )
 
 @Composable
@@ -46,72 +45,41 @@ fun LiquidControlCenter(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "性能模式中心",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFF0F172A),
-                    fontWeight = FontWeight.Bold
+                ModeCard(
+                    config = SUPPORTED_MODES[0],
+                    isSelected = currentMode.equals(SUPPORTED_MODES[0].key, ignoreCase = true),
+                    onClick = { onModeSelected(SUPPORTED_MODES[0].key) },
+                    modifier = Modifier.weight(1f)
                 )
-                Text(
-                    text = "Liquid Control",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF64748B)
+                ModeCard(
+                    config = SUPPORTED_MODES[1],
+                    isSelected = currentMode.equals(SUPPORTED_MODES[1].key, ignoreCase = true),
+                    onClick = { onModeSelected(SUPPORTED_MODES[1].key) },
+                    modifier = Modifier.weight(1f)
                 )
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ModeCard(
-                        config = MODES[0],
-                        isSelected = currentMode.equals(MODES[0].key, ignoreCase = true),
-                        onClick = { onModeSelected(MODES[0].key) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    ModeCard(
-                        config = MODES[1],
-                        isSelected = currentMode.equals(MODES[1].key, ignoreCase = true),
-                        onClick = { onModeSelected(MODES[1].key) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ModeCard(
-                        config = MODES[2],
-                        isSelected = currentMode.equals(MODES[2].key, ignoreCase = true),
-                        onClick = { onModeSelected(MODES[2].key) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    ModeCard(
-                        config = MODES[3],
-                        isSelected = currentMode.equals(MODES[3].key, ignoreCase = true),
-                        onClick = { onModeSelected(MODES[3].key) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    ModeCard(
-                        config = MODES[4],
-                        isSelected = currentMode.equals(MODES[4].key, ignoreCase = true),
-                        onClick = { onModeSelected(MODES[4].key) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ModeCard(
+                    config = SUPPORTED_MODES[2],
+                    isSelected = currentMode.equals(SUPPORTED_MODES[2].key, ignoreCase = true),
+                    onClick = { onModeSelected(SUPPORTED_MODES[2].key) },
+                    modifier = Modifier.weight(1f)
+                )
+                ModeCard(
+                    config = SUPPORTED_MODES[3],
+                    isSelected = currentMode.equals(SUPPORTED_MODES[3].key, ignoreCase = true),
+                    onClick = { onModeSelected(SUPPORTED_MODES[3].key) },
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }

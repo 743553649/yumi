@@ -25,7 +25,6 @@ fun LiquidCpuDashboard(
     cpuUsages: IntArray,
     ramPercent: Int,
     ramDetailText: String,
-    uptimeText: String,
     modifier: Modifier = Modifier
 ) {
     GlassBackdropWrapper(modifier = modifier) {
@@ -35,29 +34,6 @@ fun LiquidCpuDashboard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // System Uptime pill
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0x30E0F2FE))
-                        .border(1.dp, Color(0x800284C7), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "运行: $uptimeText",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF0284C7),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
             // CPU 8-Core Grid (2 columns x 4 rows)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (row in 0 until 4) {
