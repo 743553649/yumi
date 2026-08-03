@@ -24,8 +24,18 @@ class HomeUiState {
     var currentMode by mutableStateOf("balance")
     var cpuFreqs by mutableStateOf(LongArray(8))
     var cpuUsages by mutableStateOf(IntArray(8))
+
+    // RAM & Swap Metrics
     var ramPercent by mutableStateOf(0)
-    var ramDetailText by mutableStateOf("已用 0.0G / 0.0G")
+    var ramDetailText by mutableStateOf("0.0G / 0.0G")
+    var swapPercent by mutableStateOf(0)
+    var swapDetailText by mutableStateOf("0.0G / 0.0G")
+
+    // Battery Metrics
+    var batteryLevel by mutableStateOf(100)
+    var batteryTempText by mutableStateOf("0.0 ℃")
+    var batteryPowerText by mutableStateOf("0.0 W")
+
     var uptimeText by mutableStateOf("00:00:00")
     var isDaemonOnline by mutableStateOf(true)
 }
@@ -139,12 +149,21 @@ fun HomeScreen(
                 onModeSelected = onModeSelected
             )
 
-            // 3. CPU 看板 (已移除顶部运行时间与标题)
+            // 3. CPU 核心 4x2 看板
             LiquidCpuDashboard(
                 cpuFreqs = state.cpuFreqs,
-                cpuUsages = state.cpuUsages,
+                cpuUsages = state.cpuUsages
+            )
+
+            // 4. 底部并行排列卡片 (卡片1: RAM & Swap, 卡片2: 电池信息)
+            LiquidBottomCards(
+                ramDetailText = state.ramDetailText,
                 ramPercent = state.ramPercent,
-                ramDetailText = state.ramDetailText
+                swapDetailText = state.swapDetailText,
+                swapPercent = state.swapPercent,
+                batteryLevel = state.batteryLevel,
+                batteryTempText = state.batteryTempText,
+                batteryPowerText = state.batteryPowerText
             )
         }
     }
@@ -183,7 +202,7 @@ fun attachHomeScreen(
 }
 
 /**
- * 供 Java 后台轮询调用的更新函数，驱动 Compose State 响应式重绘，避免创建新对象与频繁 GC。
+ * 供 Java 后台轮询调用的更新函数，驱动 Compose State 响应式重绘。
  */
 @JvmOverloads
 fun updateHomeScreenState(
@@ -192,6 +211,11 @@ fun updateHomeScreenState(
     cpuUsages: IntArray,
     ramPercent: Int,
     ramDetailText: String,
+    swapPercent: Int,
+    swapDetailText: String,
+    batteryLevel: Int,
+    batteryTempText: String,
+    batteryPowerText: String,
     uptimeText: String,
     isDaemonOnline: Boolean = true
 ) {
@@ -200,6 +224,11 @@ fun updateHomeScreenState(
     globalHomeState.cpuUsages = cpuUsages.copyOf()
     globalHomeState.ramPercent = ramPercent
     globalHomeState.ramDetailText = ramDetailText
+    globalHomeState.swapPercent = swapPercent
+    globalHomeState.swapDetailText = swapDetailText
+    globalHomeState.batteryLevel = batteryLevel
+    globalHomeState.batteryTempText = batteryTempText
+    globalHomeState.batteryPowerText = batteryPowerText
     globalHomeState.uptimeText = uptimeText
     globalHomeState.isDaemonOnline = isDaemonOnline
 }

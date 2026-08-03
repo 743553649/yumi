@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +23,6 @@ import androidx.compose.ui.unit.sp
 fun LiquidCpuDashboard(
     cpuFreqs: LongArray,
     cpuUsages: IntArray,
-    ramPercent: Int,
-    ramDetailText: String,
     modifier: Modifier = Modifier
 ) {
     GlassBackdropWrapper(modifier = modifier) {
@@ -53,50 +50,6 @@ fun LiquidCpuDashboard(
                         }
                     }
                 }
-            }
-
-            // RAM Progress Section
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "RAM 内存使用",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF0F172A),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "$ramDetailText (${ramPercent.coerceIn(0, 100)}%)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF334155),
-                        fontSize = 11.sp
-                    )
-                }
-
-                val animatedRamProgress by animateFloatAsState(
-                    targetValue = ramPercent.coerceIn(0, 100) / 100f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "RamProgress"
-                )
-
-                val ramColor = when {
-                    ramPercent > 85 -> Color(0xFFDC2626)
-                    ramPercent > 70 -> Color(0xFFEA580C)
-                    else -> Color(0xFF0284C7)
-                }
-
-                LinearProgressIndicator(
-                    progress = { animatedRamProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = ramColor,
-                    trackColor = Color(0x30CBD5E1),
-                )
             }
         }
     }

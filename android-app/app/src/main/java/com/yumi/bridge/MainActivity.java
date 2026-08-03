@@ -3,18 +3,23 @@ package com.yumi.bridge;
 import com.yumi.bridge.ui.CpuCircleProgressView;
 import com.yumi.bridge.ui.GlassCardView;
 import com.yumi.bridge.utils.CpuStatsParser;
+import com.yumi.bridge.utils.SystemStatsParser;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import java.io.FileReader;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
@@ -231,28 +236,72 @@ public class MainActivity extends ComponentActivity {
         btnLevelError = findViewById(R.id.btnLevelError);
     }
 
+    private String readProcMemInfo() {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new FileReader("/proc/meminfo"))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+        } catch (Exception ignored) {}
+        return sb.toString();
+    }
+
     private void updateSystemDashboardInfoInBackground() {
         int ramPercent = 0;
-        String ramDetailText = "已用 0.0G / 0.0G";
+        String ramDetailText = "0.0G / 0.0G";
+        int swapPercent = 0;
+        String swapDetailText = "0.0G / 0.0G";
+
+        int batteryLevel = 100;
+        String batteryTempText = "0.0 ℃";
+        String batteryPowerText = "0.0 W";
+
         String uptimeText = "00:00:00";
         int[] usagePercents = new int[8];
         long[] curFreqs = new long[8];
 
-        // 1. 内存 (RAM) 占用
+        // 1. RAM & Swap 内存读取 (/proc/meminfo)
         try {
-            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
-            if (am != null) {
-                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
-                am.getMemoryInfo(mi);
-                long total = mi.totalMem;
-                long avail = mi.availMem;
-                long used = Math.max(0, total - avail);
-                ramPercent = total > 0 ? (int) ((used * 100) / total) : 0;
-                ramDetailText = String.format(Locale.getDefault(), "已用 %.1fG / %.1fG", used / (1024.0 * 1024 * 1024), total / (1024.0 * 1024 * 1024));
+            String memInfo = readProcMemInfo();
+            SystemStatsParser.MemoryStats memStats = SystemStatsParser.parseMemInfo(memInfo);
+            ramPercent = memStats.getRamPercent();
+            ramDetailText = memStats.getRamDetailText();
+            swapPercent = memStats.getSwapPercent();
+            swapDetailText = memStats.getSwapDetailText();
+        } catch (Exception ignored) {}
+
+        // 2. 电池实时信息读取 (Level, Power, Temperature)
+        try {
+            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent batteryStatus = registerReceiver(null, ifilter);
+            if (batteryStatus != null) {
+                int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+                if (level >= 0 && scale > 0) {
+                    batteryLevel = (level * 100) / scale;
+                }
+
+                int temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0);
+                batteryTempText = SystemStatsParser.formatTemperature(temp);
+            }
+
+            BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
+            if (bm != null) {
+                long currentUa = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+                long voltageUv = 4000000L;
+                try {
+                    Intent bStatus = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                    if (bStatus != null) {
+                        int voltageMv = bStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4000);
+                        voltageUv = voltageMv * 1000L;
+                    }
+                } catch (Exception ignored) {}
+                batteryPowerText = SystemStatsParser.formatPowerWatts(currentUa, voltageUv);
             }
         } catch (Exception ignored) {}
 
-        // 2. 守护进程 / 系统运行时长
+        // 3. 系统运行时长
         try {
             long elapsedSec = android.os.SystemClock.elapsedRealtime() / 1000;
             long hours = elapsedSec / 3600;
@@ -261,13 +310,18 @@ public class MainActivity extends ComponentActivity {
             uptimeText = String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, mins, secs);
         } catch (Exception ignored) {}
 
-        // 3. 8 张 CPU 核心动态数据读取 (IO / su offloaded)
+        // 4. 8 张 CPU 核心动态数据读取
         try {
             readCpuStatsAndFreqs(usagePercents, curFreqs);
         } catch (Exception ignored) {}
 
         final int finalRamPercent = ramPercent;
         final String finalRamDetailText = ramDetailText;
+        final int finalSwapPercent = swapPercent;
+        final String finalSwapDetailText = swapDetailText;
+        final int finalBatteryLevel = batteryLevel;
+        final String finalBatteryTempText = batteryTempText;
+        final String finalBatteryPowerText = batteryPowerText;
         final String finalUptimeText = uptimeText;
 
         mainHandler.post(new Runnable() {
@@ -279,7 +333,13 @@ public class MainActivity extends ComponentActivity {
                         usagePercents,
                         finalRamPercent,
                         finalRamDetailText,
-                        finalUptimeText
+                        finalSwapPercent,
+                        finalSwapDetailText,
+                        finalBatteryLevel,
+                        finalBatteryTempText,
+                        finalBatteryPowerText,
+                        finalUptimeText,
+                        true
                 );
             }
         });
