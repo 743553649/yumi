@@ -98,6 +98,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private View rootContainer;
+    private ComposeView composeBackgroundHost;
     private View tabHomeContainer;
     private ComposeView composeHomeHost;
     private View tabLogsContainer;
@@ -180,7 +181,10 @@ public class MainActivity extends ComponentActivity {
         setupNestedScrollFix();
         loadAppRulesFromYaml();
 
-        // 绑定 Compose 首页视图
+        // 绑定 Compose 全局天幕背景与首页视图
+        if (composeBackgroundHost != null) {
+            ComposeHomeBridgeKt.attachBackgroundHost(composeBackgroundHost);
+        }
         ComposeHomeBridgeKt.attachHomeScreen(composeHomeHost, this::setGlobalMode);
 
         // 初始化通信与拉取模式日志
@@ -196,6 +200,7 @@ public class MainActivity extends ComponentActivity {
 
     private void initViews() {
         rootContainer = findViewById(R.id.rootContainer);
+        composeBackgroundHost = findViewById(R.id.composeBackgroundHost);
         tabHomeContainer = findViewById(R.id.tabHomeContainer);
         composeHomeHost = findViewById(R.id.composeHomeHost);
         tabLogsContainer = findViewById(R.id.tabLogsContainer);
@@ -680,27 +685,27 @@ public class MainActivity extends ComponentActivity {
         switch (mode.toLowerCase()) {
             case "powersave":
                 btn.setText("省电 (Powersave)");
-                btn.setTextColor(getResources().getColor(R.color.ios_mode_powersave));
+                btn.setTextColor(0xFF16A34A);
                 break;
             case "balance":
                 btn.setText("均衡 (Balance)");
-                btn.setTextColor(getResources().getColor(R.color.ios_mode_balance));
+                btn.setTextColor(0xFF0284C7);
                 break;
             case "performance":
                 btn.setText("性能 (Performance)");
-                btn.setTextColor(getResources().getColor(R.color.ios_mode_performance));
+                btn.setTextColor(0xFFEA580C);
                 break;
             case "fast":
                 btn.setText("极速 (Fast)");
-                btn.setTextColor(getResources().getColor(R.color.ios_mode_fast));
+                btn.setTextColor(0xFFDC2626);
                 break;
             case "fas":
                 btn.setText("FAS 帧感知 (FAS)");
-                btn.setTextColor(getResources().getColor(R.color.ios_glass_stroke_focused));
+                btn.setTextColor(0xFF9333EA);
                 break;
             default:
                 btn.setText("跟随全局 (Default)");
-                btn.setTextColor(getResources().getColor(R.color.ios_text_secondary));
+                btn.setTextColor(0xFF475569);
                 break;
         }
     }
@@ -831,8 +836,8 @@ public class MainActivity extends ComponentActivity {
     private void setLogLevelFilter(int level) {
         currentFilterLevel = level;
 
-        int activeTextColor = 0xFFFFFFFF;    // 浅蓝背景上的白色加粗文字
-        int inactiveTextColor = 0xFF475569;  // 未选中胶囊上的清晰石墨色文字
+        int activeTextColor = 0xFFFFFFFF;    // 亮蓝背景上的纯白文字
+        int inactiveTextColor = 0xFF475569;  // 冰粹极简深色文字
 
         btnLevelAll.setBackgroundResource(level == LEVEL_ALL ? R.drawable.bg_ios_btn_blue : R.drawable.bg_ios_btn_secondary);
         btnLevelAll.setTextColor(level == LEVEL_ALL ? activeTextColor : inactiveTextColor);
