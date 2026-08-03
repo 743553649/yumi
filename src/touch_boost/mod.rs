@@ -88,6 +88,8 @@ pub enum BoostState {
     Touching,
     /// 松手后恢复中
     Recovering,
+    /// 脉冲超时冷却中（触摸仍处于按下状态，但已释放锁频）
+    Cooldown,
 }
 
 /// TouchBoost 控制器
@@ -186,9 +188,10 @@ impl TouchBoostController {
         }
         let now = Instant::now();
         let cfg = self.config.read().unwrap();
+        let min_dur = cfg.min_boost_duration_ms.min(50);
 
         match (self.state, touching) {
-            // IDLE → TOUCHING: 触摸按下
+            // IDLE → TOUCHING: 按下瞬间触发 50ms 脉冲
             (BoostState::Idle, true) => {
                 drop(cfg);
                 self.state = BoostState::Touching;
@@ -196,21 +199,34 @@ impl TouchBoostController {
                 self.apply_boost();
                 log::debug!("{}", t("touch-boost-start"));
             }
-            // TOUCHING → RECOVERING: 松手
-            (BoostState::Touching, false) => {
-                let min_dur = cfg.min_boost_duration_ms;
+            // TOUCHING 状态下持续触摸：若超过 50ms 自动释放高频锁，进入 Cooldown 状态
+            (BoostState::Touching, true) => {
                 drop(cfg);
                 if now.duration_since(self.touch_start).as_millis() as u64 >= min_dur {
-                    self.state = BoostState::Recovering;
-                    self.release_time = now;
-                    log::debug!("{}", t("touch-boost-release"));
-                } else {
-                    // 触摸时间过短（误触），直接恢复
-                    self.state = BoostState::Idle;
+                    self.state = BoostState::Cooldown;
                     self.recover_all();
+                    log::debug!("{}", t("touch-boost-release"));
                 }
             }
-            // RECOVERING → IDLE: 恢复完成
+            // TOUCHING 状态松手：直接恢复原始频率
+            (BoostState::Touching, false) => {
+                drop(cfg);
+                self.state = BoostState::Idle;
+                self.recover_all();
+                log::debug!("{}", t("touch-boost-release"));
+            }
+            // COOLDOWN 状态持续触摸：保持 Cooldown，不重新 Boost
+            (BoostState::Cooldown, true) => {
+                drop(cfg);
+            }
+            // COOLDOWN 状态松手：恢复到 Idle
+            (BoostState::Cooldown, false) => {
+                drop(cfg);
+                self.state = BoostState::Idle;
+                self.recover_all();
+                log::debug!("{}", t("touch-boost-recovered"));
+            }
+            // RECOVERING 状态松手或恢复完成
             (BoostState::Recovering, false) => {
                 let delay = cfg.release_delay_ms;
                 drop(cfg);
@@ -220,7 +236,7 @@ impl TouchBoostController {
                     log::debug!("{}", t("touch-boost-recovered"));
                 }
             }
-            // RECOVERING → TOUCHING: 恢复中再次触摸
+            // RECOVERING 状态再次触摸
             (BoostState::Recovering, true) => {
                 drop(cfg);
                 self.state = BoostState::Touching;
@@ -261,13 +277,31 @@ impl TouchBoostController {
         }
     }
 
-    /// 定时 tick：处理恢复阶段的衰减
+    /// 定时 tick：处理 50ms 脉冲超时和恢复阶段衰减
     pub fn tick(&mut self) {
-        if !self.initialized || self.state != BoostState::Recovering {
+        if !self.initialized {
             return;
         }
 
         let now = Instant::now();
+
+        // TOUCHING 状态按住静止（无 epoll 事件），超时 50ms 自动切入 Cooldown
+        if self.state == BoostState::Touching {
+            let cfg = self.config.read().unwrap();
+            let min_dur = cfg.min_boost_duration_ms.min(50);
+            drop(cfg);
+            if now.duration_since(self.touch_start).as_millis() as u64 >= min_dur {
+                self.state = BoostState::Cooldown;
+                self.recover_all();
+                log::debug!("{}", t("touch-boost-release"));
+                return;
+            }
+        }
+
+        if self.state != BoostState::Recovering {
+            return;
+        }
+
         let cfg = self.config.read().unwrap();
         let elapsed = now.duration_since(self.release_time).as_millis() as u64;
 
@@ -669,6 +703,66 @@ input_device: ""
         controller.last_enabled = false;
 
         controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Idle);
+    }
+
+    /// 验证 50ms 脉冲 Boost 与 Cooldown 冷却状态机制
+    #[test]
+    fn test_pulse_boost_50ms_cooldown() {
+        let cfg = Arc::new(RwLock::new(TouchBoostConfig {
+            enabled: true,
+            boost_freqs: vec![2000000],
+            release_delay_ms: 50,
+            min_boost_duration_ms: 50,
+            ..Default::default()
+        }));
+        let mut controller = TouchBoostController::new(cfg);
+        controller.initialized = true;
+        controller.last_enabled = true;
+
+        // 1. 按下触控: 应进入 Touching 状态
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching);
+
+        // 2. 触摸持续超过 50ms 后再次收到 touching=true (滑动/按住):
+        // 应自动结束 Boost，进入 Cooldown 状态，而非保持 Touching
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Cooldown);
+
+        // 3. 在 Cooldown 状态下，持续收到 touching=true: 应保持 Cooldown 状态，不重新 Boost
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Cooldown);
+
+        // 4. 只有当 touching=false (松手) 时: 才从 Cooldown 恢复到 Idle 状态
+        controller.on_touch_event(false);
+        assert_eq!(controller.state(), BoostState::Idle);
+    }
+
+    /// 验证 tick 在 50ms 超时后将 Touching 状态切入 Cooldown
+    #[test]
+    fn test_pulse_boost_tick_cooldown() {
+        let cfg = Arc::new(RwLock::new(TouchBoostConfig {
+            enabled: true,
+            boost_freqs: vec![2000000],
+            release_delay_ms: 50,
+            min_boost_duration_ms: 50,
+            ..Default::default()
+        }));
+        let mut controller = TouchBoostController::new(cfg);
+        controller.initialized = true;
+        controller.last_enabled = true;
+
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching);
+
+        // sleep 60ms 且没有新的 touch event，但 tick 被调用
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        controller.tick();
+        assert_eq!(controller.state(), BoostState::Cooldown);
+
+        // 松手恢复 Idle
+        controller.on_touch_event(false);
         assert_eq!(controller.state(), BoostState::Idle);
     }
 }
