@@ -52,7 +52,7 @@ powersave:
     spike_decay: 0.3
 
 # 均衡模式 — 日常使用
-# 策略：适中升频灵敏度，平滑降频，兼顾流畅和功耗
+# 策略：高响应升频，结合 Race-to-Idle 极速降频归位，兼顾极致流畅与极低功耗
 balance:
   cpu_load_governor:
     up_threshold: 0.75
@@ -69,7 +69,7 @@ balance:
     up_jump_threshold: 0.35
     slow_up_scale: 0.02
     slow_down_scale: 0.5
-    down_fast_threshold: 0.12
+    down_fast_threshold: 0.15
     down_fast_mult: 3.0
     spike_jump_threshold: 0.35
     spike_decay: 0.5

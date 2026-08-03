@@ -173,11 +173,11 @@ pub struct FasRulesConfig {
 }
 
 pub fn default_fps_gears() -> Vec<f32> { vec![30.0, 60.0, 90.0, 120.0, 144.0] }
-pub fn default_fps_margin() -> f32 { 3.0 }
+pub fn default_fps_margin() -> f32 { 2.0 }
 fn d_auto_cap() -> bool { true }
 fn d_perf_floor() -> f32 { 0.22 }
 fn d_perf_ceil() -> f32 { 1.0 }
-fn d_perf_init() -> f32 { 0.45 }
+fn d_perf_init() -> f32 { 0.35 }
 fn d_perf_cold() -> f32 { 0.85 }
 pub fn d_hysteresis() -> f32 { 0.015 }
 pub fn d_heavy_ms() -> f32 { 150.0 }
@@ -186,18 +186,18 @@ fn d_load_tol() -> u32 { 3 }
 fn d_load_pf() -> f32 { 0.60 }
 fn d_load_pc() -> f32 { 0.70 }
 pub fn d_post_ign() -> u32 { 5 }
-pub fn d_post_perf() -> f32 { 0.65 }
-fn d_post_guard() -> u32 { 90 }
+pub fn d_post_perf() -> f32 { 0.50 }
+fn d_post_guard() -> u32 { 45 }
 fn d_up_confirm() -> u32 { 60 }
-fn d_dn_confirm() -> u32 { 90 }
+fn d_dn_confirm() -> u32 { 45 }
 fn d_up_cd() -> u32 { 90 }
 fn d_dampen() -> u32 { 60 }
-fn d_boost_inc() -> f32 { 0.18 }
-fn d_boost_dur() -> u32 { 45 }
+fn d_boost_inc() -> f32 { 0.12 }
+fn d_boost_dur() -> u32 { 30 }
 fn d_fd_thresh() -> u32 { 75 }
-fn d_fd_perf() -> f32 { 0.70 }
-fn d_fd_max() -> f32 { 0.022 }
-fn d_fd_min() -> f32 { 0.004 }
+fn d_fd_perf() -> f32 { 0.40 }
+fn d_fd_max() -> f32 { 0.045 }
+fn d_fd_min() -> f32 { 0.008 }
 fn d_jank_cd() -> u32 { 15 }
 fn d_max_inc_d() -> f32 { 0.045 }
 fn d_max_inc_n() -> f32 { 0.075 }
