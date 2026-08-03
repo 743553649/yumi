@@ -2,9 +2,9 @@ package com.yumi.bridge.ui.compose
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,7 +30,9 @@ fun LiquidBottomCards(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Max),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // 卡片 1: RAM 内存卡片
@@ -38,7 +41,9 @@ fun LiquidBottomCards(
             ramPercent = ramPercent,
             swapDetailText = swapDetailText,
             swapPercent = swapPercent,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
         )
 
         // 卡片 2: 电池信息卡片
@@ -46,7 +51,42 @@ fun LiquidBottomCards(
             batteryLevel = batteryLevel,
             batteryTempText = batteryTempText,
             batteryPowerText = batteryPowerText,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+        )
+    }
+}
+
+@Composable
+private fun GradientProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 300),
+        label = "GradientProgress"
+    )
+
+    // linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)
+    val gradientBrush = Brush.linearGradient(
+        colors = listOf(Color(0xFFA1C4FD), Color(0xFFC2E9FB))
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Color(0x30CBD5E1))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction = animatedProgress.coerceAtLeast(0.01f))
+                .clip(RoundedCornerShape(3.dp))
+                .background(gradientBrush)
         )
     }
 }
@@ -62,9 +102,9 @@ private fun RamInfoCard(
     GlassBackdropWrapper(modifier = modifier) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = "RAM 内存",
@@ -91,27 +131,13 @@ private fun RamInfoCard(
                     Text(
                         text = "$ramDetailText (${ramPercent.coerceIn(0, 100)}%)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF0284C7),
+                        color = Color(0xFF475569),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                val animatedRamProgress by animateFloatAsState(
-                    targetValue = ramPercent.coerceIn(0, 100) / 100f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "RamProgress"
-                )
-
-                LinearProgressIndicator(
-                    progress = { animatedRamProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = Color(0xFF0284C7),
-                    trackColor = Color(0x30CBD5E1)
-                )
+                GradientProgressBar(progress = ramPercent.coerceIn(0, 100) / 100f)
             }
 
             // 交换分区内存 (Swap / ZRAM)
@@ -131,27 +157,13 @@ private fun RamInfoCard(
                     Text(
                         text = "$swapDetailText (${swapPercent.coerceIn(0, 100)}%)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF9333EA),
+                        color = Color(0xFF475569),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                val animatedSwapProgress by animateFloatAsState(
-                    targetValue = swapPercent.coerceIn(0, 100) / 100f,
-                    animationSpec = tween(durationMillis = 300),
-                    label = "SwapProgress"
-                )
-
-                LinearProgressIndicator(
-                    progress = { animatedSwapProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = Color(0xFF9333EA),
-                    trackColor = Color(0x30CBD5E1)
-                )
+                GradientProgressBar(progress = swapPercent.coerceIn(0, 100) / 100f)
             }
         }
     }
@@ -174,9 +186,9 @@ private fun BatteryInfoCard(
     GlassBackdropWrapper(modifier = modifier) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -197,6 +209,45 @@ private fun BatteryInfoCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )
+            }
+
+            // 电池电量能量条
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "电池电量",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF475569),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                val animatedLevelProgress by animateFloatAsState(
+                    targetValue = clampedLevel / 100f,
+                    animationSpec = tween(durationMillis = 300),
+                    label = "BatteryLevelProgress"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0x30CBD5E1))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = animatedLevelProgress.coerceAtLeast(0.01f))
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(batteryColor)
+                    )
+                }
             }
 
             Row(
