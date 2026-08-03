@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,14 +28,113 @@ data class ModeConfig(
     val key: String,
     val title: String,
     val subtitle: String,
-    val accentColor: Color
+    val accentColor: Color,
+    val icon: ImageVector
 )
 
+// 1. 省电 (Powersave) - 电池/节能图标
+private val PowersaveIcon: ImageVector = ImageVector.Builder(
+    name = "PowersaveIcon",
+    defaultWidth = 16.dp,
+    defaultHeight = 16.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).path(fill = SolidColor(Color(0xFF16A34A))) {
+    moveTo(17f, 4f)
+    horizontalLineTo(7f)
+    lineTo(7f, 20f)
+    horizontalLineTo(17f)
+    lineTo(17f, 4f)
+    close()
+    moveTo(11f, 16f)
+    verticalLineTo(13f)
+    horizontalLineTo(9f)
+    lineTo(13f, 8f)
+    verticalLineTo(11f)
+    horizontalLineTo(15f)
+    lineTo(11f, 16f)
+    close()
+}.build()
+
+// 2. 平衡 (Balance) - 天平/均衡器图标
+private val BalanceIcon: ImageVector = ImageVector.Builder(
+    name = "BalanceIcon",
+    defaultWidth = 16.dp,
+    defaultHeight = 16.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).path(fill = SolidColor(Color(0xFF0284C7))) {
+    moveTo(10f, 20f)
+    horizontalLineTo(14f)
+    verticalLineTo(4f)
+    horizontalLineTo(10f)
+    verticalLineTo(20f)
+    close()
+    moveTo(4f, 20f)
+    horizontalLineTo(8f)
+    verticalLineTo(10f)
+    horizontalLineTo(4f)
+    verticalLineTo(20f)
+    close()
+    moveTo(16f, 14f)
+    verticalLineTo(20f)
+    horizontalLineTo(20f)
+    verticalLineTo(14f)
+    horizontalLineTo(16f)
+    close()
+}.build()
+
+// 3. 性能 (Performance) - 仪表盘/高吞吐图标
+private val PerformanceIcon: ImageVector = ImageVector.Builder(
+    name = "PerformanceIcon",
+    defaultWidth = 16.dp,
+    defaultHeight = 16.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).path(fill = SolidColor(Color(0xFFEA580C))) {
+    moveTo(12f, 3f)
+    lineTo(4f, 19f)
+    horizontalLineTo(20f)
+    lineTo(12f, 3f)
+    close()
+    moveTo(11f, 9f)
+    horizontalLineTo(13f)
+    verticalLineTo(14f)
+    horizontalLineTo(11f)
+    verticalLineTo(9f)
+    close()
+    moveTo(11f, 16f)
+    horizontalLineTo(13f)
+    verticalLineTo(18f)
+    horizontalLineTo(11f)
+    verticalLineTo(16f)
+    close()
+}.build()
+
+// 4. 极速 (Fast) - 闪电/极速图标
+private val FastIcon: ImageVector = ImageVector.Builder(
+    name = "FastIcon",
+    defaultWidth = 16.dp,
+    defaultHeight = 16.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).path(fill = SolidColor(Color(0xFFDC2626))) {
+    moveTo(7f, 2f)
+    verticalLineTo(13f)
+    horizontalLineTo(10f)
+    verticalLineTo(22f)
+    lineTo(17f, 10f)
+    horizontalLineTo(13f)
+    lineTo(17f, 2f)
+    horizontalLineTo(7f)
+    close()
+}.build()
+
 val SUPPORTED_MODES = listOf(
-    ModeConfig("powersave", "省电", "低功耗运行", Color(0xFF16A34A)),
-    ModeConfig("balance", "平衡", "标准预设", Color(0xFF0284C7)),
-    ModeConfig("performance", "性能", "高吞吐量", Color(0xFFEA580C)),
-    ModeConfig("fast", "极速", "超低延迟", Color(0xFFDC2626))
+    ModeConfig("powersave", "省电", "低功耗运行", Color(0xFF16A34A), PowersaveIcon),
+    ModeConfig("balance", "平衡", "标准预设", Color(0xFF0284C7), BalanceIcon),
+    ModeConfig("performance", "性能", "高吞吐量", Color(0xFFEA580C), PerformanceIcon),
+    ModeConfig("fast", "极速", "超低延迟", Color(0xFFDC2626), FastIcon)
 )
 
 @Composable
@@ -110,7 +213,7 @@ private fun ModeCard(
                 shape = cardShape
             )
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp, horizontal = 14.dp)
+            .padding(vertical = 12.dp, horizontal = 12.dp)
     ) {
         Column {
             Row(
@@ -118,12 +221,23 @@ private fun ModeCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = config.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSelected) config.accentColor else Color(0xFF0F172A)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = config.icon,
+                        contentDescription = null,
+                        tint = if (isSelected) config.accentColor else Color(0xFF64748B),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = config.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) config.accentColor else Color(0xFF0F172A)
+                    )
+                }
                 if (isSelected) {
                     Box(
                         modifier = Modifier

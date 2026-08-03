@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -31,31 +32,25 @@ fun LiquidCpuDashboard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // CPU 8-Core Grid (2 columns x 4 rows)
+            // CPU 8-Core Grid (4 columns x 2 rows)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (row in 0 until 4) {
+                for (row in 0 until 2) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        val core1 = row * 2
-                        val core2 = row * 2 + 1
-
-                        CpuCoreItem(
-                            coreIndex = core1,
-                            freq = cpuFreqs.getOrElse(core1) { 0L },
-                            usage = cpuUsages.getOrElse(core1) { 0 },
-                            modifier = Modifier.weight(1f)
-                        )
-                        CpuCoreItem(
-                            coreIndex = core2,
-                            freq = cpuFreqs.getOrElse(core2) { 0L },
-                            usage = cpuUsages.getOrElse(core2) { 0 },
-                            modifier = Modifier.weight(1f)
-                        )
+                        for (col in 0 until 4) {
+                            val coreIndex = row * 4 + col
+                            CpuCoreCircularItem(
+                                coreIndex = coreIndex,
+                                freq = cpuFreqs.getOrElse(coreIndex) { 0L },
+                                usage = cpuUsages.getOrElse(coreIndex) { 0 },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
@@ -108,7 +103,7 @@ fun LiquidCpuDashboard(
 }
 
 @Composable
-private fun CpuCoreItem(
+private fun CpuCoreCircularItem(
     coreIndex: Int,
     freq: Long,
     usage: Int,
@@ -126,55 +121,58 @@ private fun CpuCoreItem(
     val animatedUsageProgress by animateFloatAsState(
         targetValue = clampedUsage / 100f,
         animationSpec = tween(durationMillis = 300),
-        label = "CpuUsageProgress"
+        label = "CpuCircularProgress"
     )
 
-    val freqText = if (freq > 0L) "$freq MHz" else "0 MHz"
+    val freqText = if (freq > 0L) "${freq}MHz" else "0MHz"
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0x80F1F5F9))
             .border(1.dp, Color(0x300284C7), RoundedCornerShape(12.dp))
-            .padding(8.dp)
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Core $coreIndex",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF0F172A),
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+            )
+
+            // 环形进度图 (Circular Progress)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(34.dp)
             ) {
-                Text(
-                    text = "Core $coreIndex",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF0F172A),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
+                CircularProgressIndicator(
+                    progress = { animatedUsageProgress },
+                    modifier = Modifier.fillMaxSize(),
+                    color = usageColor,
+                    strokeWidth = 3.dp,
+                    trackColor = Color(0x30CBD5E1)
                 )
                 Text(
                     text = "$clampedUsage%",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
                     color = usageColor,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
+                    fontSize = 9.sp
                 )
             }
-
-            LinearProgressIndicator(
-                progress = { animatedUsageProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = usageColor,
-                trackColor = Color(0x30CBD5E1),
-            )
 
             Text(
                 text = freqText,
                 style = MaterialTheme.typography.labelSmall,
                 color = Color(0xFF64748B),
-                fontSize = 9.sp
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Medium
             )
         }
     }
