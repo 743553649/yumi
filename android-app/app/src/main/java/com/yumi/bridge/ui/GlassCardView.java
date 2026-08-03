@@ -27,9 +27,9 @@ public class GlassCardView extends FrameLayout {
     private final RectF rectF = new RectF();
     private float cornerRadius;
 
-    private int customTint = 0xD9FFFFFF; // 冰白 85% 混色 (#D9FFFFFF)
-    private int customStrokeStart = 0xFFFFFFFF;
-    private int customStrokeEnd = 0x80FFFFFF;
+    private int customTint = 0xD9FFFFFF; // 85% ice-white translucency (#D9FFFFFF)
+    private int customStrokeStart = 0xFFFFFFFF; // Pure white top stroke (#FFFFFF)
+    private int customStrokeEnd = 0x800284C7; // Soft sky blue bottom stroke (#800284C7)
 
     public GlassCardView(Context context) {
         super(context);
@@ -80,9 +80,9 @@ public class GlassCardView extends FrameLayout {
             strokePaint.setStrokeWidth(density * 1.5f); // 1.5dp 精密内描边
         } else {
             // 未激活状态：优雅冷白毛玻璃
-            this.customTint = 0x0DFFFFFF; // 5% 冰白微透
-            this.customStrokeStart = 0x26FFFFFF; // 15% 白描边
-            this.customStrokeEnd = 0x0DFFFFFF; // 5% 白描边
+            this.customTint = 0xD9FFFFFF; // 85% 冰白半透明
+            this.customStrokeStart = 0xFFFFFFFF; // 纯白描边
+            this.customStrokeEnd = 0x800284C7; // 柔和天蓝底部描边
             strokePaint.setStrokeWidth(density * 1.0f); // 1.0dp
         }
         tintPaint.setColor(customTint);
