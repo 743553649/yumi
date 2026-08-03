@@ -79,12 +79,12 @@ public class MainActivity extends ComponentActivity {
     public static final int LEVEL_WARN = 3;
     public static final int LEVEL_ERROR = 4;
 
-    private static class RealLogEntry {
-        final String rawLine;
-        final String formattedChineseLine;
-        final int level;
+    public static class RealLogEntry {
+        public final String rawLine;
+        public final String formattedChineseLine;
+        public final int level;
 
-        RealLogEntry(String rawLine, String formattedChineseLine, int level) {
+        public RealLogEntry(String rawLine, String formattedChineseLine, int level) {
             this.rawLine = rawLine;
             this.formattedChineseLine = formattedChineseLine;
             this.level = level;
@@ -1038,19 +1038,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void renderLogDisplay() {
-        StringBuilder sb = new StringBuilder();
-        for (RealLogEntry entry : realLogs) {
-            if (currentFilterLevel == LEVEL_ALL || entry.level == currentFilterLevel) {
-                sb.append(entry.formattedChineseLine).append("\n");
-            }
-        }
-        tvLog.setText(sb.toString());
-        svLogScroll.post(new Runnable() {
-            @Override
-            public void run() {
-                svLogScroll.fullScroll(ScrollView.FOCUS_DOWN);
-            }
-        });
+        ComposeHomeBridgeKt.updateLogState(realLogs, currentFilterLevel);
     }
 
     private String formatLineToChinese(String line) {

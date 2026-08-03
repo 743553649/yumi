@@ -45,6 +45,10 @@ class HomeUiState {
 
     var uptimeText by mutableStateOf("00:00:00")
     var isDaemonOnline by mutableStateOf(true)
+
+    // Logs state
+    val realLogs = mutableStateListOf<com.yumi.bridge.MainActivity.RealLogEntry>()
+    var currentFilterLevel by mutableStateOf(com.yumi.bridge.MainActivity.LEVEL_ALL)
 }
 
 private val globalHomeState = HomeUiState()
@@ -212,9 +216,11 @@ fun attachHomeScreen(
         androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
     )
     composeView.setContent {
-        HomeScreen(
+        LogScreen(
             state = globalHomeState,
-            onModeSelected = { mode -> onModeSelectedListener.onModeSelected(mode) }
+            onClearClick = {
+                globalHomeState.realLogs.clear()
+            }
         )
     }
 }
@@ -249,6 +255,19 @@ fun updateHomeScreenState(
     globalHomeState.batteryPowerText = batteryPowerText
     globalHomeState.uptimeText = uptimeText
     globalHomeState.isDaemonOnline = isDaemonOnline
+}
+
+fun updateLogState(
+    logs: List<com.yumi.bridge.MainActivity.RealLogEntry>,
+    filterLevel: Int
+) {
+    globalHomeState.realLogs.clear()
+    globalHomeState.realLogs.addAll(logs)
+    globalHomeState.currentFilterLevel = filterLevel
+}
+
+fun updateFilterLevel(level: Int) {
+    globalHomeState.currentFilterLevel = level
 }
 
 fun interface OnModeSelectedListener {
