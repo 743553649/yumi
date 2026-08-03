@@ -204,7 +204,7 @@ private fun ModeCard(
             )
         )
     } else {
-        Modifier.background(Color(0x80F1F5F9))
+        Modifier.background(Color(0x40F1F5F9))
     }
 
     Box(
@@ -213,7 +213,7 @@ private fun ModeCard(
             .then(backgroundModifier)
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) Color(0xFF749BEB) else Color(0x40CBD5E1),
+                color = if (isSelected) Color(0xFF749BEB) else Color(0x30CBD5E1),
                 shape = cardShape
             )
             .clickable(onClick = onClick)
