@@ -15,7 +15,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,10 +28,11 @@ data class ModeConfig(
 )
 
 private val MODES = listOf(
-    ModeConfig("powersave", "省电", "续航优先", Color(0xFF10B981)),
-    ModeConfig("balance", "平衡", "均衡流畅", Color(0xFF06B6D4)),
-    ModeConfig("performance", "性能", "高刷响应", Color(0xFFF59E0B)),
-    ModeConfig("ultra", "极速", "极限释放", Color(0xFFEF4444))
+    ModeConfig("powersave", "省电", "低功耗运行", Color(0xFF16A34A)),
+    ModeConfig("balance", "平衡", "标准预设", Color(0xFF0284C7)),
+    ModeConfig("performance", "性能", "高吞吐量", Color(0xFFEA580C)),
+    ModeConfig("fast", "极速", "超低延迟", Color(0xFFDC2626)),
+    ModeConfig("fas", "FAS 帧感知", "游戏逐帧调频", Color(0xFF9333EA))
 )
 
 @Composable
@@ -56,13 +56,13 @@ fun LiquidControlCenter(
                 Text(
                     text = "性能模式中心",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
+                    color = Color(0xFF0F172A),
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "Liquid Control",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.5f)
+                    color = Color(0xFF64748B)
                 )
             }
 
@@ -101,6 +101,17 @@ fun LiquidControlCenter(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ModeCard(
+                        config = MODES[4],
+                        isSelected = currentMode.equals(MODES[4].key, ignoreCase = true),
+                        onClick = { onModeSelected(MODES[4].key) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }
@@ -114,7 +125,7 @@ private fun ModeCard(
     modifier: Modifier = Modifier
 ) {
     val animatedBgColor by animateColorAsState(
-        targetValue = if (isSelected) config.accentColor.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.05f),
+        targetValue = if (isSelected) config.accentColor.copy(alpha = 0.15f) else Color(0x80F1F5F9),
         animationSpec = tween(durationMillis = 250),
         label = "ModeCardBg"
     )
@@ -127,21 +138,7 @@ private fun ModeCard(
             .background(animatedBgColor)
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                brush = if (isSelected) {
-                    Brush.linearGradient(
-                        colors = listOf(
-                            config.accentColor,
-                            config.accentColor.copy(alpha = 0.4f)
-                        )
-                    )
-                } else {
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.2f),
-                            Color.White.copy(alpha = 0.05f)
-                        )
-                    )
-                },
+                color = if (isSelected) config.accentColor else Color(0x40CBD5E1),
                 shape = cardShape
             )
             .clickable(onClick = onClick)
@@ -157,7 +154,7 @@ private fun ModeCard(
                     text = config.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (isSelected) config.accentColor else Color.White
+                    color = if (isSelected) config.accentColor else Color(0xFF0F172A)
                 )
                 if (isSelected) {
                     Box(
@@ -172,7 +169,7 @@ private fun ModeCard(
             Text(
                 text = config.subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.65f),
+                color = Color(0xFF475569),
                 fontSize = 11.sp
             )
         }

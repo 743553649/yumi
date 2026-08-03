@@ -1,6 +1,5 @@
 package com.yumi.bridge.ui.compose
 
-import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,8 +18,8 @@ import androidx.compose.ui.unit.dp
 /**
  * 液态高斯模糊玻璃容器 (GlassBackdropWrapper)
  *
- * 在 Android 13+ (API 33+) 采用极光透明玻璃与 Shader 混色，
- * 在 API 26-32 环境优雅降级为 85% 冰白混色圆角卡片与精细高光双色渐变描边。
+ * 采用 85% 冰白半透明渐变 (Ice-White Translucency Gradient)
+ * 与极光柔蓝/纯白高光描边 (White/Soft-Blue Highlight Border)。
  */
 @Composable
 fun GlassBackdropWrapper(
@@ -30,33 +29,24 @@ fun GlassBackdropWrapper(
 ) {
     val highlightBorder = remember {
         BorderStroke(
-            width = 1.dp,
+            width = 1.5.dp,
             brush = Brush.linearGradient(
                 colors = listOf(
-                    Color(0x66FFFFFF), // Ice white top-left highlight
-                    Color(0x1AFFFFFF), // Mid translucent body
-                    Color(0x4000E5FF)  // Neon cyan bottom-right reflection
+                    Color(0xFFFFFFFF),
+                    Color(0x80FFFFFF),
+                    Color(0x400284C7)
                 )
             )
         )
     }
 
     val glassBrush = remember {
-        if (Build.VERSION.SDK_INT >= 33) {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0x33FFFFFF), // 20% liquid ice translucency for API 33+
-                    Color(0x1AFFFFFF)
-                )
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0xD9FFFFFF),
+                Color(0xB3E0F2FE)
             )
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xD9F8FAFC), // 85% ice-white frosted top blend
-                    Color(0xB3E2E8F0)  // 70% soft slate frosted bottom blend
-                )
-            )
-        }
+        )
     }
 
     Box(

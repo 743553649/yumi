@@ -45,13 +45,13 @@ fun LiquidCpuDashboard(
                     Text(
                         text = "CPU & 内存监控",
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
+                        color = Color(0xFF0F172A),
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "8-Core Realtime Monitor",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = Color(0xFF64748B)
                     )
                 }
 
@@ -59,14 +59,14 @@ fun LiquidCpuDashboard(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.1f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                        .background(Color(0x30E0F2FE))
+                        .border(1.dp, Color(0x800284C7), RoundedCornerShape(12.dp))
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "运行: $uptimeText",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF00E5FF),
+                        color = Color(0xFF0284C7),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -77,7 +77,7 @@ fun LiquidCpuDashboard(
             Text(
                 text = "CPU 核心状态",
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.7f),
+                color = Color(0xFF64748B),
                 fontWeight = FontWeight.SemiBold
             )
 
@@ -116,13 +116,13 @@ fun LiquidCpuDashboard(
                     Text(
                         text = "RAM 内存使用",
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = Color(0xFF0F172A),
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = "$ramDetailText (${ramPercent.coerceIn(0, 100)}%)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = Color(0xFF334155),
                         fontSize = 11.sp
                     )
                 }
@@ -134,9 +134,9 @@ fun LiquidCpuDashboard(
                 )
 
                 val ramColor = when {
-                    ramPercent > 85 -> Color(0xFFEF4444)
-                    ramPercent > 70 -> Color(0xFFF59E0B)
-                    else -> Color(0xFF00E5FF)
+                    ramPercent > 85 -> Color(0xFFDC2626)
+                    ramPercent > 70 -> Color(0xFFEA580C)
+                    else -> Color(0xFF0284C7)
                 }
 
                 LinearProgressIndicator(
@@ -146,7 +146,7 @@ fun LiquidCpuDashboard(
                         .height(8.dp)
                         .clip(RoundedCornerShape(4.dp)),
                     color = ramColor,
-                    trackColor = Color.White.copy(alpha = 0.1f),
+                    trackColor = Color(0x30CBD5E1),
                 )
             }
         }
@@ -163,10 +163,10 @@ private fun CpuCoreItem(
     val clampedUsage = usage.coerceIn(0, 100)
 
     val usageColor = when {
-        clampedUsage > 80 -> Color(0xFFEF4444)
-        clampedUsage > 60 -> Color(0xFFF59E0B)
-        clampedUsage > 30 -> Color(0xFF06B6D4)
-        else -> Color(0xFF10B981)
+        clampedUsage > 80 -> Color(0xFFDC2626)
+        clampedUsage > 60 -> Color(0xFFEA580C)
+        clampedUsage > 30 -> Color(0xFF0284C7)
+        else -> Color(0xFF16A34A)
     }
 
     val animatedUsageProgress by animateFloatAsState(
@@ -184,8 +184,8 @@ private fun CpuCoreItem(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+            .background(Color(0x80F1F5F9))
+            .border(1.dp, Color(0x300284C7), RoundedCornerShape(12.dp))
             .padding(8.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -197,7 +197,7 @@ private fun CpuCoreItem(
                 Text(
                     text = "Core $coreIndex",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.9f),
+                    color = Color(0xFF0F172A),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp
                 )
@@ -217,13 +217,13 @@ private fun CpuCoreItem(
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
                 color = usageColor,
-                trackColor = Color.White.copy(alpha = 0.1f),
+                trackColor = Color(0x30CBD5E1),
             )
 
             Text(
                 text = freqText,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.5f),
+                color = Color(0xFF64748B),
                 fontSize = 9.sp
             )
         }
