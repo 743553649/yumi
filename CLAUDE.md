@@ -3,9 +3,9 @@
 ## 语言规范
 
 - **始终使用中文回复**：所有解释、注释、交流均使用中文
-- **代码注释使用中文**：Rust 源码及 Java/XML 资源注释使用中文编写
+- **代码注释使用中文**：Rust 源码及 Java/XML/Kotlin 资源注释使用中文编写
 - **技术术语保留英文**：如 PID、EMA、FAS、CLG、CPU、GPU、IPC 等缩写保持原样
-- **变量名/函数名保持英文**：遵循 Rust 及 Java 命名规范
+- **变量名/函数名保持英文**：遵循 Rust、Java 及 Kotlin 命名规范
 
 ## 项目持久化记忆
 
@@ -13,7 +13,6 @@
 - **项目名称**: yumi
 - **项目类型**: Android CPU 调度器（Rust 核心守护进程 + Android 14 控制端 App）
 - **主要功能**: 帧感知调度（FAS）、CPU 负载调速器（CLG）、CPUSet 绑核、TouchBoost 触摸提频、Idle Dive 静止下潜、TCP IPC 通信、iOS 26 极简冰雪白毛玻璃控制端 App
-- **源码位置**: `/storage/emulated/0/yumi/`
 - **测试设备**: 骁龙 8 Elite 处理器 / Android 14 (API 34)
 
 ### 核心模块
@@ -42,7 +41,7 @@
    - `src/ipc_server.rs` - TCP 127.0.0.1:14567 监听，响应 `ping`、`get_mode`、`set_mode` 与带有终止符的 `get_log` 运行日志流协议
 
 8. **yumi Bridge Android 控制端 App** - iOS 26 冰雪白毛玻璃控制中心 App
-   - `android-app/` - Target SDK 34 (Android 14) Edge-to-Edge 无界全屏沉浸控制端，使用高对比度冰粹浅色毛玻璃 UI，支持 5 级中文日志实时分级过滤与 Root `su -c` 物理日志通道
+   - `android-app/` - Target SDK 34 (Android 14) Edge-to-Edge 无界全屏沉浸控制端，采用 Java View + Jetpack Compose 双引擎混合架构，提供 3-Tab（首页控制台 / 运行日志终端 / 应用规则管理），支持 5 级中文日志过滤与 Root `su -c` 物理日志通道
 
 ### 重要配置文件
 - `src/scheduler/config.rs` - 调度器配置
@@ -52,8 +51,8 @@
 - `module/config/idle_dive.yaml` - 静止下潜配置
 - `module/config/touch_boost.yaml` - 触摸提频配置
 - `android-app/app/src/main/AndroidManifest.xml` - Android App 清单（uses-sdk targetSdkVersion 34）
-- `android-app/app/src/main/java/com/yumi/bridge/MainActivity.java` - App 控制 Activity
-- `android-app/app/src/main/res/values/{themes.xml, colors.xml}` - iOS 26 浅色毛玻璃视觉 Token 与全屏沉浸主题
+- `android-app/app/src/main/java/com/yumi/bridge/MainActivity.java` - App 主控 Activity
+- `android-app/app/src/main/java/com/yumi/bridge/ui/compose/LiquidControlCenter.kt` - Compose 流体控制中心视图
 
 ### 关键参数说明
 - **perf**: 性能指标，范围 [0, 1]，值越高频率越高
@@ -68,19 +67,19 @@
 1. **严格限定修改范围**：只修改与当前任务直接相关的代码或文件，绝不随手变动无关代码或重构无关逻辑。
 2. **严禁“拆东墙补西墙”**：修复新问题或调整局部样式/逻辑时，必须确保原有组件（如守护进程状态卡片、模式切换卡片、日志终端面板）完好无损，严禁通过隐藏或剥离已有功能来解决问题。
 
-### Rust & Java 编码规范
+### Rust & Java / Kotlin 编码规范
 - Rust 使用 4 空格缩进，函数 snake_case，结构体 PascalCase，每行原则上不超过 100 字符
-- Java / XML 保持标准 Android 工程代码风格与高可读性
+- Java / Kotlin / XML 保持标准 Android 工程代码风格与高可读性
 - 复杂逻辑必须添加清晰中文注释
 
 ### 日志规范
 - Rust 端使用 `log::info!`, `log::debug!`, `log::warn!`, `log::error!` 并配合 `t()` 国际化
-- Android 端使用中文呈现 5 级日志（全部、调试、信息、警告、错误）
+- Android 端使用中文呈现 5 级日志（全部、调试、信息、警告/错误）
 
 ## 工作流程
 
 ### 修改代码前
-1. 阅读相关文档（如 `docs/省电优化方案.md` / `docs/yumi_Bridge_毛玻璃UI设计规范书.md` / `docs/superpowers/specs/2026-08-02-light-glassmorphism-theme-design.md`）
+1. 阅读相关架构与设计文档（如 `docs/2026-08-02-android-ui-liquid-glass-refactor.md` / `docs/省电优化方案.md`）
 2. 理解现有架构和参数含义
 3. 确认修改精确影响范围
 
@@ -91,35 +90,46 @@
 
 ### 修改代码后
 1. 更新 `docs/工作日志.md` 记录修改
-2. 执行打包脚本验证编译结果
+2. 执行打包与构建流程验证编译结果
 3. 确保功能与日志输出清晰可读
+
+## Health Stack
+
+- typecheck: $env:YUMI_SKIP_EBPF="1"; cargo check --target aarch64-linux-android
+- lint: cargo fmt --check
+- clippy: $env:YUMI_SKIP_EBPF="1"; cargo clippy --target aarch64-linux-android
+- test: $env:YUMI_SKIP_EBPF="1"; cargo test --target aarch64-linux-android --no-run
 
 ## 测试与验证
 
 ### 编译与打包测试
-- **Rust 核心与单元测试**：
-  ```bash
-  cargo check
-  cargo test
-  ```
-- **Android App 打包与签名**：
-  ```bash
-  bash /storage/emulated/0/yumi/android-app/build_apk.sh
-  ```
-  产物路径：`/storage/emulated/0/yumi/yumi-bridge.apk`
 
-### 功能验证
-- 日用场景：社交、阅读、浏览
-- 游戏场景：60fps/120fps 游戏
-- 息屏场景：待机、后台同步
-- 控制端场景：模式切换、状态同步、5 级中文日志过滤与浅色毛玻璃全屏沉浸渲染
+- **Rust 核心（交叉编译检查）**：
+  ```powershell
+  # 电脑端 Windows 跳过 eBPF 快速语法与类型检查
+  $env:YUMI_SKIP_EBPF=1; cargo check --target aarch64-linux-android
+  ```
+
+- **Android App 打包与构建**：
+  - **💻 电脑端（推荐）**：
+    ```powershell
+    cd android-app; .\gradlew.bat assembleDebug
+    ```
+  - **📱 手机端 (Termux)**：
+    ```bash
+    # Compose 全功能版
+    python3 android-app/build_compose_apk.py
+    
+    # 轻量级原生版
+    bash android-app/build_apk.sh
+    ```
 
 ## 重要文件索引
 
 | 文件 | 用途 |
 |:---|:---|
-| `docs/yumi_Bridge_毛玻璃UI设计规范书.md` | yumi Bridge Android App 真实毛玻璃 (Glassmorphism) UI 设计规范书 (v5.0.0) |
-| `docs/superpowers/specs/2026-08-02-light-glassmorphism-theme-design.md` | iOS 26 极简冰雪白毛玻璃 (Light Glassmorphism) 重构规格设计书 |
+| `docs/2026-08-02-android-ui-liquid-glass-refactor.md` | iOS 26 极简冰雪白毛玻璃 (Light Glassmorphism) 重构架构与交互设计规范 |
+| `docs/2026-08-02-bottom-nav-app-rules-plan.md` | 底部导航栏与应用规则管理优化实施计划 |
 | `docs/省电优化方案.md` | 省电优化方案文档 |
 | `docs/TouchBoost实现方案.md` | TouchBoost、CPUSet、IdleDive 实现方案文档 |
 | `docs/工作日志.md` | 修改工作日志（记录各阶段实施状态） |
@@ -128,9 +138,12 @@
 | `docs/测试指南.md` | 测试与验证指南 |
 | `docs/CLG重构记录.md` | CLG 调速器重构日志与参数规范 |
 | `README.md` | 项目说明文档 |
-| `android-app/build_apk.sh` | Android App 打包与签名构建脚本 |
+| `android-app/README.md` | Android 控制端 App 架构说明与双端编译指南 |
+| `android-app/build_apk.sh` | Termux 手机端原生 Java APK 打包构建脚本 |
+| `android-app/build_compose_apk.py` | Termux 手机端 Compose 全功能 APK 构建 Python 脚本 |
 | `src/ipc_server.rs` | TCP Loopback IPC 通信服务端 |
 | `android-app/app/src/main/java/com/yumi/bridge/MainActivity.java` | App 主控 Activity 实现 |
+| `android-app/app/src/main/java/com/yumi/bridge/ui/compose/LiquidControlCenter.kt` | Compose 沉浸式流体控制中心视图 |
 | `src/scheduler/config.rs` | 调度器配置定义 |
 | `src/scheduler/mod.rs` | 调度器状态机与事件处理 |
 | `src/scheduler/cpu_load_governor.rs` | CLG 负载调速器实现 |

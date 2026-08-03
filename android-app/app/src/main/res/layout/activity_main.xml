@@ -3,7 +3,13 @@
     android:id="@+id/rootContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_ios_backdrop">
+    android:background="@color/ios_bg_dark">
+
+    <!-- 全局动态极光流体天幕背景 (LiquidMeshBackground) -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/composeBackgroundHost"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <!-- 页面内容主滚动区 (为底部导航栏留出 80dp 避让) -->
     <FrameLayout

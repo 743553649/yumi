@@ -19,6 +19,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yumi.bridge.ui.theme.YumiTheme
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+
+// Global shared backdrop state
+val sharedBackdropState = mutableStateOf<LayerBackdrop?>(null)
+
 
 class HomeUiState {
     var currentMode by mutableStateOf("balance")
@@ -56,7 +63,7 @@ fun YumiTopHeaderCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 前面显示：yumi 调度
+            // Display title
             Text(
                 text = "yumi 调度",
                 style = MaterialTheme.typography.titleMedium,
@@ -65,12 +72,12 @@ fun YumiTopHeaderCard(
                 fontSize = 16.sp
             )
 
-            // 后面显示：在线状态 & 运行时间
+            // Display online status and uptime
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // 在线状态标签
+                // Online status tag
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -102,7 +109,7 @@ fun YumiTopHeaderCard(
                     }
                 }
 
-                // 运行时间标签
+                // Uptime tag
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -137,25 +144,25 @@ fun HomeScreen(
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. 最顶部卡片：前面显示 yumi 调度，后面显示在线状态和运行时间
+            // 1. Top header card
             YumiTopHeaderCard(
                 uptimeText = state.uptimeText,
                 isOnline = state.isDaemonOnline
             )
 
-            // 2. 性能模式卡片 (4 大模式)
+            // 2. Performance mode card
             LiquidControlCenter(
                 currentMode = state.currentMode,
                 onModeSelected = onModeSelected
             )
 
-            // 3. CPU 核心 4x2 看板
+            // 3. CPU dashboard
             LiquidCpuDashboard(
                 cpuFreqs = state.cpuFreqs,
                 cpuUsages = state.cpuUsages
             )
 
-            // 4. 底部并行排列卡片 (卡片1: RAM & Swap, 卡片2: 电池信息)
+            // 4. Bottom cards (RAM & Swap, Battery)
             LiquidBottomCards(
                 ramDetailText = state.ramDetailText,
                 ramPercent = state.ramPercent,
@@ -170,7 +177,7 @@ fun HomeScreen(
 }
 
 /**
- * 初始化全局天幕背景 ComposeView (LiquidMeshBackground)
+ * Initialize global background ComposeView
  */
 fun attachBackgroundHost(composeView: ComposeView) {
     composeView.setViewCompositionStrategy(
@@ -178,13 +185,24 @@ fun attachBackgroundHost(composeView: ComposeView) {
     )
     composeView.setContent {
         YumiTheme {
-            LiquidMeshBackground { }
+            val backdrop = rememberLayerBackdrop()
+            DisposableEffect(backdrop) {
+                sharedBackdropState.value = backdrop
+                onDispose {
+                    if (sharedBackdropState.value == backdrop) {
+                        sharedBackdropState.value = null
+                    }
+                }
+            }
+            LiquidMeshBackground(
+                modifier = Modifier.layerBackdrop(backdrop)
+            ) { }
         }
     }
 }
 
 /**
- * 初始化 ComposeView 渲染树（仅需在 Java 中调用一次）。
+ * Initialize ComposeView render tree.
  */
 fun attachHomeScreen(
     composeView: ComposeView,
@@ -202,7 +220,7 @@ fun attachHomeScreen(
 }
 
 /**
- * 供 Java 后台轮询调用的更新函数，驱动 Compose State 响应式重绘。
+ * Update function for Java background polling to drive Compose State.
  */
 @JvmOverloads
 fun updateHomeScreenState(
