@@ -53,11 +53,10 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
 
-    // Kyant0 AndroidLiquidGlass (Backdrop)
-    implementation("io.github.kyant0:backdrop:1.0.1")
     implementation("androidx.compose.compiler:compiler:1.5.14")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }
 
 tasks.matching { it.name.contains("AarMetadata") }.configureEach {

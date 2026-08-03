@@ -2,6 +2,7 @@ package com.yumi.bridge;
 
 import com.yumi.bridge.ui.CpuCircleProgressView;
 import com.yumi.bridge.ui.GlassCardView;
+import com.yumi.bridge.utils.CpuStatsParser;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;
@@ -286,63 +287,38 @@ public class MainActivity extends ComponentActivity {
 
     private void readCpuStatsAndFreqs(int[] usagePercents, long[] curFreqs) {
         try {
-            // 使用 su 统一批量执行 grep /proc/stat 与 cat sysfs scaling_cur_freq
             Process p = Runtime.getRuntime().exec(new String[]{
-                "su", "-c", "grep '^cpu[0-7]' /proc/stat; cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu1/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu2/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu3/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu4/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu5/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu6/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu7/cpufreq/scaling_cur_freq"
+                "su", "-c", "grep '^cpu[0-7]' /proc/stat; cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"
             });
             BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
             String line;
-            int lineCount = 0;
+            int freqIdx = 0;
             while ((line = br.readLine()) != null) {
                 line = line.trim();
                 if (line.isEmpty()) continue;
 
-                if (lineCount < 8 && line.startsWith("cpu")) {
-                    String[] parts = line.split("\\s+");
-                    if (parts.length >= 8) {
-                        try {
-                            int cpuId = Integer.parseInt(parts[0].replace("cpu", ""));
-                            if (cpuId >= 0 && cpuId < 8) {
-                                long user = Long.parseLong(parts[1]);
-                                long nice = Long.parseLong(parts[2]);
-                                long system = Long.parseLong(parts[3]);
-                                long idle = Long.parseLong(parts[4]);
-                                long iowait = Long.parseLong(parts[5]);
-                                long irq = Long.parseLong(parts[6]);
-                                long softirq = Long.parseLong(parts[7]);
-                                long steal = parts.length > 8 ? Long.parseLong(parts[8]) : 0;
-
-                                long total = user + nice + system + idle + iowait + irq + softirq + steal;
-                                long idleTotal = idle + iowait;
-
-                                long prevTotal = prevCpuTotal[cpuId];
-                                long prevIdle = prevCpuIdle[cpuId];
-
-                                long diffTotal = total - prevTotal;
-                                long diffIdle = idleTotal - prevIdle;
-
-                                prevCpuTotal[cpuId] = total;
-                                prevCpuIdle[cpuId] = idleTotal;
-
-                                if (diffTotal > 0 && prevTotal > 0) {
-                                    long busy = diffTotal - diffIdle;
-                                    int usage = (int) Math.max(0, Math.min(100, (busy * 100) / diffTotal));
-                                    usagePercents[cpuId] = usage;
-                                } else {
-                                    usagePercents[cpuId] = 0;
-                                }
+                if (line.startsWith("cpu")) {
+                    CpuStatsParser.CpuStatSnapshot snapshot = CpuStatsParser.parseStatLine(line);
+                    if (snapshot != null) {
+                        int cpuId = snapshot.getCpuId();
+                        if (cpuId >= 0 && cpuId < usagePercents.length) {
+                            CpuStatsParser.CpuStatSnapshot prev = new CpuStatsParser.CpuStatSnapshot(
+                                    cpuId, prevCpuTotal[cpuId], prevCpuIdle[cpuId]);
+                            if (prevCpuTotal[cpuId] > 0) {
+                                usagePercents[cpuId] = CpuStatsParser.calculateUsage(prev, snapshot);
+                            } else {
+                                usagePercents[cpuId] = 0;
                             }
-                        } catch (Exception ignored) {}
+                            prevCpuTotal[cpuId] = snapshot.getTotalTime();
+                            prevCpuIdle[cpuId] = snapshot.getIdleTime();
+                        }
                     }
-                } else if (lineCount >= 8) {
-                    int freqIdx = lineCount - 8;
-                    if (freqIdx >= 0 && freqIdx < 8) {
-                        try {
-                            curFreqs[freqIdx] = Long.parseLong(line);
-                        } catch (Exception ignored) {}
+                } else {
+                    if (freqIdx < curFreqs.length) {
+                        curFreqs[freqIdx] = CpuStatsParser.parseFreqLineToMhz(line);
+                        freqIdx++;
                     }
                 }
-                lineCount++;
             }
             p.waitFor();
         } catch (Exception ignored) {}

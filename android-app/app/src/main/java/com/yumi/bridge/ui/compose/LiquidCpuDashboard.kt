@@ -35,27 +35,12 @@ fun LiquidCpuDashboard(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header: Title & System Uptime
+            // System Uptime pill
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.End,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    Text(
-                        text = "CPU & 内存监控",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF0F172A),
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "8-Core Realtime Monitor",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(0xFF64748B)
-                    )
-                }
-
-                // Uptime pill
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -74,13 +59,6 @@ fun LiquidCpuDashboard(
             }
 
             // CPU 8-Core Grid (2 columns x 4 rows)
-            Text(
-                text = "CPU 核心状态",
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFF64748B),
-                fontWeight = FontWeight.SemiBold
-            )
-
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (row in 0 until 4) {
                     Row(
@@ -175,11 +153,7 @@ private fun CpuCoreItem(
         label = "CpuUsageProgress"
     )
 
-    val freqText = when {
-        freq > 100000L -> "${freq / 1000L} MHz"
-        freq > 0L -> "$freq MHz"
-        else -> "0 MHz"
-    }
+    val freqText = if (freq > 0L) "$freq MHz" else "0 MHz"
 
     Box(
         modifier = modifier
