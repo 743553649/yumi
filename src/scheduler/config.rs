@@ -68,11 +68,11 @@ fn d_clg_floor() -> f32 { 0.15 }
 fn d_clg_ceil() -> f32 { 1.0 }
 fn d_clg_init() -> f32 { 0.50 }
 fn d_clg_hramp() -> f32 { 0.15 }
-fn d_clg_upjump() -> f32 { 0.35 }
+fn d_clg_upjump() -> f32 { 0.35 } // Sensitive up-jump threshold kept unchanged
 fn d_clg_slow_up() -> f32 { 0.02 }
 fn d_clg_slow_dn() -> f32 { 0.5 }
-fn d_clg_dn_fast_t() -> f32 { 0.15 }
-fn d_clg_dn_fast_m() -> f32 { 3.0 }
+fn d_clg_dn_fast_t() -> f32 { 0.15 } // Fast down threshold (0.15)
+fn d_clg_dn_fast_m() -> f32 { 3.0 } // Race-to-Idle steep ramp-down multiplier (3.0x)
 fn d_clg_spike_t() -> f32 { 0.35 }
 fn d_clg_spike_d() -> f32 { 0.5 }
 

@@ -322,29 +322,29 @@ impl CpuLoadGovernor {
                     cluster.current_perf += (target_perf - old_perf) * slow_scale;
                 }
             } else {
-                // ── 降频路径 ──
+                // ── 降频路径 (Race-to-Idle 极速下线) ──
                 cluster.up_wait = 0;
                 cluster.down_wait += 1;
 
-                // 极低负载快速降频：跳过确认期
                 let fast_down = util < self.cfg.down_fast_threshold;
+                let is_load_collapsing = (util < self.cfg.down_threshold && target_perf < old_perf)
+                    || util < cluster.prev_util * 0.85;
                 let can_down = fast_down
+                    || is_load_collapsing
                     || cluster.down_wait >= self.cfg.down_rate_limit_ticks;
 
                 if can_down && target_perf < old_perf {
-                    let smooth = if fast_down {
-                        // 极低负载：快速回落
+                    let smooth = if fast_down || is_load_collapsing {
+                        // 极速归位：使用陡峭降频倍数 (Race-to-Idle)
                         self.cfg.smoothing_down * self.cfg.down_fast_mult
-                    } else if util < self.cfg.down_threshold {
-                        // 低于 down_threshold：正常降频
-                        self.cfg.smoothing_down
                     } else {
-                        // 滞回带内 (down_threshold ~ up_threshold)：
-                        // 目标低于当前即可降频，按慢速回落
+                        // 滞回带内 (down_threshold ~ up_threshold)：按慢速回落
                         self.cfg.smoothing_down * self.cfg.slow_down_scale
                     };
                     cluster.current_perf += (target_perf - old_perf) * smooth;
-                    if fast_down { cluster.down_wait = 0; }
+                    if fast_down || is_load_collapsing {
+                        cluster.down_wait = 0;
+                    }
                 }
             }
 
