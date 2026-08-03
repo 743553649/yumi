@@ -167,7 +167,7 @@ public class MainActivity extends ComponentActivity {
                     updateSystemDashboardInfoInBackground();
                 }
             });
-            pollHandler.postDelayed(this, 1000);
+            pollHandler.postDelayed(this, 2000);
         }
     };
 
@@ -201,7 +201,7 @@ public class MainActivity extends ComponentActivity {
         switchTab(TAB_HOME);
 
         // 启动后台轮询 (1 秒刷新)
-        pollHandler.postDelayed(logPollRunnable, 1000);
+        pollHandler.postDelayed(logPollRunnable, 2000);
     }
 
     private void initViews() {
@@ -247,6 +247,37 @@ public class MainActivity extends ComponentActivity {
         return sb.toString();
     }
 
+    private long readBatteryCurrentNow(BatteryManager bm) {
+        long current = 0;
+        if (bm != null) {
+            try {
+                current = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
+            } catch (Exception ignored) {}
+        }
+        if (current != 0 && current != Long.MIN_VALUE) {
+            return current;
+        }
+
+        String[] sysfsPaths = new String[]{
+                "/sys/class/power_supply/battery/current_now",
+                "/sys/class/power_supply/bms/current_now",
+                "/sys/class/power_supply/main/current_now"
+        };
+
+        for (String path : sysfsPaths) {
+            try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+                String line = br.readLine();
+                if (line != null) {
+                    long val = Long.parseLong(line.trim());
+                    if (val != 0) {
+                        return val;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return 0L;
+    }
+
     private void updateSystemDashboardInfoInBackground() {
         int ramPercent = 0;
         String ramDetailText = "0.0G / 0.0G";
@@ -257,7 +288,7 @@ public class MainActivity extends ComponentActivity {
         String batteryTempText = "0.0 ℃";
         String batteryPowerText = "0.0 W";
 
-        String uptimeText = "00:00:00";
+        String uptimeText = "0天:00小时:00分钟";
         int[] usagePercents = new int[8];
         long[] curFreqs = new long[8];
 
@@ -273,6 +304,9 @@ public class MainActivity extends ComponentActivity {
 
         // 2. 电池实时信息读取 (Level, Power, Temperature)
         try {
+            long currentRaw = 0;
+            long voltageUv = 4000000L;
+
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent batteryStatus = registerReceiver(null, ifilter);
             if (batteryStatus != null) {
@@ -284,30 +318,25 @@ public class MainActivity extends ComponentActivity {
 
                 int temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0);
                 batteryTempText = SystemStatsParser.formatTemperature(temp);
+
+                int voltageMv = batteryStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4000);
+                if (voltageMv > 0) {
+                    voltageUv = voltageMv * 1000L;
+                }
             }
 
             BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
-            if (bm != null) {
-                long currentUa = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
-                long voltageUv = 4000000L;
-                try {
-                    Intent bStatus = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-                    if (bStatus != null) {
-                        int voltageMv = bStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4000);
-                        voltageUv = voltageMv * 1000L;
-                    }
-                } catch (Exception ignored) {}
-                batteryPowerText = SystemStatsParser.formatPowerWatts(currentUa, voltageUv);
-            }
+            currentRaw = readBatteryCurrentNow(bm);
+            batteryPowerText = SystemStatsParser.formatPowerWatts(currentRaw, voltageUv);
         } catch (Exception ignored) {}
 
-        // 3. 系统运行时长
+        // 3. 系统运行时长 (格式：天:小时:分钟)
         try {
             long elapsedSec = android.os.SystemClock.elapsedRealtime() / 1000;
-            long hours = elapsedSec / 3600;
+            long days = elapsedSec / 86400;
+            long hours = (elapsedSec % 86400) / 3600;
             long mins = (elapsedSec % 3600) / 60;
-            long secs = elapsedSec % 60;
-            uptimeText = String.format(Locale.getDefault(), "%02d:%02d:%02d", hours, mins, secs);
+            uptimeText = String.format(Locale.getDefault(), "%d天:%02d小时:%02d分钟", days, hours, mins);
         } catch (Exception ignored) {}
 
         // 4. 8 张 CPU 核心动态数据读取

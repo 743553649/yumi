@@ -29,11 +29,33 @@ class SystemStatsParserTest {
     }
 
     @Test
-    fun testFormatBatteryPowerAndTemp() {
-        val powerWatts = SystemStatsParser.formatPowerWatts(-2500000L, 4000000L) // -2.5A * 4.0V = -10.0W
+    fun testFormatBatteryPowerMicroAmps() {
+        // Raw µA: -2500000 µA * 4.0V = -10.0 W
+        val powerWatts = SystemStatsParser.formatPowerWatts(-2500000L, 4000000L)
         assertEquals("-10.0 W", powerWatts)
+    }
 
+    @Test
+    fun testFormatBatteryPowerMilliAmpsAutoScaling() {
+        // Raw mA: -350 mA * 4.0V = -1.4 W (auto scaled from mA to µA)
+        val powerWatts = SystemStatsParser.formatPowerWatts(-350L, 4000000L)
+        assertEquals("-1.4 W", powerWatts)
+    }
+
+    @Test
+    fun testFormatTemperature() {
         val tempText = SystemStatsParser.formatTemperature(365)
         assertEquals("36.5 ℃", tempText)
+    }
+
+    @Test
+    fun testFormatUptimeDaysHoursMins() {
+        // 90065 seconds = 1 day, 1 hour, 1 minute, 5 seconds
+        val elapsedSec = 90065L
+        val days = elapsedSec / 86400
+        val hours = (elapsedSec % 86400) / 3600
+        val mins = (elapsedSec % 3600) / 60
+        val uptimeText = String.format("%d天:%02d小时:%02d分钟", days, hours, mins)
+        assertEquals("1天:01小时:01分钟", uptimeText)
     }
 }

@@ -177,11 +177,11 @@ private fun BatteryInfoCard(
     modifier: Modifier = Modifier
 ) {
     val clampedLevel = batteryLevel.coerceIn(0, 100)
-    val batteryColor = when {
-        clampedLevel <= 20 -> Color(0xFFDC2626)
-        clampedLevel <= 40 -> Color(0xFFEA580C)
-        else -> Color(0xFF16A34A)
-    }
+
+    // linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)
+    val batteryGradientBrush = Brush.linearGradient(
+        colors = listOf(Color(0xFFD4FC79), Color(0xFF96E6A1))
+    )
 
     GlassBackdropWrapper(modifier = modifier) {
         Column(
@@ -205,13 +205,13 @@ private fun BatteryInfoCard(
                 Text(
                     text = "$clampedLevel%",
                     style = MaterialTheme.typography.titleSmall,
-                    color = batteryColor,
+                    color = Color(0xFF15803D),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )
             }
 
-            // 电池电量能量条
+            // 电池电量能量条 (#d4fc79 -> #96e6a1)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -245,7 +245,7 @@ private fun BatteryInfoCard(
                             .fillMaxHeight()
                             .fillMaxWidth(fraction = animatedLevelProgress.coerceAtLeast(0.01f))
                             .clip(RoundedCornerShape(3.dp))
-                            .background(batteryColor)
+                            .background(batteryGradientBrush)
                     )
                 }
             }

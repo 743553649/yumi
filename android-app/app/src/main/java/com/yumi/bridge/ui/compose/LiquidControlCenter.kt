@@ -1,6 +1,5 @@
 package com.yumi.bridge.ui.compose
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,10 +11,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -195,21 +194,26 @@ private fun ModeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val animatedBgColor by animateColorAsState(
-        targetValue = if (isSelected) config.accentColor.copy(alpha = 0.15f) else Color(0x80F1F5F9),
-        animationSpec = tween(durationMillis = 250),
-        label = "ModeCardBg"
-    )
-
     val cardShape = RoundedCornerShape(16.dp)
+
+    // Highlight background: linear-gradient(120deg, #a1c4fd 0%, #c2e9fb 100%)
+    val backgroundModifier = if (isSelected) {
+        Modifier.background(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFFA1C4FD), Color(0xFFC2E9FB))
+            )
+        )
+    } else {
+        Modifier.background(Color(0x80F1F5F9))
+    }
 
     Box(
         modifier = modifier
             .clip(cardShape)
-            .background(animatedBgColor)
+            .then(backgroundModifier)
             .border(
                 width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) config.accentColor else Color(0x40CBD5E1),
+                color = if (isSelected) Color(0xFF749BEB) else Color(0x40CBD5E1),
                 shape = cardShape
             )
             .clickable(onClick = onClick)
@@ -235,7 +239,7 @@ private fun ModeCard(
                         text = config.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = if (isSelected) config.accentColor else Color(0xFF0F172A)
+                        color = Color(0xFF0F172A)
                     )
                 }
                 if (isSelected) {

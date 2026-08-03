@@ -99,19 +99,37 @@ public final class SystemStatsParser {
     }
 
     /**
-     * Formats microAmps and microVolts to Watts (W).
+     * Formats raw battery current (µA or mA) and voltage (µV or mV) to Watts (W).
+     * Automatically normalizes scale if raw current is reported in mA (e.g. -350 mA vs -350000 µA).
      *
-     * @param currentUa Current in microamps (µA)
-     * @param voltageUv Voltage in microvolts (µV)
+     * @param rawCurrent Current value in µA or mA
+     * @param rawVoltage Voltage value in µV or mV
      * @return Formatted power text in W (e.g. "-2.5 W" or "+12.0 W")
      */
-    public static String formatPowerWatts(long currentUa, long voltageUv) {
-        if (currentUa == 0 || voltageUv == 0) {
+    public static String formatPowerWatts(long rawCurrent, long rawVoltage) {
+        if (rawCurrent == 0) {
             return "0.0 W";
         }
+
+        long currentUa = rawCurrent;
+        if (Math.abs(rawCurrent) > 0 && Math.abs(rawCurrent) < 10000) {
+            currentUa = rawCurrent * 1000L;
+        }
+
+        long voltageUv = rawVoltage;
+        if (voltageUv <= 0) {
+            voltageUv = 4000000L;
+        } else if (voltageUv < 10000) {
+            voltageUv = voltageUv * 1000L;
+        }
+
         double currentAmps = currentUa / 1000000.0;
         double voltageVolts = voltageUv / 1000000.0;
         double watts = currentAmps * voltageVolts;
+
+        if (Math.abs(watts) < 0.05) {
+            return "0.0 W";
+        }
         return String.format(Locale.getDefault(), "%+.1f W", watts);
     }
 
