@@ -1,53 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- High Contrast Monochrome Light Glassmorphic Foundation Colors -->
-    <color name="ios_bg_dark">#FFFFFF</color>
+    <!-- Liquid Glass Foundation Colors (Translucent Ice Blur over Light Mesh Background) -->
+    <color name="ios_bg_dark">#F8FAFC</color>
     <color name="ios_glass_card_bg">#D9FFFFFF</color>
-    <color name="ios_glass_card_bg_selected">#F0FFFFFF</color>
+    <color name="ios_glass_card_bg_selected">#F0F0F9FF</color>
     <color name="ios_glass_stroke_default">#FFFFFF</color>
-    <color name="ios_glass_stroke_focused">#2563EB</color>
-    <color name="ios_glass_input_bg">#40F1F5F9</color>
+    <color name="ios_glass_stroke_focused">#0284C7</color>
+    <color name="ios_glass_input_bg">#80F1F5F9</color>
 
-    <!-- Text Colors (Pure Slate & Charcoal Typography) -->
+    <!-- High Contrast Typography for Light Backdrop -->
     <color name="ios_text_primary">#0F172A</color>
-    <color name="ios_text_secondary">#475569</color>
+    <color name="ios_text_secondary">#334155</color>
     <color name="ios_text_muted">#64748B</color>
 
     <!-- Fresnel Border Tokens -->
-    <color name="ios_fresnel_stroke_top">#FFFFFF</color>
-    <color name="ios_fresnel_stroke_mid">#80FFFFFF</color>
-    <color name="ios_fresnel_stroke_bot">#12000000</color>
+    <color name="ios_fresnel_stroke_top">#66FFFFFF</color>
+    <color name="ios_fresnel_stroke_mid">#33FFFFFF</color>
+    <color name="ios_fresnel_stroke_bot">#4000E5FF</color>
 
-    <!-- iOS Mode Palette (Subtle Tinted Light Glass) -->
-    <color name="ios_mode_powersave">#16A34A</color>
-    <color name="ios_mode_powersave_glass">#F0F0FDF4</color>
-    <color name="ios_mode_powersave_glow">#16A34A</color>
+    <!-- iOS Mode Palette (Vivid Neon Glass Accents) -->
+    <color name="ios_mode_powersave">#4ADE80</color>
+    <color name="ios_mode_powersave_glass">#3016A34A</color>
+    <color name="ios_mode_powersave_glow">#4ADE80</color>
 
-    <color name="ios_mode_balance">#2563EB</color>
-    <color name="ios_mode_balance_glass">#F0EFF6FF</color>
-    <color name="ios_mode_balance_glow">#2563EB</color>
+    <color name="ios_mode_balance">#38BDF8</color>
+    <color name="ios_mode_balance_glass">#302563EB</color>
+    <color name="ios_mode_balance_glow">#38BDF8</color>
 
-    <color name="ios_mode_performance">#EA580C</color>
-    <color name="ios_mode_performance_glass">#F0FFF7ED</color>
-    <color name="ios_mode_performance_glow">#EA580C</color>
+    <color name="ios_mode_performance">#FB923C</color>
+    <color name="ios_mode_performance_glass">#30EA580C</color>
+    <color name="ios_mode_performance_glow">#FB923C</color>
 
-    <color name="ios_mode_fast">#DC2626</color>
-    <color name="ios_mode_fast_glass">#F0FEF2F2</color>
-    <color name="ios_mode_fast_glow">#DC2626</color>
+    <color name="ios_mode_fast">#F87171</color>
+    <color name="ios_mode_fast_glass">#30DC2626</color>
+    <color name="ios_mode_fast_glow">#F87171</color>
 
     <!-- Log Level Palette Tokens -->
-    <color name="log_level_debug">#64748B</color>
-    <color name="log_level_info">#16A34A</color>
-    <color name="log_level_warn">#D97706</color>
-    <color name="log_level_error">#DC2626</color>
+    <color name="log_level_debug">#94A3B8</color>
+    <color name="log_level_info">#4ADE80</color>
+    <color name="log_level_warn">#FBBF24</color>
+    <color name="log_level_error">#F87171</color>
 
     <!-- Status & Terminal -->
-    <color name="ios_status_online">#16A34A</color>
-    <color name="ios_status_offline">#DC2626</color>
+    <color name="ios_status_online">#4ADE80</color>
+    <color name="ios_status_offline">#F87171</color>
     <color name="ios_terminal_bg">#F8FAFC</color>
-    <color name="ios_terminal_glass_bg">#E6FFFFFF</color>
-    <color name="ios_terminal_mask_dark">#FAFFFFFF</color>
-    <color name="ios_terminal_mask_trans">#00FFFFFF</color>
+    <color name="ios_terminal_glass_bg">#20FFFFFF</color>
+    <color name="ios_terminal_mask_dark">#1A080912</color>
+    <color name="ios_terminal_mask_trans">#00000000</color>
     <color name="ios_terminal_text">#0F172A</color>
-    <color name="ios_btn_ripple">#152563EB</color>
+    <color name="ios_btn_ripple">#3000E5FF</color>
 </resources>

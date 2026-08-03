@@ -20,38 +20,38 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 private val Blob1Colors = listOf(
-    Color(0xFF3F51B5).copy(alpha = 0.50f),
-    Color(0xFF1A237E).copy(alpha = 0.22f),
+    Color(0xFF0284C7).copy(alpha = 0.25f),
+    Color(0xFF0284C7).copy(alpha = 0.10f),
     Color.Transparent
 )
 
 private val Blob2Colors = listOf(
-    Color(0xFF00E5FF).copy(alpha = 0.42f),
-    Color(0xFF00838F).copy(alpha = 0.18f),
+    Color(0xFF38BDF8).copy(alpha = 0.28f),
+    Color(0xFF38BDF8).copy(alpha = 0.12f),
     Color.Transparent
 )
 
 private val Blob3Colors = listOf(
-    Color(0xFF7C4DFF).copy(alpha = 0.45f),
-    Color(0xFF4A148C).copy(alpha = 0.20f),
+    Color(0xFF60A5FA).copy(alpha = 0.22f),
+    Color(0xFF60A5FA).copy(alpha = 0.08f),
     Color.Transparent
 )
 
 private val Blob4Colors = listOf(
-    Color(0xFF00E676).copy(alpha = 0.38f),
-    Color(0xFF004D40).copy(alpha = 0.15f),
+    Color(0xFF2DD4BF).copy(alpha = 0.20f),
+    Color(0xFF2DD4BF).copy(alpha = 0.08f),
     Color.Transparent
 )
 
 private val ScrimColors = listOf(
-    Color(0x66080912),
-    Color(0x22080912),
-    Color(0x88080912)
+    Color(0x05FFFFFF),
+    Color(0x10E0F2FE),
+    Color(0x20BAE6FD)
 )
 
 /**
  * 动态彩色流体天幕背景组件 (LiquidMeshBackground)
- * 绘制包含 4 个平滑漂浮弥散光斑 (Deep Indigo, Neon Cyan, Electric Violet, Emerald) 的全屏 Canvas 动态极光流体背景。
+ * 绘制包含 4 个平滑漂浮弥散光斑 (Soft Sky Blue, Soft Ice Cyan, Soft Electric Blue, Soft Pastel Turquoise) 的全屏 Canvas 动态极光流体背景。
  */
 @Composable
 fun LiquidMeshBackground(
@@ -72,14 +72,14 @@ fun LiquidMeshBackground(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF080912))
+            .background(Color(0xFFF8FAFC))
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             val time = rawTime
 
-            // Blob 1: Deep Indigo (深靛蓝)
+            // Blob 1: Soft Sky Blue
             val b1X = w * (0.30f + 0.18f * sin(time))
             val b1Y = h * (0.25f + 0.14f * cos(time * 0.8f))
             val b1Radius = w * 0.70f
@@ -93,7 +93,7 @@ fun LiquidMeshBackground(
                 radius = b1Radius
             )
 
-            // Blob 2: Neon Cyan (霓虹青)
+            // Blob 2: Soft Ice Cyan
             val b2X = w * (0.75f + 0.16f * cos(time * 0.9f))
             val b2Y = h * (0.38f + 0.16f * sin(time * 1.1f))
             val b2Radius = w * 0.60f
@@ -107,7 +107,7 @@ fun LiquidMeshBackground(
                 radius = b2Radius
             )
 
-            // Blob 3: Electric Violet / Purple (电光紫)
+            // Blob 3: Soft Electric Blue
             val b3X = w * (0.38f + 0.16f * cos(time * 1.2f))
             val b3Y = h * (0.72f + 0.15f * sin(time * 0.75f))
             val b3Radius = w * 0.65f
@@ -121,7 +121,7 @@ fun LiquidMeshBackground(
                 radius = b3Radius
             )
 
-            // Blob 4: Emerald Green (祖母绿)
+            // Blob 4: Soft Pastel Turquoise
             val b4X = w * (0.82f + 0.14f * sin(time * 0.85f))
             val b4Y = h * (0.80f + 0.16f * cos(time * 1.05f))
             val b4Radius = w * 0.55f
@@ -135,7 +135,7 @@ fun LiquidMeshBackground(
                 radius = b4Radius
             )
 
-            // Top-to-bottom dark gradient scrim to elevate foreground contrast & depth
+            // Top-to-bottom light gradient scrim to elevate foreground contrast & depth
             drawRect(
                 brush = Brush.verticalGradient(
                     colors = ScrimColors
