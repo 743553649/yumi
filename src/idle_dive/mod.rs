@@ -60,9 +60,9 @@ impl Default for IdleDiveConfig {
         Self {
             enabled: true,
             dive_threshold: 0.15,
-            exit_threshold: 0.30,
-            dive_delay_ms: 2000,
-            exit_delay_ms: 500,
+            exit_threshold: 0.25,
+            dive_delay_ms: 300,
+            exit_delay_ms: 50,
             governors: IdleDiveGovernors::default(),
             params: IdleDiveParams::default(),
         }
@@ -413,7 +413,9 @@ params:
         let cfg: IdleDiveConfig = serde_yaml::from_str(yaml).expect("解析失败");
         assert!(!cfg.enabled);
         assert_eq!(cfg.dive_threshold, 0.15);
-        assert_eq!(cfg.exit_threshold, 0.30);
+        assert_eq!(cfg.exit_threshold, 0.25);
+        assert_eq!(cfg.dive_delay_ms, 300);
+        assert_eq!(cfg.exit_delay_ms, 50);
         assert_eq!(cfg.governors.normal, "menu");
         assert_eq!(cfg.params.normal_latency_us, 100);
     }
