@@ -105,8 +105,8 @@ public class MainActivity extends ComponentActivity {
 
     private View rootContainer;
     private ComposeView composeBackgroundHost;
+    private ComposeView composeContentHost;
     private View tabHomeContainer;
-    private ComposeView composeHomeHost;
     private View tabLogsContainer;
     private View tabAppsContainer;
 
@@ -191,7 +191,7 @@ public class MainActivity extends ComponentActivity {
         if (composeBackgroundHost != null) {
             ComposeHomeBridgeKt.attachBackgroundHost(composeBackgroundHost);
         }
-        ComposeHomeBridgeKt.attachHomeScreen(composeHomeHost, this::setGlobalMode);
+        ComposeHomeBridgeKt.attachHomeScreen(composeContentHost, this::setGlobalMode);
 
         // 初始化通信与拉取模式日志
         sendCommand("get_mode");
@@ -207,8 +207,9 @@ public class MainActivity extends ComponentActivity {
     private void initViews() {
         rootContainer = findViewById(R.id.rootContainer);
         composeBackgroundHost = findViewById(R.id.composeBackgroundHost);
+        composeContentHost = findViewById(R.id.composeContentHost);
+        /* 
         tabHomeContainer = findViewById(R.id.tabHomeContainer);
-        composeHomeHost = findViewById(R.id.composeHomeHost);
         tabLogsContainer = findViewById(R.id.tabLogsContainer);
         tabAppsContainer = findViewById(R.id.tabAppsContainer);
 
@@ -234,6 +235,7 @@ public class MainActivity extends ComponentActivity {
         btnLevelInfo = findViewById(R.id.btnLevelInfo);
         btnLevelWarn = findViewById(R.id.btnLevelWarn);
         btnLevelError = findViewById(R.id.btnLevelError);
+        */
     }
 
     private String readProcMemInfo() {
@@ -435,6 +437,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void setupNavigationTabs() {
+        /*
         btnTabHome.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -455,11 +458,12 @@ public class MainActivity extends ComponentActivity {
                 switchTab(TAB_APPS);
             }
         });
+        */
     }
 
     private void switchTab(int tabIndex) {
         activeTab = tabIndex;
-
+        /*
         tabHomeContainer.setVisibility(tabIndex == TAB_HOME ? View.VISIBLE : View.GONE);
         tabLogsContainer.setVisibility(tabIndex == TAB_LOGS ? View.VISIBLE : View.GONE);
         tabAppsContainer.setVisibility(tabIndex == TAB_APPS ? View.VISIBLE : View.GONE);
@@ -472,6 +476,7 @@ public class MainActivity extends ComponentActivity {
         if (tabIndex == TAB_APPS && allAppItems.isEmpty()) {
             loadInstalledAppsList();
         }
+        */
     }
 
     private void updateTabStyle(TextView tv, ImageView iv, boolean selected) {
@@ -485,6 +490,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void setupNestedScrollFix() {
+        /*
         svLogScroll.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -496,9 +502,11 @@ public class MainActivity extends ComponentActivity {
                 return false;
             }
         });
+        */
     }
 
     private void setupListeners() {
+        /*
         btnClearLog.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -541,6 +549,7 @@ public class MainActivity extends ComponentActivity {
             @Override
             public void afterTextChanged(Editable s) {}
         });
+        */
     }
 
     private void setGlobalMode(String mode) {
