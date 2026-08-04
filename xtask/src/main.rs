@@ -156,6 +156,10 @@ fn aarch64_bin_path() -> PathBuf {
 }
 
 fn build_core(sh: &Shell) -> Result<()> {
+    if std::env::var("YUMI_SKIP_EBPF").map_or(true, |v| v != "1") {
+        println!("正在预编译 eBPF 探针 (bpfel-unknown-none)...");
+        let _ = cmd!(sh, "cargo build --target bpfel-unknown-none -Z build-std=core --manifest-path yumi-ebpf/Cargo.toml -r").run();
+    }
     println!("正在编译 Rust Core...");
     cmd!(sh, "cargo ndk --platform 26 -t arm64-v8a build -r").run()?;
     Ok(())
