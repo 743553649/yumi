@@ -58,7 +58,34 @@ jobs:
           cargo install cargo-ndk
           cargo install bpf-linker
 
-      # 7. 运行 xtask 构建脚本
+      # 7. 诊断：打印工具链和环境信息
+      - name: Diagnostics
+        run: |
+          echo "=== rustc version ==="
+          rustc --version
+          echo "=== cargo version ==="
+          cargo --version
+          echo "=== which bpf-linker ==="
+          which bpf-linker || echo "bpf-linker NOT FOUND in PATH"
+          bpf-linker --version || echo "bpf-linker --version failed"
+          echo "=== ANDROID_NDK_HOME ==="
+          echo "$ANDROID_NDK_HOME"
+          echo "=== RUSTFLAGS ==="
+          echo "${RUSTFLAGS:-<unset>}"
+          echo "=== CARGO_ENCODED_RUSTFLAGS ==="
+          echo "${CARGO_ENCODED_RUSTFLAGS:-<unset>}"
+
+      # 8. 单独编译 eBPF 探针
+      - name: Build eBPF probe
+        run: |
+          echo "=== Building yumi-ebpf for bpfel-unknown-none ==="
+          unset RUSTFLAGS
+          unset CARGO_ENCODED_RUSTFLAGS
+          cargo build --package yumi-ebpf --target bpfel-unknown-none -Z build-std=core --release --verbose
+          echo "=== eBPF build output ==="
+          ls -la target/bpfel-unknown-none/release/yumi-ebpf || echo "eBPF binary NOT FOUND"
+
+      # 9. 运行 xtask 构建脚本
       - name: Run xtask build
         run: cargo xtask build
 
