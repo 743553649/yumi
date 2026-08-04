@@ -33,7 +33,6 @@ fn main() {
     // 编译 eBPF 程序
     let status = Command::new("cargo")
         .args([
-            "+nightly",
             "build",
             "--target",
             "bpfel-unknown-none",
