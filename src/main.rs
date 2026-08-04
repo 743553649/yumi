@@ -26,6 +26,9 @@ pub mod cpuset_manager;
 pub mod idle_dive;
 pub mod touch_boost;
 pub mod ipc_server;
+pub mod ebpf_monitor;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::thread;
 use anyhow::Result;
@@ -48,16 +51,25 @@ fn main() -> Result<()> {
     let config_path: std::path::PathBuf = root.join("config/config.yaml");
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
-    // 3. 立即加载语言
-    load_language(&config.meta.language);
+    // 3. 立即加载语言（默认中文）
+    let lang = if config.meta.language.is_empty() { "zh" } else { &config.meta.language };
+    load_language(lang);
 
-    // 4. 初始化日志
-    logger::init(&config.meta.loglevel)?; 
+    // 4. 初始化日志（默认 INFO 等级）
+    let log_level = if config.meta.loglevel.is_empty() { "INFO" } else { &config.meta.loglevel };
+    logger::init(log_level)?; 
     
     info!("{}", t("yumi-module-starting"));
 
-    // 3. 创建通信通道
+    // 3. 创建通信通道与共享配置
     let (tx, rx) = mpsc::channel::<common::DaemonEvent>();
+
+    let rules_path = monitor::config::get_rules_path();
+    let initial_rules = crate::utils::read_config(&rules_path)
+        .unwrap_or_else(|_| monitor::app_detect::get_default_rules());
+
+    let config_arc = Arc::new(Mutex::new(initial_rules));
+    let force_refresh_arc = Arc::new(AtomicBool::new(false));
 
     // 4. 启动 Scheduler
     if let Err(e) = scheduler::start_scheduler_thread(rx) {
@@ -71,10 +83,12 @@ fn main() -> Result<()> {
         let ipc_tx = tx.clone();
         let ipc_root = root.clone();
         let ipc_port = config.ipc.port;
+        let ipc_config_arc = Arc::clone(&config_arc);
+        let ipc_force_refresh_arc = Arc::clone(&force_refresh_arc);
         thread::Builder::new()
             .name("ipc_server".to_string())
             .spawn(move || {
-                ipc_server::start(ipc_tx, ipc_root, ipc_port);
+                ipc_server::start(ipc_tx, ipc_root, ipc_port, ipc_config_arc, ipc_force_refresh_arc);
             })?;
         info!("IPC server starting on port {}", config.ipc.port);
     }
@@ -83,7 +97,7 @@ fn main() -> Result<()> {
     let monitor_thread = thread::Builder::new()
         .name("monitor_core".to_string())
         .spawn(move || {
-            if let Err(e) = monitor::start_monitor(tx) {
+            if let Err(e) = monitor::start_monitor_with_shared(tx, config_arc, force_refresh_arc) {
                 error!("{}", t_with_args("monitor-module-crashed", &fluent_args!("error" => e.to_string())));
             }
         })?;
