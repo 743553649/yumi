@@ -157,7 +157,6 @@ fn aarch64_bin_path() -> PathBuf {
 
 fn build_core(sh: &Shell) -> Result<()> {
     println!("正在编译 Rust Core...");
-    let _env = sh.push_env("RUSTFLAGS", "-C default-linker-libraries");
     cmd!(sh, "cargo ndk --platform 26 -t arm64-v8a build -r").run()?;
     Ok(())
 }

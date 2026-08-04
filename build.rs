@@ -32,6 +32,8 @@ fn main() {
     
     // 编译 eBPF 程序
     let status = Command::new("cargo")
+        .env_remove("RUSTFLAGS")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .args([
             "build",
             "--target",
