@@ -36,8 +36,10 @@ use crate::logger;
 use crate::common;
 
 /// CPU 频率策略簇信息
+#[derive(Debug, Clone)]
 pub struct CpuPolicy {
     pub id: i32,
+    pub cpus: Vec<i32>,
     /// boost 频率列表（单位 kHz），有的簇没有此文件则为空
     pub boost_frequencies: Vec<u32>,
 }
@@ -50,9 +52,11 @@ pub fn get_cpu_policies() -> Vec<CpuPolicy> {
             if let Some(name) = entry.file_name().to_str() {
                 if name.starts_with("policy") {
                     if let Ok(pid) = name["policy".len()..].parse::<i32>() {
+                        let cpus = read_related_cpus(pid);
                         let boost_freqs = read_boost_frequencies(pid);
                         policies.push(CpuPolicy {
                             id: pid,
+                            cpus,
                             boost_frequencies: boost_freqs,
                         });
                     }
@@ -62,6 +66,24 @@ pub fn get_cpu_policies() -> Vec<CpuPolicy> {
     }
     policies.sort_unstable_by_key(|p| p.id);
     policies
+}
+
+fn read_related_cpus(pid: i32) -> Vec<i32> {
+    let path = format!(
+        "/sys/devices/system/cpu/cpufreq/policy{}/related_cpus",
+        pid
+    );
+    std::fs::read_to_string(&path)
+        .or_else(|_| {
+            std::fs::read_to_string(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{}/affected_cpus",
+                pid
+            ))
+        })
+        .unwrap_or_default()
+        .split_whitespace()
+        .filter_map(|s| s.parse().ok())
+        .collect()
 }
 
 fn read_boost_frequencies(pid: i32) -> Vec<u32> {
@@ -256,6 +278,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             const FAS_SUSPEND_GRACE_SECS: u64 = 5;
             
             let mut is_screen_on = true; // 屏幕状态标记
+            let mut touch_channel_disconnected_warned = false; // 防刷屏：记录 channel 断开警告标志
 
             let temp_sensor_path = crate::utils::find_cpu_temp_path().unwrap_or_default();
             let mut last_temp_update = Instant::now();
@@ -511,7 +534,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                            log::warn!("{}", t("touch-boost-channel-disconnected"));
+                            if !touch_channel_disconnected_warned {
+                                log::warn!("{}", t("touch-boost-channel-disconnected"));
+                                touch_channel_disconnected_warned = true;
+                            }
                             break;
                         }
                     }

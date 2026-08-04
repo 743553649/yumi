@@ -114,6 +114,10 @@ pub struct TouchBoostController {
     initialized: bool,
     /// 上次观察到的 enabled 值，用于检测"启用 → 禁用"边沿并清理状态
     last_enabled: bool,
+    /// 性能大核集群 Policy (如 Policy 0)
+    perf_policy: Option<i32>,
+    /// 超级大核集群 Policy (如 Policy 6)
+    prime_policy: Option<i32>,
 }
 
 impl TouchBoostController {
@@ -129,11 +133,35 @@ impl TouchBoostController {
             release_time: Instant::now(),
             initialized: false,
             last_enabled: false,
+            perf_policy: None,
+            prime_policy: None,
         }
+    }
+
+    /// 识别 骁龙 8 Elite 架构 Cluster (Policy 0 性能大核, Policy 6 超级大核)
+    pub fn setup_8_elite_clusters(&mut self, policies: &[CpuPolicy]) {
+        for p in policies {
+            if p.cpus.contains(&6) || p.cpus.contains(&7) || p.id == 6 {
+                self.prime_policy = Some(p.id);
+            }
+            if p.id == 0 || p.cpus.iter().any(|&c| (0..=5).contains(&c)) {
+                self.perf_policy = Some(p.id);
+            }
+        }
+    }
+
+    pub fn perf_policy_id(&self) -> Option<i32> {
+        self.perf_policy
+    }
+
+    pub fn prime_policy_id(&self) -> Option<i32> {
+        self.prime_policy
     }
 
     /// 初始化控制器：获取各集群的频率写入器
     pub fn init(&mut self, policies: &[CpuPolicy]) -> anyhow::Result<()> {
+        self.setup_8_elite_clusters(policies);
+
         let cfg = self.config.read().unwrap();
         self.last_enabled = cfg.enabled;
 
@@ -253,10 +281,19 @@ impl TouchBoostController {
         let cfg = self.config.read().unwrap();
         for (i, writer_opt) in self.min_freq_writers.iter_mut().enumerate() {
             if let Some(writer) = writer_opt {
-                let policy_id = self.policy_ids[i] as usize;
+                let policy_id = self.policy_ids[i];
+                // 封印超大核：Prime Core Policy 保持最小频率，不响应日常 TouchBoost
+                if Some(policy_id) == self.prime_policy {
+                    let target = self.original_min_freqs[i];
+                    writer.write_value_force(target);
+                    self.current_boost_freqs[i] = 0;
+                    continue;
+                }
+
+                let policy_id_idx = policy_id as usize;
                 // boost_freqs 按 policy id 索引（如 policy_id=0 对应 boost_freqs[0]）
                 // 如果 policy_id >= boost_freqs.len()，则跳过该集群的 boost
-                if let Some(&boost_freq) = cfg.boost_freqs.get(policy_id) {
+                if let Some(&boost_freq) = cfg.boost_freqs.get(policy_id_idx) {
                     if boost_freq > 0 {
                         writer.write_value_force(boost_freq);
                         self.current_boost_freqs[i] = boost_freq;
@@ -570,17 +607,23 @@ pub fn start_touch_listener_thread(
             let listener = match TouchListener::new(&cfg_snapshot) {
                 Ok(l) => l,
                 Err(e) => {
-                    log::error!("{}", t_with_args("touch-boost-init-failed",
+                    log::warn!("{}", t_with_args("touch-boost-init-failed",
                         &fluent_args!("error" => e.to_string())));
-                    return;
+                    // 优雅降级：当设备不支持 TouchBoost 监听或初始化失败时，保持线程存活（持有 touch_tx），避免通道断开
+                    loop {
+                        std::thread::park();
+                    }
                 }
             };
 
             let mut controller = TouchBoostController::new(config);
             if let Err(e) = controller.init(&policies) {
-                log::error!("{}", t_with_args("touch-boost-init-failed",
+                log::warn!("{}", t_with_args("touch-boost-init-failed",
                     &fluent_args!("error" => e.to_string())));
-                return;
+                // 优雅降级：初始化失败时保持线程存活（持有 touch_tx），避免通道断开
+                loop {
+                    std::thread::park();
+                }
             }
 
             log::info!("{}", t("touch-boost-thread-started"));
@@ -764,5 +807,30 @@ input_device: ""
         // 松手恢复 Idle
         controller.on_touch_event(false);
         assert_eq!(controller.state(), BoostState::Idle);
+    }
+
+    /// 验证 8 Elite 动态 Cluster 识别与 Policy 分组
+    #[test]
+    fn test_snapdragon_8_elite_cluster_classification() {
+        let mut controller =
+            TouchBoostController::new(Arc::new(RwLock::new(TouchBoostConfig::default())));
+        controller.initialized = true;
+
+        let policies = vec![
+            CpuPolicy {
+                id: 0,
+                cpus: vec![0, 1, 2, 3, 4, 5],
+                boost_frequencies: vec![],
+            },
+            CpuPolicy {
+                id: 6,
+                cpus: vec![6, 7],
+                boost_frequencies: vec![],
+            },
+        ];
+        controller.setup_8_elite_clusters(&policies);
+
+        assert_eq!(controller.perf_policy_id(), Some(0));
+        assert_eq!(controller.prime_policy_id(), Some(6));
     }
 }
