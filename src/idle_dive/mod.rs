@@ -23,13 +23,101 @@
 //  实现方案见 docs/TouchBoost实现方案.md (CPU 静止下潜部分)。
 // ════════════════════════════════════════════════════════════════
 
+use std::fs::{File, OpenOptions};
+use std::io::{Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use serde::Deserialize;
 
 use crate::i18n::t;
-use crate::utils::FastWriter;
+use crate::utils::{enable_perm, FastWriter};
+
+// ════════════════════════════════════════════════════════════════
+//  LatencyWriter — 支持 sysfs 与 PM-QoS (/dev/cpu_dma_latency) 降级
+// ════════════════════════════════════════════════════════════════
+
+/// Idle latency 写入器，支持 `/sys/devices/system/cpu/cpuidle/latency_us`
+/// 与 PM-QoS `/dev/cpu_dma_latency` 自动降级与回退
+pub struct LatencyWriter {
+    sysfs_writer: Option<FastWriter>,
+    pm_qos_file: Option<File>,
+    path: PathBuf,
+}
+
+impl LatencyWriter {
+    pub fn new(sysfs_path: &str) -> Self {
+        let sysfs_writer = if Path::new(sysfs_path).exists() {
+            let writer = FastWriter::new(sysfs_path);
+            if writer.is_valid() {
+                Some(writer)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let pm_qos_file = if sysfs_writer.is_none() {
+            Self::open_pm_qos()
+        } else {
+            None
+        };
+
+        Self {
+            sysfs_writer,
+            pm_qos_file,
+            path: PathBuf::from(sysfs_path),
+        }
+    }
+
+    fn open_pm_qos() -> Option<File> {
+        let pm_qos_path = "/dev/cpu_dma_latency";
+        if Path::new(pm_qos_path).exists() {
+            let _ = enable_perm(pm_qos_path);
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(pm_qos_path)
+                .ok()
+        } else {
+            None
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.sysfs_writer.is_some() || self.pm_qos_file.is_some()
+    }
+
+    pub fn write_latency(&mut self, latency_us: u32) -> bool {
+        if let Some(writer) = &mut self.sysfs_writer {
+            if writer.write_value_force(latency_us) {
+                return true;
+            }
+            log::warn!(
+                "Writing to cpuidle latency_us {:?} failed, falling back to PM-QoS /dev/cpu_dma_latency",
+                self.path
+            );
+            self.sysfs_writer = None;
+        }
+
+        if self.pm_qos_file.is_none() {
+            self.pm_qos_file = Self::open_pm_qos();
+        }
+
+        if let Some(file) = &mut self.pm_qos_file {
+            let latency_i32 = latency_us as i32;
+            let bytes = latency_i32.to_ne_bytes();
+            if file.seek(SeekFrom::Start(0)).is_ok() && file.write_all(&bytes).is_ok() {
+                return true;
+            }
+            log::warn!("Writing to PM-QoS /dev/cpu_dma_latency failed");
+        }
+
+        false
+    }
+}
 
 // ════════════════════════════════════════════════════════════════
 //  配置结构 (对应 config/idle_dive.yaml)
@@ -141,8 +229,8 @@ pub struct IdleDiveController {
     high_load_start: Option<Instant>,
     /// cpuidle governor 写入器
     governor_writer: Option<FastWriter>,
-    /// cpuidle latency 写入器
-    latency_writer: Option<FastWriter>,
+    /// cpuidle latency 写入器 (支持 PM-QoS 降级)
+    latency_writer: Option<LatencyWriter>,
     /// 是否已初始化
     initialized: bool,
     /// 上次观察到的 enabled 值，用于检测"启用 → 禁用"边沿并清理状态
@@ -169,25 +257,23 @@ impl IdleDiveController {
         let governor_path = "/sys/devices/system/cpu/cpuidle/current_governor";
         let latency_path = "/sys/devices/system/cpu/cpuidle/latency_us";
 
-        // 探测节点是否存在，不存在则整个功能不可用
-        if !std::path::Path::new(governor_path).exists()
-            || !std::path::Path::new(latency_path).exists()
-        {
+        // 探测 governor 节点是否存在
+        if !Path::new(governor_path).exists() {
             anyhow::bail!("{}", t("idle-dive-unavailable"));
         }
 
         let mut governor_writer = FastWriter::new(governor_path);
-        let mut latency_writer = FastWriter::new(latency_path);
+        let mut latency_writer = LatencyWriter::new(latency_path);
         if !governor_writer.is_valid() || !latency_writer.is_valid() {
             anyhow::bail!("{}", t("idle-dive-unavailable"));
         }
 
         // 未启用时不写入任何节点，保持系统原始 cpuidle 状态
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         self.last_enabled = cfg.enabled;
         if cfg.enabled {
             governor_writer.write_value_force_str(&cfg.governors.normal);
-            latency_writer.write_value_force(cfg.params.normal_latency_us);
+            latency_writer.write_latency(cfg.params.normal_latency_us);
         }
         drop(cfg);
 
@@ -198,12 +284,19 @@ impl IdleDiveController {
         Ok(())
     }
 
+    /// 触摸快速退出：如果在下潜状态 (DiveState::Diving)，立即触发退出下潜，在 1ms 内恢复 Normal 状态
+    pub fn on_touch_fast_exit(&mut self) {
+        if self.state == DiveState::Diving {
+            self.exit_dive();
+        }
+    }
+
     /// 同步 enabled 状态并处理"启用 → 禁用"边沿。
     /// 禁用边沿时清理残留的下潜状态并恢复 normal 配置，
     /// 避免关闭功能后系统仍停留在 Diving/DozeDiving 的 sysfs 状态。
     /// 返回当前是否应继续执行 (enabled)。
     fn sync_enabled(&mut self) -> bool {
-        let enabled = self.config.read().unwrap().enabled;
+        let enabled = self.config.read().unwrap_or_else(|e| e.into_inner()).enabled;
         if !enabled && self.last_enabled {
             // 禁用边沿：重置状态机并恢复系统正常状态
             self.state = DiveState::Normal;
@@ -221,7 +314,7 @@ impl IdleDiveController {
             return;
         }
         let now = Instant::now();
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
 
         match self.state {
             DiveState::Normal => {
@@ -267,7 +360,7 @@ impl IdleDiveController {
     }
 
     /// 进入下潜状态
-    fn enter_dive(&mut self) {
+    pub(crate) fn enter_dive(&mut self) {
         if self.state == DiveState::Diving {
             return;
         }
@@ -275,12 +368,12 @@ impl IdleDiveController {
         self.low_load_start = None;
 
         // 切换到下潜 governor
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         if let Some(w) = &mut self.governor_writer {
             w.write_value_force_str(&cfg.governors.diving);
         }
         if let Some(w) = &mut self.latency_writer {
-            w.write_value_force(cfg.params.diving_latency_us);
+            w.write_latency(cfg.params.diving_latency_us);
         }
         drop(cfg);
 
@@ -310,12 +403,12 @@ impl IdleDiveController {
         self.low_load_start = None;
         self.high_load_start = None;
 
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         if let Some(w) = &mut self.governor_writer {
             w.write_value_force_str(&cfg.governors.doze);
         }
         if let Some(w) = &mut self.latency_writer {
-            w.write_value_force(cfg.params.doze_latency_us);
+            w.write_latency(cfg.params.doze_latency_us);
         }
         drop(cfg);
 
@@ -341,12 +434,12 @@ impl IdleDiveController {
 
     /// 应用正常配置
     fn apply_normal_config(&mut self) {
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         if let Some(w) = &mut self.governor_writer {
             w.write_value_force_str(&cfg.governors.normal);
         }
         if let Some(w) = &mut self.latency_writer {
-            w.write_value_force(cfg.params.normal_latency_us);
+            w.write_latency(cfg.params.normal_latency_us);
         }
     }
 
@@ -541,4 +634,19 @@ params:
         controller.exit_doze();
         assert_eq!(controller.state(), DiveState::Normal);
     }
+
+    /// 验证 1ms 触摸快速退出：在 Diving 状态下触发 on_touch_fast_exit 即刻恢复 Normal
+    #[test]
+    fn test_idle_dive_1ms_fast_exit() {
+        let cfg = Arc::new(RwLock::new(IdleDiveConfig::default()));
+        let mut controller = IdleDiveController::new(cfg);
+        controller.initialized = true;
+        controller.enter_dive();
+        assert_eq!(controller.state(), DiveState::Diving);
+
+        // 触发触摸信号，必须 1ms 内退出下潜并恢复 Normal
+        controller.on_touch_fast_exit();
+        assert_eq!(controller.state(), DiveState::Normal);
+    }
 }
+
