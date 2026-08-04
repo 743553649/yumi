@@ -85,11 +85,26 @@ jobs:
           echo "=== eBPF build output ==="
           ls -la target/bpfel-unknown-none/release/yumi-ebpf || echo "eBPF binary NOT FOUND"
 
-      # 9. 运行 xtask 构建脚本
+      # 9. 运行 xtask 构建脚本（捕获完整日志用于调试）
       - name: Run xtask build
-        run: cargo xtask build
+        run: |
+          echo "=== Pre-build: check eBPF binary ==="
+          ls -la target/bpfel-unknown-none/release/yumi-ebpf || echo "eBPF binary NOT FOUND before xtask"
+          echo "=== Environment ==="
+          env | grep -i -E 'rust|cargo|ndk|android|flag' | sort || true
+          echo "=== Starting xtask build ==="
+          cargo xtask build 2>&1 | tee /tmp/xtask-build.log
+          echo "=== xtask build completed ==="
 
-      # 8. 动态获取 xtask 生成的 zip 文件名
+      # 10. 上传构建日志（无论成功失败都上传）
+      - name: Upload Build Log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-debug-log
+          path: /tmp/xtask-build.log
+
+      # 11. 动态获取 xtask 生成的 zip 文件名
       - name: Get Artifact Name
         id: artifact-name
         run: |
@@ -104,7 +119,7 @@ jobs:
           echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
           echo "path=$FILE_PATH" >> $GITHUB_OUTPUT
 
-      # 9. 使用动态名称上传构建产物
+      # 12. 使用动态名称上传构建产物
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v7
         with:
