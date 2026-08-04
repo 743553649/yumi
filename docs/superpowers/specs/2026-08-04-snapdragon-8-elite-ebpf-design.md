@@ -58,18 +58,23 @@
 
 ---
 
-## 4. 模块三：Rust 底层守护进程配套工程改造
+## 4. 模块三：Rust 底层守护进程工程与编码规范
 
-1. **eBPF 异步事件驱动**：在 Rust 主线程建立基于 Tokio/mio 的异步事件循环，接收来自内核 RingBuffer 的探针消息。
-2. **状态机与配置重载保护**：热重载配置文件时，如果用户关闭某项功能，状态机强制清除残留的 sysfs 节点锁定，恢复系统默认状态。
-3. **打包与构建安全规范**：
-   * 所有 Shell 脚本与配置文件格式强制转换为 Unix LF (`\n`) 换行符，防止 Windows 环境打包引入 CRLF 导致 Android 解析报错。
-   * 安装与更新脚本（`customize.sh`）严格保护用户的 `rules.yaml` 自定义规则，防止覆盖。
+1. **eBPF 与用户态数据对齐规范 (`#[repr(C, align(8))]`)**：
+   * eBPF 内核层与 Rust 用户态通过 RingBuffer 传递的数据结构必须严格采用 `#[repr(C, align(8))]` 8 字节对齐，防止 ARM64 架构出现指针内存未对齐错误（Alignment Fault）。
+2. **读写锁与高并发性能规范 (快照拷贝防死锁)**：
+   * 严禁在持有 `RwLock` 读锁的同时执行耗时的文件 I/O 写入。必须采用“读锁快速快照拷贝”后立刻 `drop(cfg)`，避免高频 TouchBoost 触发时主线程锁死。
+3. **句柄管理与防泄露 (FastWriter 安全重置)**：
+   * 针对 8 Elite 动态 Policy 的节点写入器（`FastWriter`），在配置热重载或 Cluster 重新探测时执行显式 Drop，防止文件描述符泄露（Too Many Open Files）。
+4. **打包与构建安全规范 (LF 换行符强制转换)**：
+   * 所有 Shell 脚本（`.sh`）与新增配置文件（`.yaml`/`.prop`）强制执行 Unix LF (`\n`) 换行符检查，阻止 Windows 环境构建引入 CRLF 导致 Android 解析中断。
+   * 安装与更新脚本（`customize.sh`）严格保护用户的 `rules.yaml` 自定义规则，防止覆写。
 
 ---
 
-## 5. 验证标准与测试闭环 (TDD)
+## 5. 验证标准与测试闭环 (TDD 与代码规范)
 
-1. **语法与类型检查**：跨平台交叉编译检查 `cargo check --target aarch64-linux-android` 100% 通过。
-2. **状态机单元测试**：针对 8 Elite 动态 policy 索引、TouchBoost 50ms 脉冲冷却、Idle Dive 300ms 深入与 1ms 快速退出编写单元测试。
-3. **打包闭环验证**：执行 `cargo run --package xtask -- b` 打包，确保 Release 二进制剥离符号表（Strip），最终 Zip 大小控制在规范范围内。
+1. **单函数行数与单一职责**：新增及重构函数严格控制在 50 行以内，复杂逻辑必须按职责拆分模块。
+2. **语法与类型检查**：跨平台交叉编译检查 `$env:YUMI_SKIP_EBPF=1; cargo check --target aarch64-linux-android` 100% 通过。
+3. **状态机与并发单元测试**：针对 8 Elite 动态 policy 索引、TouchBoost 50ms 脉冲冷却、Idle Dive 300ms 深入与 1ms 快速退出编写单元测试。
+4. **打包闭环验证**：执行 `cargo run --package xtask -- b` 打包，确保 Release 二进制剥离符号表（Strip），最终 Zip 包体积严格控制在 15MB 规范范围内。
