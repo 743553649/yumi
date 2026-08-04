@@ -71,8 +71,10 @@ fn build(sh: &Shell) -> Result<()> {
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir)?;
 
-    // 2. 编译 WebUI
-    build_webui(sh)?;
+    // 2. 编译 WebUI (忽略缺失 npm 的错误，允许纯模块打包)
+    if let Err(e) = build_webui(sh) {
+        println!("警告: 跳过 WebUI 编译 ({:?})", e);
+    }
 
     // 3. 编译 Rust 核心
     build_core(sh)?;
@@ -89,6 +91,13 @@ fn build(sh: &Shell) -> Result<()> {
         fs::remove_file(temp_dir.join(".gitignore"))?;
     }
 
+    if temp_dir.join("yumi").exists() {
+        fs::remove_file(temp_dir.join("yumi"))?;
+    }
+
+    // 规范化换行符：遍历临时目录，强行将所有 .sh/.prop/.yaml/.ftl/.json 等文本文件的 CRLF 转换成 Unix LF (\n)
+    sanitize_line_endings(&temp_dir)?;
+
     // 5. 组装 bin 目录
     let bin_path = temp_dir.join("core").join("bin");
     fs::create_dir_all(&bin_path)?;
@@ -100,11 +109,16 @@ fn build(sh: &Shell) -> Result<()> {
     )?;
     
     let webroot_dir = temp_dir.join("webroot");
-    dir::copy(
-        Path::new("webui").join("dist"),
-        &webroot_dir,
-        &dir::CopyOptions::new().overwrite(true).content_only(true),
-    )?;
+    let webui_dist = Path::new("webui").join("dist");
+    if webui_dist.exists() {
+        dir::copy(
+            &webui_dist,
+            &webroot_dir,
+            &dir::CopyOptions::new().overwrite(true).content_only(true),
+        )?;
+    } else {
+        fs::create_dir_all(&webroot_dir)?;
+    }
     
     // 6. 打包 Zip
     let output_dir = Path::new("output");
@@ -143,9 +157,8 @@ fn aarch64_bin_path() -> PathBuf {
 
 fn build_core(sh: &Shell) -> Result<()> {
     println!("正在编译 Rust Core...");
-    // push_env 会在当前作用域内设置环境变量，离开作用域自动恢复
     let _env = sh.push_env("RUSTFLAGS", "-C default-linker-libraries");
-    cmd!(sh, "cargo +nightly ndk --platform 26 -t arm64-v8a build -Z build-std -r").run()?;
+    cmd!(sh, "cargo +nightly ndk --platform 26 -t arm64-v8a build -r").run()?;
     Ok(())
 }
 
@@ -154,5 +167,34 @@ fn build_webui(sh: &Shell) -> Result<()> {
     // push_dir 类似于 cd，离开作用域后会自动切回原目录
     let _dir = sh.push_dir("webui");
     cmd!(sh, "npm run build").run()?;
+    Ok(())
+}
+
+fn sanitize_line_endings(dir: &Path) -> Result<()> {
+    if !dir.is_dir() { return Ok(()); }
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            sanitize_line_endings(&path)?;
+        } else if path.is_file() {
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            if matches!(ext, "sh" | "prop" | "yaml" | "ftl" | "json" | "txt" | "md") {
+                if let Ok(bytes) = fs::read(&path) {
+                    let mut new_bytes = Vec::with_capacity(bytes.len());
+                    let mut i = 0;
+                    while i < bytes.len() {
+                        if bytes[i] == b'\r' && i + 1 < bytes.len() && bytes[i + 1] == b'\n' {
+                            new_bytes.push(b'\n');
+                            i += 2;
+                        } else {
+                            new_bytes.push(bytes[i]);
+                            i += 1;
+                        }
+                    }
+                    let _ = fs::write(&path, new_bytes);
+                }
+            }
+        }
+    }
     Ok(())
 }

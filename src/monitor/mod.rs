@@ -33,7 +33,25 @@ use crate::fluent_args;
 use crate::i18n::{t, t_with_args};
 
 // 启动函数
+#[allow(dead_code)]
 pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
+    let rules_path = config::get_rules_path();
+    let initial_config = crate::utils::read_config(&rules_path) 
+                            .unwrap_or_else(|e| {
+                                log::warn!("{}", t_with_args("monitor-initial-config-failed", &fluent_args!("error" => e.to_string())));
+                                app_detect::get_default_rules()
+                            });
+
+    let config_arc = Arc::new(Mutex::new(initial_config));
+    let force_refresh_arc = Arc::new(AtomicBool::new(false));
+    start_monitor_with_shared(tx, config_arc, force_refresh_arc)
+}
+
+pub fn start_monitor_with_shared(
+    tx: Sender<DaemonEvent>,
+    config_arc: Arc<Mutex<config::RulesConfig>>,
+    force_refresh_arc: Arc<AtomicBool>
+) -> Result<(), Box<dyn Error>> {
     info!("{}", t("monitor-starting"));
 
     // ===== 解除内核 eBPF Map 内存锁定限制 =====
@@ -46,18 +64,7 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
             log::warn!("{}", t("monitor-rlimit-memlock-failed"));
         }
     }
-    
-    // --- 初始化共享配置 ---
-    let rules_path = config::get_rules_path();
-    
-    // --- 初始化配置 ---
-    let initial_config = crate::utils::read_config(&rules_path) 
-                            .unwrap_or_else(|e| {
-                                log::warn!("{}", t_with_args("monitor-initial-config-failed", &fluent_args!("error" => e.to_string())));
-                                app_detect::get_default_rules()
-                            });
 
-    let config_arc = Arc::new(Mutex::new(initial_config));
     let config_arc_clone_for_watcher = Arc::clone(&config_arc);
 
     // --- 初始化共享的屏幕状态 ---
@@ -65,8 +72,6 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
     let screen_state_clone_for_watcher = Arc::clone(&screen_state_arc);
     let screen_state_clone_for_app_detect = Arc::clone(&screen_state_arc);
 
-    // 初始化共享的强制刷新标志
-    let force_refresh_arc = Arc::new(AtomicBool::new(false));
     let force_refresh_clone_for_watcher = Arc::clone(&force_refresh_arc);
 
     // 3. 启动屏幕状态监控线程
