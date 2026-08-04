@@ -25,6 +25,5 @@ fn main() {
         return;
     }
 
-    let _ = std::fs::write(&debug_path, []);
-    let _ = std::fs::write(&release_path, []);
+    panic!("Error: eBPF binary not found at target/bpfel-unknown-none/release/yumi-ebpf! Ensure bpf-linker is installed and eBPF is compiled.");
 }
