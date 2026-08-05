@@ -28,7 +28,7 @@ use crate::i18n::{t, t_with_args};
 use crate::fluent_args;
 
 fn update_state_if_changed(state_arc: &Arc<Mutex<bool>>, new_state: bool, source: &str) {
-    let mut state_lock = state_arc.lock().unwrap();
+    let mut state_lock = state_arc.lock().unwrap_or_else(|e| e.into_inner());
     if *state_lock != new_state {
         info!("{}", t_with_args("screen-state-change-detected", &fluent_args!("source" => source)));
         *state_lock = new_state;
