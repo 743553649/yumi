@@ -99,6 +99,15 @@ fn build(sh: &Shell) -> Result<()> {
         fs::remove_file(temp_dir.join("yumi"))?;
     }
 
+    // 防御性清理：APK 不打包进模块（App 需单独分发，避免模块 zip 臃肿）
+    for entry in fs::read_dir(&temp_dir)? {
+        let path = entry?.path();
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "apk") {
+            println!("剔除 APK 文件（不打包进模块）: {}", path.display());
+            fs::remove_file(&path)?;
+        }
+    }
+
     // 规范化换行符：遍历临时目录，强行将所有 .sh/.prop/.yaml/.ftl/.json 等文本文件的 CRLF 转换成 Unix LF (\n)
     sanitize_line_endings(&temp_dir)?;
 
