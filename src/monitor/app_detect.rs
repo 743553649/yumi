@@ -25,6 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, AtomicI32};
 use std::error::Error;
 use std::process::Command;
 use std::sync::mpsc::Sender;
+use once_cell::sync::Lazy;
 
 use crate::common::DaemonEvent;
 use crate::i18n::{t, t_with_args};
@@ -72,10 +73,8 @@ fn get_system_ime_packages() -> HashSet<String> {
     imes
 }
 
-lazy_static::lazy_static! {
-    static ref CURRENT_PACKAGE: Arc<Mutex<String>> = Arc::new(Mutex::new("".to_string()));    
-    static ref IME_BLOCKLIST: HashSet<String> = get_system_ime_packages();
-}
+static CURRENT_PACKAGE: Lazy<Arc<Mutex<String>>> = Lazy::new(|| Arc::new(Mutex::new("".to_string())));
+static IME_BLOCKLIST: Lazy<HashSet<String>> = Lazy::new(get_system_ime_packages);
 
 pub fn get_current_pid() -> i32 {
     CURRENT_PID.load(Ordering::Relaxed)
