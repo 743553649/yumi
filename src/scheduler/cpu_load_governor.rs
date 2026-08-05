@@ -377,3 +377,169 @@ impl CpuLoadGovernor {
             .collect()
     }
 }
+
+// ════════════════════════════════════════════════════════════════
+//  单元测试
+// ════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造一个单 cluster 测试用 governor，绕开 init_policies 的 sysfs 依赖。
+    /// FastWriter 指向不存在的路径 → file=None，write_value_force 返回 false，
+    /// current_freq 不会更新，但 current_perf 的计算逻辑仍完整执行——这正是要测的。
+    fn make_test_governor(init_perf: f32) -> CpuLoadGovernor {
+        // 频率档位: 300k / 600k / 1000k / 1500k / 2000k
+        let freqs = vec![300_000, 600_000, 1_000_000, 1_500_000, 2_000_000];
+        let fmin = 300_000.0_f32;
+        let fmax = 2_000_000.0_f32;
+        let range = fmax - fmin;
+        let cached_ratios: Vec<f32> = freqs.iter()
+            .map(|&f| (f as f32 - fmin) / range)
+            .collect();
+
+        let cluster = ClusterState {
+            policy_id: 0,
+            affected_cpus: vec![0, 1],
+            available_freqs: freqs,
+            cached_ratios,
+            _freq_min: fmin,
+            _freq_max: fmax,
+            max_writer: FastWriter::new("/tmp/yumi_test_clg_max_freq"),
+            min_writer: FastWriter::new("/tmp/yumi_test_clg_min_freq"),
+            current_perf: init_perf,
+            current_freq: 0,
+            down_wait: 0,
+            up_wait: 0,
+            prev_util: 0.0,
+            pre_takeover_gov: String::new(),
+            pre_takeover_min_freq: 0,
+            pre_takeover_max_freq: 0,
+        };
+
+        let mut gov = CpuLoadGovernor::new();
+        gov.cfg = CpuLoadGovernorConfig::default();
+        gov.clusters.push(cluster);
+        gov.active = true;
+        gov
+    }
+
+    #[test]
+    fn test_find_nearest_freq_picks_closest() {
+        // ratios: [0.0, 0.176, 0.412, 0.706, 1.0]
+        // 频率:   [300k, 600k,  1000k, 1500k, 2000k]
+        let gov = make_test_governor(0.5);
+        let c = &gov.clusters[0];
+        assert_eq!(c.find_nearest_freq(0.0), 300_000, "下界应映射到最低档");
+        assert_eq!(c.find_nearest_freq(1.0), 2_000_000, "上界应映射到最高档");
+        // 0.412 对应 1000k
+        assert_eq!(c.find_nearest_freq(0.412), 1_000_000);
+        // 0.5 离 0.412(1000k) 更近
+        assert_eq!(c.find_nearest_freq(0.5), 1_000_000);
+        // 0.6 离 0.706(1500k) 更近
+        assert_eq!(c.find_nearest_freq(0.6), 1_500_000);
+    }
+
+    #[test]
+    fn test_max_util_picks_max_across_affected_cpus() {
+        let gov = make_test_governor(0.5);
+        let c = &gov.clusters[0];
+        // affected_cpus = [0, 1]
+        let utils = vec![0.3, 0.7, 0.9, 0.1]; // cpu0=0.3, cpu1=0.7
+        assert!((c.max_util(&utils) - 0.7).abs() < 1e-6);
+        // 越界 cpu 安全跳过
+        let short_utils = vec![0.5]; // 只有 cpu0
+        assert!((c.max_util(&short_utils) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_on_load_update_high_load_rises_perf() {
+        // 高负载 (util >= up_threshold=0.80) 应升频。
+        // up_rate_limit_ticks=2：第 1 tick 计数未达，第 2 tick 才真正升。
+        let mut gov = make_test_governor(0.30);
+        let utils = vec![0.95, 0.95];
+        gov.on_load_update(&utils); // up_wait=1，未达 rate limit，不变
+        let perf_after_1 = gov.clusters[0].current_perf;
+        gov.on_load_update(&utils); // up_wait=2，达 rate limit，高负载升频
+        let perf_after_2 = gov.clusters[0].current_perf;
+        assert!(perf_after_2 > 0.30,
+            "高负载下 perf 应上升: 0.30 -> {} -> {}", perf_after_1, perf_after_2);
+    }
+
+    #[test]
+    fn test_on_load_update_low_load_falls_perf() {
+        // 极低负载触发 fast_down（util < down_fast_threshold=0.15），Race-to-Idle 降频
+        let mut gov = make_test_governor(0.80);
+        gov.on_load_update(&vec![0.05, 0.05]);
+        let perf_after = gov.clusters[0].current_perf;
+        assert!(perf_after < 0.80,
+            "极低负载下 perf 应下降: 0.80 -> {}", perf_after);
+    }
+
+    #[test]
+    fn test_on_load_update_mid_load_stable_in_hysteresis_band() {
+        // 中等负载 0.65 处于滞回带 (down_threshold=0.50 ~ up_threshold=0.80)，
+        // 预热 prev_util 避免首 tick 尖峰抑制干扰；perf 应稳定在 0.65 附近不漂移
+        let mut gov = make_test_governor(0.65);
+        gov.clusters[0].prev_util = 0.65;
+        let utils = vec![0.65, 0.65];
+        for _ in 0..10 {
+            gov.on_load_update(&utils);
+        }
+        let perf = gov.clusters[0].current_perf;
+        assert!((perf - 0.65).abs() < 0.05,
+            "滞回带内 perf 应稳定在 0.65 附近: perf={}", perf);
+    }
+
+    #[test]
+    fn test_on_load_update_very_low_load_race_to_idle() {
+        // 极低负载 (util < 0.15) 触发 Race-to-Idle 极速降频：
+        // smoothing_down * down_fast_mult = 0.30 * 3.0 = 0.9，单 tick 即大幅下降
+        let mut gov = make_test_governor(0.90);
+        gov.on_load_update(&vec![0.02, 0.02]);
+        let perf = gov.clusters[0].current_perf;
+        assert!(perf < 0.60,
+            "Race-to-Idle 应极速降频: 0.90 -> {}", perf);
+    }
+
+    #[test]
+    fn test_on_load_update_inactive_is_noop() {
+        // active=false 时 on_load_update 应立即返回，perf 不变
+        let mut gov = make_test_governor(0.50);
+        gov.active = false;
+        let perf_before = gov.clusters[0].current_perf;
+        gov.on_load_update(&vec![0.99, 0.99]);
+        assert!((gov.clusters[0].current_perf - perf_before).abs() < 1e-6,
+            "未激活时 on_load_update 应是空操作");
+    }
+
+    #[test]
+    fn test_reload_config_updates_cfg() {
+        let mut gov = make_test_governor(0.5);
+        let mut new_cfg = CpuLoadGovernorConfig::default();
+        new_cfg.up_threshold = 0.95;
+        new_cfg.perf_ceil = 0.9;
+        gov.reload_config(&new_cfg);
+        assert!((gov.cfg.up_threshold - 0.95).abs() < 1e-6);
+        assert!((gov.cfg.perf_ceil - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_release_clears_clusters_and_deactivates() {
+        // pre_takeover 字段全为 0/空，release 不会触发任何 sysfs 写入，安全
+        let mut gov = make_test_governor(0.5);
+        assert!(gov.is_active());
+        assert_eq!(gov.clusters.len(), 1);
+        gov.release();
+        assert!(!gov.is_active(), "release 后应失活");
+        assert!(gov.clusters.is_empty(), "release 后 clusters 应清空");
+    }
+
+    #[test]
+    fn test_new_governor_is_inactive_by_default() {
+        let gov = CpuLoadGovernor::new();
+        assert!(!gov.is_active());
+        assert!(gov.clusters.is_empty());
+    }
+}
