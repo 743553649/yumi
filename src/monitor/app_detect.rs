@@ -314,23 +314,23 @@ pub fn app_detection_loop(
         let (detected_pkg, detected_pid) = get_focused_app_from_cgroup(&ignored_apps)
             .unwrap_or_else(|_| (last_package.clone(), get_current_pid()));
 
-        let mut final_pkg = last_package.clone();
         let mut final_pid = get_current_pid();
+        // 无阻塞防抖：用 Option 表达"本次是否产生切换"，切换时移动而非 clone
+        let mut switched_pkg: Option<String> = None;
 
-        // 无阻塞防抖逻辑
         if detected_pkg != last_package && !detected_pkg.is_empty() {
             if detected_pkg != pending_package {
-                pending_package = detected_pkg.clone();
+                pending_package = detected_pkg;
                 pending_pid = detected_pid;
                 debounce_start = Instant::now();
             } else if debounce_start.elapsed() >= Duration::from_millis(500) {
-                final_pkg = pending_package.clone();
+                switched_pkg = Some(std::mem::take(&mut pending_package));
                 final_pid = pending_pid;
-                pending_package.clear();
             }
         } else {
             pending_package.clear();
         }
+        let final_pkg = switched_pkg.unwrap_or_else(|| last_package.clone());
 
         let current_temp = if !temp_sensor_path.is_empty() {
             utils::read_f64_from_file(&temp_sensor_path).unwrap_or(0.0) / 1000.0
