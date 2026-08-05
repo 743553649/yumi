@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     
     info!("{}", t("yumi-module-starting"));
 
-    // 3. 创建通信通道与共享配置
+    // 5. 创建通信通道与共享配置
     let (tx, rx) = mpsc::channel::<common::DaemonEvent>();
 
     let rules_path = monitor::config::get_rules_path();
@@ -71,14 +71,14 @@ fn main() -> Result<()> {
     let config_arc = Arc::new(Mutex::new(initial_rules));
     let force_refresh_arc = Arc::new(AtomicBool::new(false));
 
-    // 4. 启动 Scheduler
+    // 6. 启动 Scheduler
     if let Err(e) = scheduler::start_scheduler_thread(rx) {
         error!("{}", t_with_args("scheduler-module-start-failed", &fluent_args!("error" => e.to_string())));
         return Err(e);
     }
     info!("{}", t("scheduler-module-started"));
 
-    // 5. 启动 IPC Server
+    // 7. 启动 IPC Server
     if config.ipc.enabled {
         let ipc_tx = tx.clone();
         let ipc_root = root.clone();
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
         info!("IPC server starting on port {}", config.ipc.port);
     }
 
-    // 6. 启动 Monitor
+    // 8. 启动 Monitor
     let monitor_thread = thread::Builder::new()
         .name("monitor_core".to_string())
         .spawn(move || {
@@ -104,7 +104,7 @@ fn main() -> Result<()> {
     
     info!("{}", t("monitor-module-started"));
 
-    // 6. 挂起
+    // 9. 挂起
     monitor_thread.join().unwrap();
 
     Ok(())
