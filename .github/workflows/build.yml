@@ -116,20 +116,18 @@ jobs:
             echo "错误: 未在 output/ 目录下找到任何生成成功的 zip 模块包！"
             exit 1
           fi
-          # 提取纯文件名 (例如 yumi-1.0.0-42-20260409-2000.zip)
+          # 提取完整文件名 (例如 yumi-2.0.1-42-20260805-2100.zip)
           FILE_NAME=$(basename "$FILE_PATH")
-          # 去掉 .zip 后缀，防止 GitHub 下载时变成 .zip.zip
-          ARTIFACT_NAME="${FILE_NAME%.zip}"
           
           # 将提取出的名字和路径存入 GitHub 环境变量，供下一步使用
-          echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "name=$FILE_NAME" >> $GITHUB_OUTPUT
           echo "path=$FILE_PATH" >> $GITHUB_OUTPUT
 
       # 12. 使用动态名称上传构建产物
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          # 使用上一步获取的动态名称
+          # 使用包含 .zip 后缀的动态名称
           name: ${{ steps.artifact-name.outputs.name }}
-          # 直接上传解压后的模块目录内容，使 GitHub 自动打出的 Zip 可直接在 KernelSU / Magisk 刷入
-          path: output/.temp/
+          # 精确指定要上传的 zip 模块包
+          path: ${{ steps.artifact-name.outputs.path }}
