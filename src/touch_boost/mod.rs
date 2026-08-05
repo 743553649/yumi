@@ -162,7 +162,7 @@ impl TouchBoostController {
     pub fn init(&mut self, policies: &[CpuPolicy]) -> anyhow::Result<()> {
         self.setup_8_elite_clusters(policies);
 
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         self.last_enabled = cfg.enabled;
 
         for policy in policies {
@@ -199,7 +199,7 @@ impl TouchBoostController {
     /// 同步 enabled 状态并处理"启用 → 禁用"边沿。
     /// 禁用边沿时清理残留的 boost 状态并恢复原始频率。
     fn sync_enabled(&mut self) -> bool {
-        let enabled = self.config.read().unwrap().enabled;
+        let enabled = self.config.read().unwrap_or_else(|e| e.into_inner()).enabled;
         if !enabled && self.last_enabled {
             // 禁用边沿：重置状态机并恢复原始频率
             self.state = BoostState::Idle;
@@ -215,7 +215,7 @@ impl TouchBoostController {
             return;
         }
         let now = Instant::now();
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         let min_dur = cfg.min_boost_duration_ms.min(50);
 
         match (self.state, touching) {
@@ -278,7 +278,7 @@ impl TouchBoostController {
 
     /// 应用 boost 频率
     fn apply_boost(&mut self) {
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         for (i, writer_opt) in self.min_freq_writers.iter_mut().enumerate() {
             if let Some(writer) = writer_opt {
                 let policy_id = self.policy_ids[i];
@@ -324,7 +324,7 @@ impl TouchBoostController {
 
         // TOUCHING 状态按住静止（无 epoll 事件），超时 50ms 自动切入 Cooldown
         if self.state == BoostState::Touching {
-            let cfg = self.config.read().unwrap();
+            let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
             let min_dur = cfg.min_boost_duration_ms.min(50);
             drop(cfg);
             if now.duration_since(self.touch_start).as_millis() as u64 >= min_dur {
@@ -339,7 +339,7 @@ impl TouchBoostController {
             return;
         }
 
-        let cfg = self.config.read().unwrap();
+        let cfg = self.config.read().unwrap_or_else(|e| e.into_inner());
         let elapsed = now.duration_since(self.release_time).as_millis() as u64;
 
         if elapsed < cfg.release_delay_ms {
@@ -603,7 +603,7 @@ pub fn start_touch_listener_thread(
         .name("touch_boost".to_string())
         .spawn(move || {
             // 创建监听器需要在子线程中完成（epoll 阻塞）
-            let cfg_snapshot = config.read().unwrap().clone();
+            let cfg_snapshot = config.read().unwrap_or_else(|e| e.into_inner()).clone();
             let listener = match TouchListener::new(&cfg_snapshot) {
                 Ok(l) => l,
                 Err(e) => {
