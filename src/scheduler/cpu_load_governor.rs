@@ -54,7 +54,8 @@ impl ClusterState {
         if idx == 0 {
             self.available_freqs[0]
         } else if idx >= self.available_freqs.len() {
-            *self.available_freqs.last().unwrap()
+            // available_freqs 由 init_policies 的 freqs.is_empty() 守卫保证非空；防御性回退到 current_freq（不变频）
+            *self.available_freqs.last().unwrap_or(&self.current_freq)
         } else {
             let lo = idx - 1;
             let hi = idx;
@@ -149,8 +150,8 @@ impl CpuLoadGovernor {
             let affected = Self::read_affected_cpus(pid);
             if affected.is_empty() { continue; }
 
-            let fmin = *freqs.first().unwrap() as f32;
-            let fmax = *freqs.last().unwrap() as f32;
+            let fmin = *freqs.first().unwrap_or(&0) as f32;
+            let fmax = *freqs.last().unwrap_or(&0) as f32;
             let range = (fmax - fmin).max(1.0);
             let cached_ratios: Vec<f32> = freqs.iter()
                 .map(|&f| (f as f32 - fmin) / range)
