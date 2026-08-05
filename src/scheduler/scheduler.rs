@@ -48,7 +48,7 @@ impl CpuScheduler {
     }
 
     fn apply_cpu_idle_governor(&self) -> Result<()> {
-        let config = self.config.read().unwrap();
+        let config = self.config.read().unwrap_or_else(|e| e.into_inner());
         if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty() {
             if self.sys_path_exist.cpuidle_governor_exist {
                 let _ = utils::try_write_file("/sys/devices/system/cpu/cpuidle/current_governor", &config.cpu_idle.current_governor);
@@ -59,7 +59,7 @@ impl CpuScheduler {
     }
 
     fn apply_io_settings(&self) -> Result<()> {
-        let config = self.config.read().unwrap();
+        let config = self.config.read().unwrap_or_else(|e| e.into_inner());
         if !config.function.io_optimization {
             log::info!("{}", t("apply-io-settings-start"));
             return Ok(());
