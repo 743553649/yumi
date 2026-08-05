@@ -10,6 +10,21 @@ use crate::common::DaemonEvent;
 use crate::monitor::config::RulesConfig;
 use crate::utils;
 
+/// Magisk/KernelSU 模块部署根路径，作为 rules.yaml 与日志的兜底写入/读取位置
+const ADB_MODULE_ROOT: &str = "/data/adb/modules/yumi";
+
+/// 返回 rules.yaml 的全部写入目标：主路径（配置真源 `get_rules_path()`）+ 模块部署兜底路径。
+/// 两者重合时仅返回一项，避免重复写入。
+fn rules_write_targets() -> Vec<PathBuf> {
+    let primary = crate::monitor::config::get_rules_path();
+    let adb = PathBuf::from(ADB_MODULE_ROOT).join("rules.yaml");
+    if primary == adb {
+        vec![primary]
+    } else {
+        vec![primary, adb]
+    }
+}
+
 /// 启动 IPC 服务，监听指定端口并处理文本命令
 pub fn start(
     tx: mpsc::Sender<DaemonEvent>,
@@ -138,10 +153,8 @@ pub fn process_command(
                     .unwrap_or_else(|_| crate::monitor::app_detect::get_default_rules());
                 rules.global_mode = target_mode.to_string();
                 if let Ok(yaml_str) = serde_yaml::to_string(&rules) {
-                    let _ = utils::try_write_file(&rules_path, &yaml_str);
-                    let target_adb_path = std::path::Path::new("/data/adb/modules/yumi/rules.yaml");
-                    if rules_path != target_adb_path {
-                        let _ = utils::try_write_file(target_adb_path, &yaml_str);
+                    for target in rules_write_targets() {
+                        let _ = utils::try_write_file(&target, &yaml_str);
                     }
                 }
 
@@ -176,10 +189,8 @@ pub fn process_command(
                     rules.app_modes.insert(pkg.to_string(), mode.to_string());
                 }
                 if let Ok(yaml_str) = serde_yaml::to_string(&rules) {
-                    let _ = utils::try_write_file(&rules_path, &yaml_str);
-                    let target_adb_path = std::path::Path::new("/data/adb/modules/yumi/rules.yaml");
-                    if rules_path != target_adb_path {
-                        let _ = utils::try_write_file(target_adb_path, &yaml_str);
+                    for target in rules_write_targets() {
+                        let _ = utils::try_write_file(&target, &yaml_str);
                     }
                 }
 
@@ -215,7 +226,7 @@ pub fn process_command(
                 100
             };
             let candidate_logs = [
-                PathBuf::from("/data/adb/modules/yumi/logs/daemon.log"),
+                PathBuf::from(ADB_MODULE_ROOT).join("logs/daemon.log"),
                 root.join("logs/daemon.log"),
                 root.join("daemon.log"),
             ];
