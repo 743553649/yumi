@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use fs_extra::{dir, file};
+use fs_extra::dir;
 use serde::Deserialize;
 use xshell::{cmd, Shell};
 use zip::{write::FileOptions, CompressionMethod};
