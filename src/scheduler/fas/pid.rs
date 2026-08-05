@@ -134,3 +134,163 @@ pub(super) fn fps_norm(target_fps: f32) -> f32 {
 pub(super) fn scale_frames(base: u32, target_fps: f32) -> u32 {
     ((base as f32 * target_fps / 60.0).max(base as f32 * 0.4)) as u32
 }
+
+// ════════════════════════════════════════════════════════════════
+//  单元测试
+// ════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_pid() -> PidController {
+        PidController::new(1.0, 0.5, 0.2)
+    }
+
+    #[test]
+    fn test_adapt_to_target_fps_scales_coefficients_up_for_high_refresh() {
+        // 高刷下帧间隔更短，同样 1ms 偏差影响更大，三个通道增益都应放大
+        // P 线性、I 开方、D 0.3 次幂——幅度递减但都 > 基准
+        let mut pid = make_pid();
+        pid.adapt_to_target_fps(144.0); // ratio = 2.4
+        assert!(pid.kp > pid.base_kp, "kp 应随高刷放大: kp={} base={}", pid.kp, pid.base_kp);
+        assert!(pid.ki > pid.base_ki, "ki 应随高刷放大");
+        assert!(pid.kd > pid.base_kd, "kd 应随高刷放大");
+        // P 增益最激进，D 最保守
+        assert!(pid.kp / pid.base_kp > pid.kd / pid.base_kd);
+    }
+
+    #[test]
+    fn test_adapt_to_target_fps_idempotent() {
+        // 对同一 target_fps 重复调用（差值 < 0.5）应直接 return，系数不变
+        let mut pid = make_pid();
+        pid.adapt_to_target_fps(120.0);
+        let (kp, ki, kd, limit) = (pid.kp, pid.ki, pid.kd, pid.integral_limit);
+        pid.adapt_to_target_fps(120.0);
+        assert_eq!(pid.kp, kp);
+        assert_eq!(pid.ki, ki);
+        assert_eq!(pid.kd, kd);
+        assert_eq!(pid.integral_limit, limit);
+    }
+
+    #[test]
+    fn test_adapt_invalid_fps_falls_back_to_60() {
+        let mut pid = make_pid();
+        pid.adapt_to_target_fps(144.0); // 先放大 kp
+        assert!(pid.kp > pid.base_kp);
+        // 非法 fps（0、NaN、负数）应回退到 60，系数恢复基准
+        pid.adapt_to_target_fps(0.0);
+        assert!((pid.adapted_fps - 60.0).abs() < 1e-6);
+        assert!((pid.kp - pid.base_kp).abs() < 1e-6);
+        pid.adapt_to_target_fps(f32::NAN);
+        assert!((pid.kp - pid.base_kp).abs() < 1e-6);
+        pid.adapt_to_target_fps(-10.0);
+        assert!((pid.kp - pid.base_kp).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_negative_error_integral_clamped_within_limit() {
+        // 连续负 error（实际帧率高于目标）会累积 integral，
+        // 但 dyn_limit 限幅必须生效，避免积分饱和导致频率虚高
+        let mut pid = PidController::new(0.0, 1.0, 0.0); // 只看 I 项
+        pid.adapt_to_target_fps(60.0); // integral_limit = 0.15
+        for _ in 0..500 {
+            pid.compute(-1.0, 0.0, 1.0, 1.0); // fg_util=1.0 不触发 P 衰减
+        }
+        let limit = pid.integral_limit;
+        assert!(pid.integral >= -limit - 1e-6,
+            "integral {} 不应低于 -limit {}", pid.integral, -limit);
+        assert!(pid.integral <= limit + 1e-6,
+            "integral {} 不应超过 +limit {}", pid.integral, limit);
+    }
+
+    #[test]
+    fn test_low_fg_util_attenuates_p_term() {
+        // 前台 CPU 利用率低（< 0.45）说明瓶颈不在 CPU，
+        // util_gain 应衰减 P 项，避免无效拉频。
+        // 用 ki=kd=0 隔离 P 项，两次单次 compute 对比
+        let mut pid_low = PidController::new(1.0, 0.0, 0.0);
+        let out_low = pid_low.compute(0.1, 0.1, 1.0, 0.2); // util_gain = 0.3+0.2*1.56 = 0.612
+
+        let mut pid_high = PidController::new(1.0, 0.0, 0.0);
+        let out_high = pid_high.compute(0.1, 0.1, 1.0, 0.8); // util_gain = 1.0
+
+        assert!(out_low < out_high,
+            "低利用率下 P 项应被衰减: low={} high={}", out_low, out_high);
+        // 衰减比例应严格符合公式
+        assert!((out_low / out_high - 0.612).abs() < 1e-3,
+            "衰减比例应为 0.612，实际 {}", out_low / out_high);
+    }
+
+    #[test]
+    fn test_no_util_data_does_not_attenuate() {
+        // fg_util ≤ 0.01 视为刚启动未采样到，不应衰减（util_gain = 1.0）
+        let mut pid_zero = PidController::new(1.0, 0.0, 0.0);
+        let out_zero = pid_zero.compute(0.1, 0.1, 1.0, 0.0);
+
+        let mut pid_normal = PidController::new(1.0, 0.0, 0.0);
+        let out_normal = pid_normal.compute(0.1, 0.1, 1.0, 0.8);
+
+        assert!((out_zero - out_normal).abs() < 1e-6, "无利用率数据不应衰减 P 项");
+    }
+
+    #[test]
+    fn test_reset_clears_runtime_state() {
+        let mut pid = make_pid();
+        // 负 error 会累积 integral；非零 inst_error 会建立 prev_error / filtered_deriv
+        pid.compute(-0.5, -0.3, 1.0, 0.8);
+        assert!(pid.integral.abs() > 0.0, "integral 应已累积");
+        assert!(pid.prev_error.abs() > 0.0);
+        assert!(pid.filtered_deriv.abs() > 0.0);
+
+        pid.reset();
+        assert!((pid.integral - 0.0).abs() < 1e-6);
+        assert!((pid.prev_error - 0.0).abs() < 1e-6);
+        assert!((pid.filtered_deriv - 0.0).abs() < 1e-6);
+        // base 系数与 adapted_fps 不应被 reset 影响
+        assert!((pid.base_kp - 1.0).abs() < 1e-6);
+        assert!((pid.adapted_fps - 60.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_update_coefficients_rescales_and_resets() {
+        let mut pid = make_pid();
+        pid.adapt_to_target_fps(120.0); // ratio = 2.0
+        pid.compute(-0.5, 0.0, 1.0, 0.8);
+        assert!(pid.integral.abs() > 0.0);
+
+        pid.update_coefficients(2.0, 1.0, 0.5);
+        // base 系数更新
+        assert!((pid.base_kp - 2.0).abs() < 1e-6);
+        assert!((pid.base_ki - 1.0).abs() < 1e-6);
+        assert!((pid.base_kd - 0.5).abs() < 1e-6);
+        // 按 120fps 重新缩放: kp = base_kp * (120/60) = 4.0
+        assert!((pid.kp - 4.0).abs() < 1e-6);
+        // update_coefficients 内部调用了 reset
+        assert!((pid.integral - 0.0).abs() < 1e-6);
+        assert!((pid.prev_error - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_fps_norm_scales_with_refresh() {
+        // 60fps → 1.0（基准）
+        assert!((fps_norm(60.0) - 1.0).abs() < 1e-6);
+        // 120fps → sqrt(0.5) ≈ 0.707（高刷下 norm 更小）
+        assert!((fps_norm(120.0) - (0.5_f32).sqrt()).abs() < 1e-6);
+        // 极小/非法 fps 由 max(1.0) 兜底，不产生 NaN
+        assert!(fps_norm(0.0).is_finite());
+        assert!(fps_norm(-1.0).is_finite());
+    }
+
+    #[test]
+    fn test_scale_frames_linear_with_floor() {
+        // 60fps → base 原值
+        assert_eq!(scale_frames(10, 60.0), 10);
+        // 120fps → base * 2
+        assert_eq!(scale_frames(10, 120.0), 20);
+        // 30fps → base * 0.5（未触底下限）
+        assert_eq!(scale_frames(10, 30.0), 5);
+        // 极低帧率不低于 base * 0.4 下限
+        assert_eq!(scale_frames(10, 1.0), 4);
+    }
+}
