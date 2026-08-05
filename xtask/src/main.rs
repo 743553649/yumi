@@ -138,7 +138,15 @@ fn build(sh: &Shell) -> Result<()> {
         .compression_method(CompressionMethod::Deflated)
         .compression_level(Some(9));
         
-    zip_create_from_directory_with_options(&zip_path, &temp_dir, |_| options)?;
+    zip_create_from_directory_with_options(&zip_path, &temp_dir, |path| {
+        let is_exec = path.extension().map_or(false, |ext| ext == "sh")
+            || path.file_name().map_or(false, |name| name == "update-binary" || name == "yumi");
+        if is_exec {
+            options.unix_permissions(0o755)
+        } else {
+            options.unix_permissions(0o644)
+        }
+    })?;
 
     println!("构建并打包成功！");
     Ok(())

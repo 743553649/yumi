@@ -131,5 +131,5 @@ jobs:
         with:
           # 使用上一步获取的动态名称
           name: ${{ steps.artifact-name.outputs.name }}
-          # 精确指定要上传的那一个文件
-          path: ${{ steps.artifact-name.outputs.path }}
+          # 直接上传解压后的模块目录内容，使 GitHub 自动打出的 Zip 可直接在 KernelSU / Magisk 刷入
+          path: output/.temp/
