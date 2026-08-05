@@ -26,16 +26,20 @@ jobs:
         with:
           fetch-depth: 0 
 
-      # 2. 配置 Node.js 环境 (用于编译 WebUI)
+      # 2. 配置 Node.js 环境 (用于编译 WebUI) —— 启用 npm 下载缓存
+      #    cache: 'npm' 会缓存 ~/.npm/_cacache，加速后续 npm ci 的依赖下载
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24' # 推荐使用 LTS 版本
+          cache: 'npm'
+          cache-dependency-path: 'webui/package-lock.json'
           
       # 3. 安装 WebUI 依赖
+      #    npm ci 严格按 package-lock.json 安装，比 npm install 更快、更可复现
       - name: Install WebUI dependencies
         working-directory: ./webui
-        run: npm install
+        run: npm ci
 
       # 4. 配置 Rust Nightly 环境并添加 Android 交叉编译目标
       - name: Setup Rust Toolchain
@@ -44,21 +48,48 @@ jobs:
           targets: aarch64-linux-android
           components: rust-src # build-std 需要用到 (含 bpfel-unknown-none)
 
-      # 5. 安装 Android NDK
+      # 5. 计算 Rust 工具链指纹（用于 cargo 工具缓存 key）
+      #    bpf-linker 是 rustc 的 linker plugin，与 rustc 版本强绑定：
+      #    nightly 更新后旧二进制可能无法加载，必须按 rustc 版本区分缓存。
+      - name: Rust toolchain fingerprint
+        id: rustc-fp
+        run: echo "hash=$(rustc --version | sha256sum | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      # 6. 安装 Android NDK
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
           ndk-version: r29
 
-      # 6. 配置 NDK 环境变量并安装 cargo-ndk 和 bpf-linker
-      - name: Setup cargo-ndk and bpf-linker
+      # 7. 设置 NDK 环境变量（无论缓存是否命中都需要）
+      - name: Set NDK environment
+        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+
+      # 8. 缓存 cargo-ndk 和 bpf-linker 二进制（避免每次从源码编译，节省 ~60-90s）
+      #    key 绑定 rustc 指纹：nightly 不变则命中，变了则重建
+      - name: Cache cargo tools (cargo-ndk, bpf-linker)
+        id: cache-cargo-tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-ndk
+            ~/.cargo/bin/bpf-linker
+          key: cargo-tools-${{ runner.os }}-${{ steps.rustc-fp.outputs.hash }}-v1
+
+      # 9. 安装 cargo-ndk 和 bpf-linker（仅缓存未命中时从源码编译）
+      - name: Install cargo-ndk and bpf-linker
+        if: steps.cache-cargo-tools.outputs.cache-hit != 'true'
         run: |
-          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
           cargo install cargo-ndk
           cargo install bpf-linker
 
-      # 7. 诊断：打印工具链和环境信息
+      # 10. 缓存 Rust 编译产物（cargo registry + git 仓库 + target/）
+      #     Swatinem/rust-cache 自动按 Cargo.lock 生成 key，支持增量编译
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # 11. 诊断：打印工具链和环境信息
       - name: Diagnostics
         run: |
           echo "=== rustc version ==="
@@ -75,7 +106,7 @@ jobs:
           echo "=== CARGO_ENCODED_RUSTFLAGS ==="
           echo "${CARGO_ENCODED_RUSTFLAGS:-<unset>}"
 
-      # 8. 单独编译 eBPF 探针
+      # 12. 单独编译 eBPF 探针
       - name: Build eBPF probe
         run: |
           echo "=== Building yumi-ebpf for bpfel-unknown-none ==="
@@ -85,7 +116,7 @@ jobs:
           echo "=== eBPF build output ==="
           ls -la target/bpfel-unknown-none/release/yumi-ebpf || echo "eBPF binary NOT FOUND"
 
-      # 9. 运行 xtask 构建脚本（捕获完整日志用于调试）
+      # 13. 运行 xtask 构建脚本（捕获完整日志用于调试）
       - name: Run xtask build
         run: |
           set -eo pipefail
@@ -97,7 +128,7 @@ jobs:
           cargo xtask build 2>&1 | tee /tmp/xtask-build.log
           echo "=== xtask build completed ==="
 
-      # 10. 上传构建日志（无论成功失败都上传）
+      # 14. 上传构建日志（无论成功失败都上传）
       - name: Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
@@ -105,7 +136,7 @@ jobs:
           name: build-debug-log
           path: /tmp/xtask-build.log
 
-      # 11. 动态获取 xtask 生成的 zip 文件名
+      # 15. 动态获取 xtask 生成的 zip 文件名
       - name: Get Artifact Name
         id: artifact-name
         run: |
@@ -123,7 +154,7 @@ jobs:
           echo "name=$FILE_NAME" >> $GITHUB_OUTPUT
           echo "path=$FILE_PATH" >> $GITHUB_OUTPUT
 
-      # 12. 上传构建产物
+      # 16. 上传构建产物
       # 关键修复：必须用 archive: false 让 GA 直接上传原始 zip，不再套一层 zip 壳。
       # 否则用户从 Actions 页面下载到的是"zip 套 zip"：外层 zip 根目录只有
       # yumi-xxx.zip 这一个文件，KernelSU 在根目录找不到 module.prop，
