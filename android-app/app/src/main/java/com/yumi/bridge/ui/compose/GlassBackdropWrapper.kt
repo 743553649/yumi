@@ -26,14 +26,14 @@ import com.kyant.backdrop.effects.blur
  * Liquid Glassmorphism Container
  */
 private val highlightColors = listOf(
-    Color(0xE6FFFFFF), // Top 90% white
-    Color(0x33FFFFFF), // Middle 20% white
-    Color(0x500284C7)  // Bottom blue
+    Color(0xF2FFFFFF), // Top 95% crisp white reflection
+    Color(0x40FFFFFF), // Middle 25% subtle white
+    Color(0x6038BDF8)  // Bottom soft liquid cyan edge
 )
 
 private val glassColors = listOf(
-    Color(0x59FFFFFF), // 35% white
-    Color(0x2BFFFFFF)  // 17% white
+    Color(0x2EFFFFFF), // 18% white fallback
+    Color(0x12FFFFFF)  // 7% white fallback
 )
 
 @Composable
@@ -57,7 +57,7 @@ private fun rememberGlassBrush() = remember {
 fun GlassBackdropWrapper(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(24.dp),
-    blurRadius: Dp = 20.dp,
+    blurRadius: Dp = 12.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
     val highlightBorder = rememberHighlightBorder()
@@ -65,7 +65,7 @@ fun GlassBackdropWrapper(
     val backdrop = sharedBackdropState.value
 
     val outerModifier = modifier
-        .shadow(elevation = 8.dp, shape = shape, spotColor = Color(0x1A0284C7))
+        .shadow(elevation = 6.dp, shape = shape, spotColor = Color(0x1A0284C7))
         .clip(shape)
         .border(highlightBorder, shape)
         .let {
@@ -90,7 +90,7 @@ fun GlassBackdropWrapper(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color(0x1AFFFFFF)) // 10% transparent white
+                    .background(Color(0x14FFFFFF)) // Uniform 8% translucent white overlay
             )
         }
         Box(

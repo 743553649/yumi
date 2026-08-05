@@ -88,6 +88,7 @@ jobs:
       # 9. 运行 xtask 构建脚本（捕获完整日志用于调试）
       - name: Run xtask build
         run: |
+          set -eo pipefail
           echo "=== Pre-build: check eBPF binary ==="
           ls -la target/bpfel-unknown-none/release/yumi-ebpf || echo "eBPF binary NOT FOUND before xtask"
           echo "=== Environment ==="
@@ -108,8 +109,13 @@ jobs:
       - name: Get Artifact Name
         id: artifact-name
         run: |
+          set -eo pipefail
           # 找到 output 目录下生成的 zip 文件路径
-          FILE_PATH=$(ls output/*.zip | head -n 1)
+          FILE_PATH=$(ls output/*.zip 2>/dev/null | head -n 1 || true)
+          if [ -z "$FILE_PATH" ] || [ ! -f "$FILE_PATH" ]; then
+            echo "错误: 未在 output/ 目录下找到任何生成成功的 zip 模块包！"
+            exit 1
+          fi
           # 提取纯文件名 (例如 yumi-1.0.0-42-20260409-2000.zip)
           FILE_NAME=$(basename "$FILE_PATH")
           # 去掉 .zip 后缀，防止 GitHub 下载时变成 .zip.zip

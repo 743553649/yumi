@@ -200,11 +200,14 @@ private fun ModeCard(
     val backgroundModifier = if (isSelected) {
         Modifier.background(
             brush = Brush.linearGradient(
-                colors = listOf(Color(0xFFA1C4FD), Color(0xFFC2E9FB))
+                colors = listOf(
+                    Color(0xFFA1C4FD).copy(alpha = 0.85f),
+                    Color(0xFFC2E9FB).copy(alpha = 0.85f)
+                )
             )
         )
     } else {
-        Modifier.background(Color(0x40F1F5F9))
+        Modifier.background(Color(0x14FFFFFF))
     }
 
     Box(

@@ -22,6 +22,7 @@ fun MainNavigationScreen(
     onModeSelected: (String) -> Unit,
     onAppModeChanged: (String, String) -> Unit,
     onClearLogs: () -> Unit,
+    onRefreshLogs: () -> Unit = {},
     onTabSelected: (Int) -> Unit
 ) {
     Scaffold(
@@ -44,7 +45,7 @@ fun MainNavigationScreen(
             Box(modifier = Modifier.weight(1f)) {
                 when (state.activeTab) {
                     0 -> HomeScreen(state = state, onModeSelected = onModeSelected)
-                    1 -> LogScreen(state = state, onClearClick = onClearLogs)
+                    1 -> LogScreen(state = state, onClearClick = onClearLogs, onRefreshClick = onRefreshLogs)
                     2 -> AppRulesScreen(state = state, onAppModeChanged = onAppModeChanged)
                 }
             }

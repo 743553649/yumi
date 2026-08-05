@@ -30,15 +30,19 @@ class SystemStatsParserTest {
 
     @Test
     fun testFormatBatteryPowerMicroAmps() {
-        // Raw µA: -2500000 µA * 4.0V = -10.0 W
-        val powerWatts = SystemStatsParser.formatPowerWatts(-2500000L, 4000000L)
-        assertEquals("-10.0 W", powerWatts)
+        // Discharging: -10.0 W
+        val dischargingWatts = SystemStatsParser.formatPowerWatts(2500000L, 4000000L, false)
+        assertEquals("-10.0 W", dischargingWatts)
+
+        // Charging: +10.0 W
+        val chargingWatts = SystemStatsParser.formatPowerWatts(2500000L, 4000000L, true)
+        assertEquals("+10.0 W", chargingWatts)
     }
 
     @Test
     fun testFormatBatteryPowerMilliAmpsAutoScaling() {
-        // Raw mA: -350 mA * 4.0V = -1.4 W (auto scaled from mA to µA)
-        val powerWatts = SystemStatsParser.formatPowerWatts(-350L, 4000000L)
+        // Discharging with auto-scaling: -1.4 W
+        val powerWatts = SystemStatsParser.formatPowerWatts(-350L, 4000000L, false)
         assertEquals("-1.4 W", powerWatts)
     }
 

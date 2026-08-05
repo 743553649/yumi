@@ -11,6 +11,7 @@ import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -142,6 +143,7 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setTheme(R.style.Theme_YumiBridge);
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
@@ -157,7 +159,15 @@ public class MainActivity extends ComponentActivity {
         if (composeBackgroundHost != null) {
             ComposeHomeBridgeKt.attachBackgroundHost(composeBackgroundHost);
         }
-        ComposeHomeBridgeKt.attachMainScreen(composeContentHost, this::setGlobalMode, this::onAppModeChanged, this::onTabSelected);
+        ComposeHomeBridgeKt.attachMainScreen(
+                composeContentHost,
+                this::setGlobalMode,
+                this::onAppModeChanged,
+                this::onTabSelected,
+                this::onUserRefreshLogs,
+                this::onUserClearLogs,
+                this::onFilterLevelChanged
+        );
 
         // Initialize IPC communication and fetch mode logs
         sendCommand("get_mode");
@@ -246,10 +256,15 @@ public class MainActivity extends ComponentActivity {
         try {
             long currentRaw = 0;
             long voltageUv = 4000000L;
+            boolean isCharging = false;
 
             IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
             Intent batteryStatus = registerReceiver(null, ifilter);
             if (batteryStatus != null) {
+                int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                             status == BatteryManager.BATTERY_STATUS_FULL;
+
                 int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
                 int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
                 if (level >= 0 && scale > 0) {
@@ -267,7 +282,7 @@ public class MainActivity extends ComponentActivity {
 
             BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
             currentRaw = readBatteryCurrentNow(bm);
-            batteryPowerText = SystemStatsParser.formatPowerWatts(currentRaw, voltageUv);
+            batteryPowerText = SystemStatsParser.formatPowerWatts(currentRaw, voltageUv, isCharging);
         } catch (Exception ignored) {}
 
         // 3. System uptime (format: Days:Hours:Minutes)
@@ -400,14 +415,42 @@ public class MainActivity extends ComponentActivity {
             appModesMap.put(packageName, mode);
         }
         ComposeHomeBridgeKt.updateInstalledApps(allAppItems);
+        saveAppRulesToPrefs();
         saveAppRulesToYaml();
         sendCommand("set_app_mode " + packageName + " " + mode);
     }
 
     // ==================== App Rules Management ====================
 
+    private void loadAppRulesFromPrefs() {
+        try {
+            SharedPreferences sp = getSharedPreferences("yumi_app_rules_sp", MODE_PRIVATE);
+            Map<String, ?> all = sp.getAll();
+            if (all != null) {
+                for (Map.Entry<String, ?> entry : all.entrySet()) {
+                    if (entry.getValue() instanceof String) {
+                        appModesMap.put(entry.getKey(), (String) entry.getValue());
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveAppRulesToPrefs() {
+        try {
+            SharedPreferences sp = getSharedPreferences("yumi_app_rules_sp", MODE_PRIVATE);
+            SharedPreferences.Editor editor = sp.edit();
+            editor.clear();
+            for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
+                editor.putString(entry.getKey(), entry.getValue());
+            }
+            editor.apply();
+        } catch (Exception ignored) {}
+    }
+
     private void loadAppRulesFromYaml() {
         appModesMap.clear();
+        loadAppRulesFromPrefs();
         File[] possibleFiles = new File[]{
                 new File("/storage/emulated/0/yumi/module/rules.yaml"),
                 new File("/storage/emulated/0/yumi/rules.yaml"),
@@ -580,6 +623,7 @@ public class MainActivity extends ComponentActivity {
             }
         }
 
+        saveAppRulesToPrefs();
         sendCommand("reload_rules");
         Toast.makeText(this, "应用规则持久化保存成功", Toast.LENGTH_SHORT).show();
     }
@@ -617,6 +661,11 @@ public class MainActivity extends ComponentActivity {
         }
 
         if (!hasAppModesSection) {
+            if (lines.isEmpty()) {
+                lines.add("yumi_scheduler: true");
+                lines.add("dynamic_enabled: true");
+                lines.add("global_mode: balance");
+            }
             lines.add("");
             lines.add("app_modes:");
             for (Map.Entry<String, String> entry : appModesMap.entrySet()) {
@@ -627,16 +676,67 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void writeLinesToFile(File file, List<String> lines) {
+        boolean success = false;
         try (PrintWriter pw = new PrintWriter(new FileWriter(file))) {
             for (String l : lines) {
                 pw.println(l);
             }
+            success = true;
         } catch (Exception ignored) {}
+
+        // Root fallback using standard stdin streaming (WebUI/Linux shell solution)
+        if (!success || file.getAbsolutePath().startsWith("/data/adb") || file.getAbsolutePath().startsWith("/storage")) {
+            try {
+                Process p = Runtime.getRuntime().exec("su");
+                try (java.io.DataOutputStream os = new java.io.DataOutputStream(p.getOutputStream())) {
+                    os.writeBytes("mkdir -p " + file.getParent() + "\n");
+                    os.writeBytes("cat << 'EOF' > " + file.getAbsolutePath() + "\n");
+                    for (String l : lines) {
+                        os.writeBytes(l + "\n");
+                    }
+                    os.writeBytes("EOF\n");
+                    os.writeBytes("exit\n");
+                    os.flush();
+                }
+                p.waitFor();
+            } catch (Exception ignored) {}
+        }
     }
 
     // ==================== Log & Communication Control ====================
 
 
+
+    private boolean isLogClearedByUser = false;
+
+    private void onFilterLevelChanged(int level) {
+        this.currentFilterLevel = level;
+    }
+
+    private void onUserClearLogs() {
+        isLogClearedByUser = true;
+        realLogs.clear();
+        ComposeHomeBridgeKt.clearLogState();
+        
+        // Execute root command to clear /data/adb/modules/yumi/logs/daemon.log file on disk
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "> /data/adb/modules/yumi/logs/daemon.log"});
+                    p.waitFor();
+                } catch (Exception ignored) {}
+            }
+        }).start();
+
+        Toast.makeText(this, "日志面板与磁盘日志已清空", Toast.LENGTH_SHORT).show();
+    }
+
+    private void onUserRefreshLogs() {
+        isLogClearedByUser = false;
+        Toast.makeText(this, "正在刷新日志...", Toast.LENGTH_SHORT).show();
+        fetchRealModuleLogs();
+    }
 
     private void fetchRealModuleLogs() {
         new Thread(new Runnable() {
@@ -659,6 +759,9 @@ public class MainActivity extends ComponentActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        if (isLogClearedByUser) {
+                            return;
+                        }
                         realLogs.clear();
                         realLogs.addAll(fetched);
                         renderLogDisplay();
@@ -693,6 +796,7 @@ public class MainActivity extends ComponentActivity {
     private List<RealLogEntry> fetchLogsViaLocalFiles() {
         List<RealLogEntry> result = new ArrayList<>();
 
+        // Exclusively read from authoritative daemon log path: /data/adb/modules/yumi/logs/daemon.log
         try {
             Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "tail -n 300 /data/adb/modules/yumi/logs/daemon.log"});
             BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"));
@@ -708,25 +812,8 @@ public class MainActivity extends ComponentActivity {
             if (!result.isEmpty()) return result;
         } catch (Exception ignored) {}
 
-        File[] candidateFiles = new File[]{
-                new File("/data/adb/modules/yumi/logs/daemon.log"),
-                new File("/storage/emulated/0/yumi/module/logs/daemon.log"),
-                new File("/storage/emulated/0/yumi/logs/daemon.log"),
-                new File("/storage/emulated/0/yumi/module/daemon.log"),
-                new File("/storage/emulated/0/yumi/daemon.log"),
-                new File("/data/local/tmp/yumi/daemon.log"),
-                new File("/data/local/tmp/daemon.log")
-        };
-
-        File targetFile = null;
-        for (File f : candidateFiles) {
-            if (f.exists() && f.length() > 0) {
-                targetFile = f;
-                break;
-            }
-        }
-
-        if (targetFile != null) {
+        File targetFile = new File("/data/adb/modules/yumi/logs/daemon.log");
+        if (targetFile.exists() && targetFile.length() > 0) {
             try (BufferedReader br = new BufferedReader(new FileReader(targetFile))) {
                 String line;
                 while ((line = br.readLine()) != null) {

@@ -65,10 +65,10 @@ private fun CpuCoreCircularItem(
     val clampedUsage = usage.coerceIn(0, 100)
 
     val usageColor = when {
-        clampedUsage > 80 -> Color(0xFFDC2626)
-        clampedUsage > 60 -> Color(0xFFEA580C)
-        clampedUsage > 30 -> Color(0xFF0284C7)
-        else -> Color(0xFF16A34A)
+        clampedUsage > 85 -> Color(0xFFF43F5E) // Soft Coral Red (High Load)
+        clampedUsage > 70 -> Color(0xFFF59E0B) // Warm Amber Orange (Medium-High Load)
+        clampedUsage > 40 -> Color(0xFF0284C7) // Ocean Electric Blue (Medium Load)
+        else -> Color(0xFF38BDF8)               // Ice Sky Cyan (Low Load - Calm)
     }
 
     val animatedUsageProgress by animateFloatAsState(
@@ -82,7 +82,7 @@ private fun CpuCoreCircularItem(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0x80F1F5F9))
+            .background(Color(0x14FFFFFF))
             .border(1.dp, Color(0x300284C7), RoundedCornerShape(12.dp))
             .padding(vertical = 8.dp, horizontal = 2.dp),
         contentAlignment = Alignment.Center
@@ -99,7 +99,7 @@ private fun CpuCoreCircularItem(
                 fontSize = 10.sp
             )
 
-            // 环形进度图 (Circular Progress)
+            // 环形进度图 (Harmonized Ice Circular Progress)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(34.dp)
@@ -108,8 +108,8 @@ private fun CpuCoreCircularItem(
                     progress = { animatedUsageProgress },
                     modifier = Modifier.fillMaxSize(),
                     color = usageColor,
-                    strokeWidth = 3.dp,
-                    trackColor = Color(0x30CBD5E1)
+                    strokeWidth = 2.5.dp,
+                    trackColor = Color(0x1F0284C7)
                 )
                 Text(
                     text = "$clampedUsage%",

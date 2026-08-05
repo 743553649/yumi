@@ -215,12 +215,30 @@ fun attachBackgroundHost(composeView: ComposeView) {
     }
 }
 
+fun interface OnClearLogsListener {
+    fun onClearLogs()
+}
+
+fun interface OnRefreshLogsListener {
+    fun onRefreshLogs()
+}
+
+fun interface OnFilterLevelChangeListener {
+    fun onFilterLevelChanged(level: Int)
+}
+
+private var filterLevelChangeListener: OnFilterLevelChangeListener? = null
+
 fun attachMainScreen(
     composeView: ComposeView,
     onModeSelectedListener: OnModeSelectedListener,
     onAppModeChangedListener: AppRuleChangeListener,
-    onTabSelectedListener: OnTabSelectedListener
+    onTabSelectedListener: OnTabSelectedListener,
+    onRefreshLogsListener: OnRefreshLogsListener = OnRefreshLogsListener { },
+    onClearLogsListener: OnClearLogsListener = OnClearLogsListener { },
+    onFilterLevelChangeListener: OnFilterLevelChangeListener = OnFilterLevelChangeListener { }
 ) {
+    filterLevelChangeListener = onFilterLevelChangeListener
     composeView.setViewCompositionStrategy(
         androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
     )
@@ -230,7 +248,11 @@ fun attachMainScreen(
                 state = globalHomeState,
                 onModeSelected = { onModeSelectedListener.onModeSelected(it) },
                 onAppModeChanged = { pkg, mode -> onAppModeChangedListener.onAppModeChanged(pkg, mode) },
-                onClearLogs = { globalHomeState.realLogs.clear() },
+                onClearLogs = {
+                    globalHomeState.realLogs.clear()
+                    onClearLogsListener.onClearLogs()
+                },
+                onRefreshLogs = { onRefreshLogsListener.onRefreshLogs() },
                 onTabSelected = { onTabSelectedListener.onTabSelected(it) }
             )
         }
@@ -278,8 +300,13 @@ fun updateLogState(
     globalHomeState.currentFilterLevel = filterLevel
 }
 
+fun clearLogState() {
+    globalHomeState.realLogs.clear()
+}
+
 fun updateFilterLevel(level: Int) {
     globalHomeState.currentFilterLevel = level
+    filterLevelChangeListener?.onFilterLevelChanged(level)
 }
 
 fun updateInstalledApps(apps: List<com.yumi.bridge.MainActivity.AppRuleItem>) {

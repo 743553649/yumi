@@ -1,0 +1,41 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Ice Crystal Outer Ring -->
+    <path
+        android:pathData="M54,24 L78,38 L78,68 L54,82 L30,68 L30,38 Z"
+        android:strokeWidth="2.5"
+        android:strokeColor="#0284C7"
+        android:strokeAlpha="0.85"/>
+        
+    <!-- Inner Core Hexagon -->
+    <path
+        android:pathData="M54,34 L68,42 L68,60 L54,68 L40,60 L40,42 Z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:startX="40"
+                android:startY="34"
+                android:endX="68"
+                android:endY="68"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF38BDF8"/>
+                <item android:offset="1.0" android:color="#FF0284C7"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    
+    <!-- Glowing Center Diamond -->
+    <path
+        android:pathData="M54,45 L61,51 L54,57 L47,51 Z"
+        android:fillColor="#FFFFFFFF"/>
+
+    <!-- Connecting Quantum Circuit Pins -->
+    <path
+        android:pathData="M54,18 L54,24 M54,82 L54,88 M22,51 L30,51 M78,51 L86,51"
+        android:strokeWidth="2"
+        android:strokeColor="#38BDF8"
+        android:strokeLineCap="round"/>
+</vector>

@@ -24,6 +24,7 @@
     <string name="log_level_warn">警告</string>
     <string name="log_level_error">错误</string>
     <string name="btn_clear_log">清空</string>
+    <string name="btn_refresh_log">刷新</string>
     <string name="card_conn_title">通信与连接配置</string>
     <string name="port_hint">14567</string>
     <string name="btn_ping">Ping</string>

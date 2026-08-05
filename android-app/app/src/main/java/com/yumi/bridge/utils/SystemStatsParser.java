@@ -106,7 +106,7 @@ public final class SystemStatsParser {
      * @param rawVoltage Voltage value in µV or mV
      * @return Formatted power text in W (e.g. "-2.5 W" or "+12.0 W")
      */
-    public static String formatPowerWatts(long rawCurrent, long rawVoltage) {
+    public static String formatPowerWatts(long rawCurrent, long rawVoltage, boolean isCharging) {
         if (rawCurrent == 0) {
             return "0.0 W";
         }
@@ -125,12 +125,21 @@ public final class SystemStatsParser {
 
         double currentAmps = currentUa / 1000000.0;
         double voltageVolts = voltageUv / 1000000.0;
-        double watts = currentAmps * voltageVolts;
+        double watts = Math.abs(currentAmps * voltageVolts);
 
-        if (Math.abs(watts) < 0.05) {
+        if (watts < 0.05) {
             return "0.0 W";
         }
-        return String.format(Locale.getDefault(), "%+.1f W", watts);
+
+        if (isCharging) {
+            return String.format(Locale.getDefault(), "+%.1f W", watts);
+        } else {
+            return String.format(Locale.getDefault(), "-%.1f W", watts);
+        }
+    }
+
+    public static String formatPowerWatts(long rawCurrent, long rawVoltage) {
+        return formatPowerWatts(rawCurrent, rawVoltage, false);
     }
 
     /**

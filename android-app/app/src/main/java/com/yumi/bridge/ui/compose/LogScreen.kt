@@ -50,7 +50,8 @@ fun filterLogs(
 @Composable
 fun LogScreen(
     state: HomeUiState,
-    onClearClick: () -> Unit
+    onClearClick: () -> Unit,
+    onRefreshClick: () -> Unit = {}
 ) {
     val filteredLogs by remember(state.currentFilterLevel) {
         derivedStateOf { filterLogs(state.realLogs, state.currentFilterLevel) }
@@ -67,7 +68,7 @@ fun LogScreen(
                     .fillMaxSize()
                     .padding(16.dp)
             ) {
-                LogHeader(onClearClick = onClearClick)
+                LogHeader(onClearClick = onClearClick, onRefreshClick = onRefreshClick)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -88,7 +89,10 @@ fun LogScreen(
 }
 
 @Composable
-private fun LogHeader(onClearClick: () -> Unit) {
+private fun LogHeader(
+    onClearClick: () -> Unit,
+    onRefreshClick: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -100,8 +104,13 @@ private fun LogHeader(onClearClick: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = Color(0xFF0F172A)
         )
-        TextButton(onClick = onClearClick) {
-            Text(text = stringResource(R.string.btn_clear_log), color = Color(0xFF0284C7))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onRefreshClick) {
+                Text(text = stringResource(R.string.btn_refresh_log), color = Color(0xFF0284C7))
+            }
+            TextButton(onClick = onClearClick) {
+                Text(text = stringResource(R.string.btn_clear_log), color = Color(0xFFDC2626))
+            }
         }
     }
 }

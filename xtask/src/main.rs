@@ -52,8 +52,12 @@ fn main() -> Result<()> {
 
 fn cal_git_code(sh: &Shell) -> Result<usize> {
     // xshell 极大地简化了获取命令 stdout 的过程
-    let output = cmd!(sh, "git rev-list --count HEAD").read()?;
-    Ok(output.trim().parse::<usize>()?)
+    if let Ok(output) = cmd!(sh, "git rev-list --count HEAD").read() {
+        if let Ok(code) = output.trim().parse::<usize>() {
+            return Ok(code);
+        }
+    }
+    Ok(0)
 }
 
 fn get_date() -> String {
@@ -102,11 +106,7 @@ fn build(sh: &Shell) -> Result<()> {
     let bin_path = temp_dir.join("core").join("bin");
     fs::create_dir_all(&bin_path)?;
     
-    file::copy(
-        aarch64_bin_path(),
-        bin_path.join("yumi"),
-        &file::CopyOptions::new().overwrite(true),
-    )?;
+    fs::copy(aarch64_bin_path(), bin_path.join("yumi"))?;
     
     let webroot_dir = temp_dir.join("webroot");
     let webui_dist = Path::new("webui").join("dist");
@@ -156,7 +156,10 @@ fn aarch64_bin_path() -> PathBuf {
 }
 
 fn build_core(sh: &Shell) -> Result<()> {
-    if std::env::var("YUMI_SKIP_EBPF").map_or(true, |v| v != "1") {
+    let ebpf_binary = Path::new("target/bpfel-unknown-none/release/yumi-ebpf");
+    if ebpf_binary.exists() {
+        println!("检测到预编译 eBPF 探针已存在: {}，跳过 eBPF 编译", ebpf_binary.display());
+    } else if std::env::var("YUMI_SKIP_EBPF").map_or(true, |v| v != "1") {
         println!("正在预编译 eBPF 探针 (bpfel-unknown-none)...");
         let _env_flags = sh.push_env("RUSTFLAGS", "");
         let _env_encoded = sh.push_env("CARGO_ENCODED_RUSTFLAGS", "");
