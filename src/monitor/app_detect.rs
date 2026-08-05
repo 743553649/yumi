@@ -315,7 +315,11 @@ pub fn app_detection_loop(
         if force_refresh || cached_config.is_none() {
             cached_config = Some(config_arc.lock().unwrap_or_else(|e| e.into_inner()).clone());
         }
-        let config_snapshot = cached_config.as_ref().unwrap();
+        // 上文 if 已保证 cached_config 为 Some；防御性 match 避免 unwrap panic 拖垮应用检测循环
+        let config_snapshot = match cached_config.as_ref() {
+            Some(c) => c,
+            None => continue,
+        };
         let ignored_apps = &config_snapshot.ignored_apps;
 
         let (detected_pkg, detected_pid) = get_focused_app_from_cgroup(&ignored_apps)
