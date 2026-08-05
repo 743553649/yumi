@@ -49,7 +49,9 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
         env!("OUT_DIR"),
         "/ebpf_target/bpfel-unknown-none/release/yumi-ebpf"
     )))?));
-    let program: &mut TracePoint = bpf.program_mut("handle_sched_switch").unwrap().try_into()?;
+    let program: &mut TracePoint = bpf.program_mut("handle_sched_switch")
+        .ok_or_else(|| anyhow::anyhow!("eBPF program handle_sched_switch not found"))?
+        .try_into()?;
     program.load()?;
     program.attach("sched", "sched_switch")?;
     info!("{}", t("cpu-monitor-started"));
@@ -64,29 +66,29 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
     let bpf_ptr = bpf as *mut Ebpf;
 
     let core_idle_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("CORE_IDLE_TIME").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("CORE_IDLE_TIME").ok_or_else(|| anyhow::anyhow!("CORE_IDLE_TIME not found"))?
     )?;
     let core_busy_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("CORE_BUSY_TIME").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("CORE_BUSY_TIME").ok_or_else(|| anyhow::anyhow!("CORE_BUSY_TIME not found"))?
     )?;
     let core_last_time_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("CORE_LAST_TIME").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("CORE_LAST_TIME").ok_or_else(|| anyhow::anyhow!("CORE_LAST_TIME not found"))?
     )?;
     let core_current_tid_map: PerCpuArray<_, u32> = PerCpuArray::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("CORE_CURRENT_TID").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("CORE_CURRENT_TID").ok_or_else(|| anyhow::anyhow!("CORE_CURRENT_TID not found"))?
     )?;
     let thread_run_map: BpfHashMap<_, u32, u64> = BpfHashMap::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("THREAD_RUN_TIME").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("THREAD_RUN_TIME").ok_or_else(|| anyhow::anyhow!("THREAD_RUN_TIME not found"))?
     )?;
 
     // TGID 级聚合运行时间 map
     let tgid_run_map: BpfHashMap<_, u32, u64> = BpfHashMap::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("TGID_RUN_TIME").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("TGID_RUN_TIME").ok_or_else(|| anyhow::anyhow!("TGID_RUN_TIME not found"))?
     )?;
 
     // 每核当前 TGID map (用于 pending delta 补偿)
     let core_current_tgid_map: PerCpuArray<_, u32> = PerCpuArray::try_from(
-        unsafe { &mut *bpf_ptr }.map_mut("CORE_CURRENT_TGID").unwrap()
+        unsafe { &mut *bpf_ptr }.map_mut("CORE_CURRENT_TGID").ok_or_else(|| anyhow::anyhow!("CORE_CURRENT_TGID not found"))?
     )?;
 
     let shared_pid = Arc::new(AtomicU32::new(app_detect::get_current_pid() as u32));
