@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -22,6 +22,22 @@ fn rules_write_targets() -> Vec<PathBuf> {
         vec![primary]
     } else {
         vec![primary, adb]
+    }
+}
+
+/// IPC 最大并发连接数。超过此值的连接会被立即拒绝并记录 debug 日志，
+/// 防止异常客户端耗尽线程资源。配合 `handle_client` 的 10s 读超时双重兜底。
+const MAX_CONCURRENT_CONNECTIONS: usize = 8;
+
+/// 当前活跃 IPC 连接计数
+static ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// 连接计数守卫：`Drop` 时 `fetch_sub` 回退计数，确保 `handle_client` 即使
+/// panic 也能释放名额，避免计数泄漏导致 IPC 被永久堵死。
+struct ConnectionGuard;
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -57,11 +73,23 @@ pub fn start_with_listener(
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
+                // 原子抢占一个连接名额：超过上限则拒绝并回退，防线程耗尽
+                let prev = ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
+                if prev >= MAX_CONCURRENT_CONNECTIONS {
+                    ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+                    log::debug!(
+                        "IPC rejected: max {} connections reached",
+                        MAX_CONCURRENT_CONNECTIONS
+                    );
+                    continue;
+                }
                 let tx = tx.clone();
                 let root = root.clone();
                 let config_arc = Arc::clone(&config_arc);
                 let force_refresh_arc = Arc::clone(&force_refresh_arc);
                 std::thread::spawn(move || {
+                    // guard 在闭包退出（含 panic unwind）时 fetch_sub 回退名额
+                    let _guard = ConnectionGuard;
                     handle_client(stream, tx, root, config_arc, force_refresh_arc);
                 });
             }
