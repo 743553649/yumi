@@ -83,10 +83,12 @@ fn main() -> Result<()> {
         let ipc_tx = tx.clone();
         let ipc_root = root.clone();
         let ipc_port = config.ipc.port;
+        let ipc_config_arc = Arc::clone(&config_arc);
+        let ipc_force_refresh_arc = Arc::clone(&force_refresh_arc);
         thread::Builder::new()
             .name("ipc_server".to_string())
             .spawn(move || {
-                ipc_server::start(ipc_tx, ipc_root, ipc_port);
+                ipc_server::start(ipc_tx, ipc_root, ipc_port, ipc_config_arc, ipc_force_refresh_arc);
             })?;
         info!("IPC server starting on port {}", config.ipc.port);
     }
