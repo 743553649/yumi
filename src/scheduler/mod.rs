@@ -117,7 +117,8 @@ pub(super) fn auto_compute_capacity_weights(policies: &[CpuPolicy]) -> Option<Ve
         .filter_map(|p| probe_policy_capacity(p.id).map(|c| (p.id, c)))
         .collect();
     if caps.is_empty() || caps.iter().any(|&(_, c)| c == 0) { return None; }
-    let min_cap = caps.iter().map(|&(_, c)| c).min().unwrap() as f32;
+    // 此处已由上文 is_empty / 零值守卫保证非空，unwrap_or(1) 仅作除零兜底
+    let min_cap = caps.iter().map(|&(_, c)| c).min().unwrap_or(1) as f32;
     Some(caps.iter().map(|&(pid, cap)| {
         let r = cap as f32 / min_cap;
         (pid, if r <= 1.01 { 1.0 } else { 1.0 + (r - 1.0).sqrt() })
@@ -129,7 +130,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let config_path = root.join("config/config.yaml");
     let config_dir = root.join("config"); 
 
-    let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
+    let config = Config::from_file(config_path.to_str().unwrap_or("")).unwrap_or_default();
 
     let shared_config = Arc::new(RwLock::new(config));
     let shared_mode_name = Arc::new(Mutex::new("balance".to_string())); 
@@ -178,14 +179,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                 // 主配置文件变更
                 if changed_file == "config.yaml" || changed_file.is_empty() {
-                    let old_lang = config_clone.read().unwrap().meta.language.clone();
+                    let old_lang = config_clone.read().unwrap_or_else(|e| e.into_inner()).meta.language.clone();
                     
-                    match Config::from_file(config_path.to_str().unwrap()) {
+                    match Config::from_file(config_path.to_str().unwrap_or("")) {
                         Ok(new_config) => {
                             logger::update_level(&new_config.meta.loglevel);
-                            *config_clone.write().unwrap() = new_config;
+                            *config_clone.write().unwrap_or_else(|e| e.into_inner()) = new_config;
                             
-                            let new_lang = config_clone.read().unwrap().meta.language.clone();
+                            let new_lang = config_clone.read().unwrap_or_else(|e| e.into_inner()).meta.language.clone();
                             if old_lang != new_lang { load_language(&new_lang); }
 
                             log::info!("{}", t("config-reloaded-success"));
@@ -202,21 +203,21 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 // CPUSet 配置变更
                 if changed_file == "cpuset.yaml" || changed_file.is_empty() {
                     let new_cpuset = crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path).unwrap_or_default();
-                    *cpuset_config_watcher.write().unwrap() = new_cpuset;
+                    *cpuset_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_cpuset;
                     log::info!("{}", t("cpuset-config-reloaded"));
                 }
 
                 // IdleDive 配置变更
                 if changed_file == "idle_dive.yaml" || changed_file.is_empty() {
                     let new_idle_dive = crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path).unwrap_or_default();
-                    *idle_dive_config_watcher.write().unwrap() = new_idle_dive;
+                    *idle_dive_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_idle_dive;
                     log::info!("{}", t("idle-dive-config-reloaded"));
                 }
 
                 // TouchBoost 配置变更
                 if changed_file == "touch_boost.yaml" || changed_file.is_empty() {
                     let new_touch_boost = crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path).unwrap_or_default();
-                    *touch_boost_config_watcher.write().unwrap() = new_touch_boost;
+                    *touch_boost_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_touch_boost;
                     log::info!("{}", t("touch-boost-config-reloaded"));
                 }
             }
@@ -246,7 +247,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             // CPUSet 管理器：动态调整进程 CPU 核心绑定
             let cpuset_mgr_config = shared_cpuset_config.clone();
             let cpuset_manager = Arc::new(RwLock::new(crate::cpuset_manager::CpuSetManager::new(cpuset_mgr_config)));
-            if let Err(e) = cpuset_manager.write().unwrap().init() {
+            if let Err(e) = cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).init() {
                 log::error!("{}", t_with_args("cpuset-init-failed", &fluent_args!("error" => e.to_string())));
             }
 
@@ -294,9 +295,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
             // 启动时初始化
             {
-                let current_mode = mode_clone.lock().unwrap().clone();
+                let current_mode = mode_clone.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 if current_mode != "fas" {
-                    let config_lock = config_clone.read().unwrap();
+                    let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                     if clg_cfg.enabled {
                         cpu_governor.init_policies(&clg_cfg);
@@ -304,7 +305,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     }
                 }
                 // 启动时应用当前模式的 CPUSet 分配
-                let _ = cpuset_manager.write().unwrap().apply_mode(&current_mode);
+                let _ = cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).apply_mode(&current_mode);
             }
             
             for msg in rx {
@@ -312,7 +313,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     // --- 1. 屏幕状态事件 (息屏深度睡眠) ---
                     DaemonEvent::ScreenStateChange(screen_on) => {
                         is_screen_on = screen_on;
-                        let current_mode = mode_clone.lock().unwrap().clone();
+                        let current_mode = mode_clone.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
                         if !is_screen_on {
                             log::info!("{}", t("scheduler-doze-enable"));
@@ -330,7 +331,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             }
 
                             // 强行让 CLG 接管，并动态生成一个极致省电配置
-                            let config_lock = config_clone.read().unwrap();
+                            let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
                             let mut doze_cfg = get_clg_cfg(&config_lock, "powersave");
                             doze_cfg.enabled = true;
                             doze_cfg.perf_floor = 0.0;
@@ -340,14 +341,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             doze_cfg.up_rate_limit_ticks = 5;       // 升频速率限制从 3 提高到 5
                             
                             cpu_governor.init_policies(&doze_cfg);
-                            cpuset_manager.write().unwrap().on_screen_off();
+                            cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_screen_off();
                         } else {
                             log::info!("{}", t("scheduler-doze-restore"));
 
                             // CPU 静止下潜：亮屏退出息屏下潜
                             idle_dive.exit_doze();
                             
-                            let config_lock = config_clone.read().unwrap();
+                            let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                             
                             if current_mode != "fas" {
@@ -357,18 +358,18 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 } else { cpu_governor.release(); }
                             } else {
                                 cpu_governor.release(); 
-                                *mode_clone.lock().unwrap() = String::new();
+                                *mode_clone.lock().unwrap_or_else(|e| e.into_inner()) = String::new();
                             }
 
                             // 亮屏恢复 CPUSet 分配（游戏模式使用 performance 策略）
                             let restore_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&current_mode);
-                            cpuset_manager.write().unwrap().on_screen_on(restore_mode);
+                            cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_screen_on(restore_mode);
                         }
                     },
 
                     // --- 2. 前台模式切换事件 ---
                     DaemonEvent::ModeChange { package_name, pid, mode, temperature } => {
-                        let mut current_mode_lock = mode_clone.lock().unwrap();
+                        let mut current_mode_lock = mode_clone.lock().unwrap_or_else(|e| e.into_inner());
                         let old_mode = current_mode_lock.clone();
                         
                         if old_mode != mode {
@@ -383,15 +384,15 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             // CPUSet 跟随模式切换（游戏模式使用 performance 策略）
                             // 息屏时跳过：不能覆盖 doze 的核心约束（与 CLG 的 is_screen_on 保护对齐）
-                            if is_screen_on && cpuset_manager.read().unwrap().current_mode() != mode {
+                            if is_screen_on && cpuset_manager.read().unwrap_or_else(|e| e.into_inner()).current_mode() != mode {
                                 let cpuset_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&mode);
-                                cpuset_manager.write().unwrap().on_mode_change(cpuset_mode);
+                                cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_mode_change(cpuset_mode);
                             }
 
                             if mode != "fas" {
                                 let cpuset_mgr = cpuset_manager.clone();
                                 std::thread::spawn(move || {
-                                    cpuset_mgr.read().unwrap().apply_ui_qos(pid);
+                                    cpuset_mgr.read().unwrap_or_else(|e| e.into_inner()).apply_ui_qos(pid);
                                 });
                             }
 
@@ -437,7 +438,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                                 // 仅在亮屏时处理 CLG。如果息屏，Doze 配置仍在生效，这里不能覆盖它
                                 if is_screen_on {
-                                    let config_lock = config_clone.read().unwrap();
+                                    let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
                                     let clg_cfg = get_clg_cfg(&config_lock, &mode);
                                     if clg_cfg.enabled {
                                         if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
@@ -454,7 +455,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                     // --- 3. CPU 负载事件 (eBPF 驱动) ---
                     DaemonEvent::SystemLoadUpdate { core_utils, foreground_max_util } => {
-                        let current_mode = mode_clone.lock().unwrap().clone();
+                        let current_mode = mode_clone.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         // 仅当亮屏且在 FAS 模式且未挂起时，投喂 FAS
                         if is_screen_on && current_mode == "fas" && fas_suspended_at.is_none() {
                             fas_controller.update_cpu_util(foreground_max_util);
@@ -478,7 +479,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     DaemonEvent::FrameUpdate { frame_delta_ns } => {
                         if !is_screen_on { continue; } // 息屏不处理渲染帧
 
-                        let current_mode = mode_clone.lock().unwrap().clone();
+                        let current_mode = mode_clone.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         if current_mode == "fas" {
                             if !temp_sensor_path.is_empty() && last_temp_update.elapsed().as_secs() >= 3 {
                                 if let Ok(raw_temp) = crate::utils::read_f64_from_file(&temp_sensor_path) { 
@@ -493,7 +494,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     // --- 5. 热重载配置事件 ---
                     DaemonEvent::ConfigReload(new_rules) => {
                         current_rules = new_rules;
-                        let current_mode = mode_clone.lock().unwrap().clone();
+                        let current_mode = mode_clone.lock().unwrap_or_else(|e| e.into_inner()).clone();
                         
                         if current_mode == "fas" {
                             if fas_controller.policies.is_empty() {
@@ -502,7 +503,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 fas_controller.reload_rules(&current_rules.fas_rules);
                             }
                         } else if is_screen_on { // 息屏时不要用新配置覆盖 Doze
-                            let config_lock = config_clone.read().unwrap();
+                            let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                             if clg_cfg.enabled {
                                 if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
