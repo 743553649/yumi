@@ -113,12 +113,14 @@ impl FpsManager {
             "/ebpf_target/bpfel-unknown-none/release/yumi-ebpf"
         )))?;
 
-        let program: &mut UProbe = bpf.program_mut("handle_frame").unwrap().try_into()?;
+        let program: &mut UProbe = bpf.program_mut("handle_frame")
+            .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
+            .try_into()?;
         program.load()?;
 
         let ring_fd = {
-            let ring_map = bpf.map_mut("RING_BUF").expect("RING_BUF not found");
-            let ring = RingBuf::try_from(ring_map).expect("RingBuf::try_from");
+            let ring_map = bpf.map_mut("RING_BUF").ok_or_else(|| anyhow::anyhow!("RING_BUF not found"))?;
+            let ring = RingBuf::try_from(ring_map)?;
             ring.as_raw_fd()
         };
 
@@ -141,7 +143,9 @@ impl FpsManager {
         if self.current_pid > 0 {
             if let Some(link_id) = self.links.remove(&self.current_pid) {
                 let program: &mut UProbe =
-                    self.bpf.program_mut("handle_frame").unwrap().try_into()?;
+                    self.bpf.program_mut("handle_frame")
+                        .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
+                        .try_into()?;
                 let _ = program.detach(link_id);
             }
         }
@@ -149,9 +153,13 @@ impl FpsManager {
         // attach 新 PID
         let pid_i32 = new_pid as i32;
         let scope =
-            UProbeScope::OneProcess(NonZeroU32::new(new_pid).expect("pid must be > 0"));
+            UProbeScope::OneProcess(
+                NonZeroU32::new(new_pid).ok_or_else(|| anyhow::anyhow!("pid must be > 0"))?,
+            );
 
-        let program: &mut UProbe = self.bpf.program_mut("handle_frame").unwrap().try_into()?;
+        let program: &mut UProbe = self.bpf.program_mut("handle_frame")
+            .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
+            .try_into()?;
         let link = program
             .attach(
                 UProbeAttachPoint::from(UProbeAttachLocation::from(SYMBOL_SHORT)),
@@ -179,8 +187,12 @@ impl FpsManager {
 
     /// 从共享 RingBuf 读取帧事件，按 PID 分派
     fn poll_frames(&mut self) {
-        let ring_map = self.bpf.map_mut("RING_BUF").expect("RING_BUF not found");
-        let mut ring = RingBuf::try_from(ring_map).expect("RingBuf::try_from failed");
+        // RING_BUF 在 init 后不会消失；防御性早退，避免热路径 panic 拖垮 fps 线程
+        let Some(ring_map) = self.bpf.map_mut("RING_BUF") else { return; };
+        let mut ring = match RingBuf::try_from(ring_map) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
 
         while let Some(data) = ring.next() {
             if data.len() < size_of::<FrameTimestampEvent>() {
