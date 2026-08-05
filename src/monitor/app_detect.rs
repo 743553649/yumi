@@ -101,17 +101,16 @@ fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
         return false;
     }
     match pkg {
+        // 通用系统进程：跨设备稳定，保留硬编码快速路径
         "com.android.systemui" => false,
         "system_server" => false,
         "surfaceflinger" => false,
         "android.hardware.graphics.composer" => false,
         "com.android.phone" => false,
-        "com.android.permissioncontroller" => false,
         "yumi" => false,
-        "com.xiaomi.vtcamera" => false,
-        "com.android.providers.media.module" => false,
-        "com.google.android.gms.ui" => false,
-        "com.xiaomi.mibrain.speech" => false,
+        // 设备专属进程（permissioncontroller / vtcamera / providers.media.module /
+        // gms.ui / mibrain.speech）已下沉到 ignored_apps 配置（rules.yaml +
+        // get_default_rules 兜底），按设备可配，不再硬编码
         _ => {
             if pkg.contains("magisk") || pkg.contains("mtiodaemon") { return false; }
             if pkg.contains("ads_monitor") { return false; }
@@ -220,7 +219,15 @@ pub fn get_default_rules() -> RulesConfig {
         dynamic_enabled: true,
         global_mode: "balance".to_string(),
         app_modes: HashMap::new(),
-        ignored_apps: Vec::new(),
+        // 设备专属进程兜底黑名单：rules.yaml 读不到时仍需拦截，避免它们被
+        // 误判为前台用户应用。与 rules.yaml 的 ignored_apps 保持一致。
+        ignored_apps: vec![
+            "com.android.permissioncontroller".to_string(),
+            "com.xiaomi.vtcamera".to_string(),
+            "com.android.providers.media.module".to_string(),
+            "com.google.android.gms.ui".to_string(),
+            "com.xiaomi.mibrain.speech".to_string(),
+        ],
         fas_rules: super::config::FasRulesConfig::default(),
     }
 }

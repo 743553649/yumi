@@ -12,6 +12,11 @@ app_modes:
   com.hypergryph.arknights: fas
 ignored_apps:
 - com.android.systemui
+- com.android.permissioncontroller
+- com.xiaomi.vtcamera
+- com.android.providers.media.module
+- com.google.android.gms.ui
+- com.xiaomi.mibrain.speech
 fas_rules:
   fps_gears:
   - 30.0
