@@ -189,8 +189,8 @@ impl SysPathExist {
 
 pub struct FastWriter {
     file: Option<File>,
-    // buf 大小限制 cpuset 字符串为 19 字节（如 "0-1,2-3,4-5,6-7" 为 17 字节）
-    buf: [u8; 20],
+    // buf 容量 64 字节，为 cpuset 掩码极端格式留足冗余（str 写入路径按 self.buf.len() 动态限长）
+    buf: [u8; 64],
     path: PathBuf,
 }
 
@@ -202,7 +202,7 @@ impl FastWriter {
         let file = OpenOptions::new().write(true).open(path_ref)
             .map_err(|e| log::error!("{}", t_with_args("sysfs-open-failed", &fluent_args!("path" => path_ref.display().to_string(), "error" => e.to_string()))))
             .ok();
-        Self { file, buf: [0u8; 20], path: path_ref.to_path_buf() }
+        Self { file, buf: [0u8; 64], path: path_ref.to_path_buf() }
     }
 
     fn try_unmount(path: &Path) {
@@ -224,7 +224,7 @@ impl FastWriter {
 
     pub fn write_value_force(&mut self, value: u32) -> bool {
         let len = Self::u32_to_buf(value, &mut self.buf);
-        let mut local = [0u8; 20];
+        let mut local = [0u8; 64];
         local[..len].copy_from_slice(&self.buf[..len]);
         self.do_write_bytes(&local[..len], false)
     }
@@ -239,7 +239,7 @@ impl FastWriter {
         }
         self.buf[..bytes.len()].copy_from_slice(bytes);
         self.buf[bytes.len()] = b'\n';
-        let mut local = [0u8; 20];
+        let mut local = [0u8; 64];
         local[..bytes.len() + 1].copy_from_slice(&self.buf[..bytes.len() + 1]);
         self.do_write_bytes(&local[..bytes.len() + 1], true)
     }
@@ -279,7 +279,7 @@ impl FastWriter {
         }
     }
 
-    fn u32_to_buf(mut v: u32, buf: &mut [u8; 20]) -> usize {
+    fn u32_to_buf(mut v: u32, buf: &mut [u8; 64]) -> usize {
         if v == 0 { buf[0] = b'0'; buf[1] = b'\n'; return 2; }
         let mut pos = 18;
         while v > 0 { buf[pos] = b'0' + (v % 10) as u8; v /= 10; pos -= 1; }
