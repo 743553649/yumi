@@ -17,7 +17,11 @@
 
 use crate::monitor::config::RulesConfig;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::env;
+
+/// 模块根目录缓存。首次探测后全局复用，避免高频调用重复执行系统调用。
+static MODULE_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// 守护进程全局事件总线
 #[derive(Debug, Clone)]
@@ -46,8 +50,16 @@ pub enum DaemonEvent {
     ScreenStateChange(bool),
 }
 
-/// 获取模块根目录的绝对路径
+/// 获取模块根目录的绝对路径（首次调用探测，之后缓存复用）
+///
+/// 被 logger、i18n、app_detect、ipc_server 等高频调用，探测逻辑含多次
+/// `Path::exists()` 系统调用与 exe 回溯，缓存后整段探测仅执行一次。
 pub fn get_module_root() -> PathBuf {
+    MODULE_ROOT.get_or_init(detect_module_root).clone()
+}
+
+/// 实际探测模块根目录（仅在 `get_module_root()` 首次调用时执行一次）
+fn detect_module_root() -> PathBuf {
     // 1. 优先校验当前工作目录 (cwd)
     if let Ok(cwd) = env::current_dir() {
         if cwd.join("rules.yaml").exists() || cwd.join("config/config.yaml").exists() {
