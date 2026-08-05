@@ -83,7 +83,7 @@ pub fn get_current_pid() -> i32 {
 
 // 在检测到新包名时更新它
 fn set_current_package(pkg: &str, pid: i32) {
-    *CURRENT_PACKAGE.lock().unwrap() = pkg.to_string();
+    *CURRENT_PACKAGE.lock().unwrap_or_else(|e| e.into_inner()) = pkg.to_string();
     CURRENT_PID.store(pid, Ordering::Relaxed);
 }
 
@@ -167,11 +167,51 @@ fn get_focused_app_from_cgroup(ignored_apps: &[String]) -> Result<(String, i32),
 
 // ==================== [辅助函数] ====================
 
-fn determine_mode(config: &RulesConfig, current_package: &str) -> String {
+pub fn determine_mode(config: &RulesConfig, current_package: &str) -> (String, bool) {
     if !config.dynamic_enabled {
-        return config.global_mode.clone();
+        return (config.global_mode.clone(), false);
     }
-    config.app_modes.get(current_package).cloned().unwrap_or_else(|| config.global_mode.clone())
+    if let Some(mode) = config.app_modes.get(current_package) {
+        let trimmed_mode = mode.trim();
+        if trimmed_mode.is_empty()
+            || trimmed_mode.eq_ignore_ascii_case("default")
+            || trimmed_mode.eq_ignore_ascii_case("none")
+        {
+            (config.global_mode.clone(), false)
+        } else {
+            (trimmed_mode.to_string(), true)
+        }
+    } else {
+        (config.global_mode.clone(), false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_determine_mode_override_global() {
+        let mut config = get_default_rules();
+        config.global_mode = "balance".to_string();
+        config.app_modes.insert("com.tencent.tmgp.sgame".to_string(), "fas".to_string());
+        config.app_modes.insert("com.example.defaultapp".to_string(), "default".to_string());
+
+        // 1. App with specific valid rule should override global mode
+        let (mode, is_override) = determine_mode(&config, "com.tencent.tmgp.sgame");
+        assert_eq!(mode, "fas");
+        assert!(is_override);
+
+        // 2. App with 'default' mode rule should fallback to global mode
+        let (mode_def, is_override_def) = determine_mode(&config, "com.example.defaultapp");
+        assert_eq!(mode_def, "balance");
+        assert!(!is_override_def);
+
+        // 3. App without specific rule should fallback to global mode
+        let (mode_fallback, is_override_fallback) = determine_mode(&config, "com.unknown.app");
+        assert_eq!(mode_fallback, "balance");
+        assert!(!is_override_fallback);
+    }
 }
 
 pub fn get_default_rules() -> RulesConfig {
@@ -206,14 +246,14 @@ pub fn watch_config_file(
             
             let new_config = crate::utils::read_config::<RulesConfig, _>(&rules_path)
                                 .unwrap_or_else(|e| { 
-                                    warn!("{}", t_with_args("app-detect-load-failed", &fluent_args!("error" => e.to_string()))); 
+                                    warn!("⚠️ {}", t_with_args("app-detect-load-failed", &fluent_args!("error" => e.to_string()))); 
                                     get_default_rules() 
                                 });
             
-            *config_arc.lock().unwrap() = new_config.clone();
+            *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = new_config.clone();
             
             if let Err(e) = tx.send(DaemonEvent::ConfigReload(new_config)) {
-                warn!("[Config] Failed to send ConfigReload event: {}", e);
+                warn!("⚠️ [Config] Failed to send ConfigReload event: {}", e);
             }
             
             info!("{}", t("app-detect-reload-success"));
@@ -228,7 +268,7 @@ pub fn app_detection_loop(
     force_refresh_arc: Arc<AtomicBool>,
     tx: Sender<DaemonEvent>
 ) -> Result<(), Box<dyn Error>> {
-    info!("{}", t("app-detect-loop-started"));
+    info!("🚀 {}", t("app-detect-loop-started"));
     
     let temp_sensor_path = utils::find_cpu_temp_path().unwrap_or_default();
     let mut last_package = String::new();
@@ -240,9 +280,12 @@ pub fn app_detection_loop(
     let mut pending_pid = 0;
     let mut debounce_start = Instant::now();
     
+    // 性能优化：缓存配置快照，仅在 force_refresh 时重新 fetch
+    let mut cached_config: Option<RulesConfig> = None;
+
     loop {
         let force_refresh = force_refresh_arc.swap(false, Ordering::SeqCst);
-        let current_screen_state = { *screen_state_arc.lock().unwrap() };
+        let current_screen_state = { *screen_state_arc.lock().unwrap_or_else(|e| e.into_inner()) };
         
         if current_screen_state != last_screen_state {
             info!("{}", t_with_args("app-detect-screen-changed", &fluent_args!("old" => last_screen_state.to_string(), "new" => current_screen_state.to_string())));
@@ -261,9 +304,12 @@ pub fn app_detection_loop(
             continue;
         }
                 
-        // 合并锁获取：一次拿完所有需要的数据
-        let config_snapshot = config_arc.lock().unwrap().clone();
-        let ignored_apps = config_snapshot.ignored_apps.clone();
+        // 性能优化：仅当配置更新 (force_refresh) 或首次运行时获取锁并拷贝全量配置
+        if force_refresh || cached_config.is_none() {
+            cached_config = Some(config_arc.lock().unwrap_or_else(|e| e.into_inner()).clone());
+        }
+        let config_snapshot = cached_config.as_ref().unwrap();
+        let ignored_apps = &config_snapshot.ignored_apps;
 
         let (detected_pkg, detected_pid) = get_focused_app_from_cgroup(&ignored_apps)
             .unwrap_or_else(|_| (last_package.clone(), get_current_pid()));
@@ -293,12 +339,17 @@ pub fn app_detection_loop(
         if last_package != final_pkg || force_refresh {
             if !final_pkg.is_empty() {
                 set_current_package(&final_pkg, final_pid);
-                // 使用已获取的 config_snapshot，不再重复加锁
-                let new_mode = determine_mode(&config_snapshot, &final_pkg);
+                let (new_mode, is_override) = determine_mode(&config_snapshot, &final_pkg);
 
                 if last_mode != new_mode {
-                    info!("{}", t_with_args("app-detect-mode-change-pkg", &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())));
-                    // ModeChange 事件现在携带 pid 字段
+                    let icon = if new_mode == "fas" { "🎮" } else { "⚡" };
+                    if is_override {
+                        info!("{} 前台应用 [{}] 触发独立模式: [{}] (覆盖全局模式 [{}])", icon, final_pkg, new_mode, config_snapshot.global_mode);
+                    } else {
+                        info!("{} {}", icon, t_with_args("app-detect-mode-change-pkg", &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())));
+                    }
+
+                    // ModeChange 事件携带 pid 字段
                     let _ = tx.send(DaemonEvent::ModeChange {
                         package_name: final_pkg.clone(),
                         pid: final_pid,

@@ -25,7 +25,7 @@ use crate::common;
 
 // 全局静态变量，存储当前的语言包
 static BUNDLE: Lazy<RwLock<FluentBundle<FluentResource, IntlLangMemoizer>>> = Lazy::new(|| {
-    let bundle = FluentBundle::new_concurrent(vec!["en".parse().unwrap()]);
+    let bundle = FluentBundle::new_concurrent(vec!["zh".parse().unwrap()]);
     RwLock::new(bundle)
 });
 
@@ -47,7 +47,7 @@ fn load_bundle(lang: &str) -> Result<FluentBundle<FluentResource, IntlLangMemoiz
     let resource = FluentResource::try_new(ftl_string)
         .map_err(|e| anyhow::anyhow!("Failed to parse FTL resource {:?}: {:?}", ftl_path, e))?;
 
-    let lang_id = lang.parse().unwrap_or_else(|_| "en".parse().unwrap());
+    let lang_id = lang.parse().unwrap_or_else(|_| "zh".parse().unwrap());
     let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
 
     bundle.add_resource(resource)
@@ -62,7 +62,7 @@ pub fn load_language(lang: &str) {
     
     match load_bundle(lang) {
         Ok(new_bundle) => {
-            let mut bundle_lock = BUNDLE.write().unwrap();
+            let mut bundle_lock = BUNDLE.write().unwrap_or_else(|e| e.into_inner());
             *bundle_lock = new_bundle;
             log::info!("[i18n] Successfully loaded and switched to language: {}", lang);
         }
@@ -73,16 +73,31 @@ pub fn load_language(lang: &str) {
     }
 }
 
+fn format_missing_key(key: &str) -> String {
+    log::debug!("[i18n] Missing translation key: '{}'", key);
+    key.split(|c| c == '-' || c == '_')
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// 获取翻译文本
 pub fn t(key: &str) -> String {
-    let bundle = BUNDLE.read().unwrap();
+    let bundle = BUNDLE.read().unwrap_or_else(|e| e.into_inner());
     let msg = match bundle.get_message(key) {
         Some(msg) => msg,
-        None => return key.to_string(),
+        None => return format_missing_key(key),
     };
     let pattern = match msg.value() {
         Some(pattern) => pattern,
-        None => return key.to_string(),
+        None => return format_missing_key(key),
     };
 
     let mut errors = Vec::new();
@@ -91,21 +106,21 @@ pub fn t(key: &str) -> String {
     if errors.is_empty() {
         value.to_string()
     } else {
-        log::warn!("[i18n] Failed to format message for key '{}': {:?}", key, errors);
-        key.to_string()
+        log::debug!("[i18n] Failed to format message for key '{}': {:?}", key, errors);
+        format_missing_key(key)
     }
 }
 
 /// 获取带参数的翻译文本
 pub fn t_with_args(key: &str, args: &FluentArgs) -> String {
-    let bundle = BUNDLE.read().unwrap();
+    let bundle = BUNDLE.read().unwrap_or_else(|e| e.into_inner());
     let msg = match bundle.get_message(key) {
         Some(msg) => msg,
-        None => return key.to_string(), 
+        None => return format_missing_key(key), 
     };
     let pattern = match msg.value() {
         Some(pattern) => pattern,
-        None => return key.to_string(), 
+        None => return format_missing_key(key), 
     };
 
     let mut errors = Vec::new();
@@ -114,8 +129,8 @@ pub fn t_with_args(key: &str, args: &FluentArgs) -> String {
     if errors.is_empty() {
         value.to_string()
     } else {
-        log::warn!("[i18n] Failed to format message for key '{}': {:?}", key, errors);
-        key.to_string()
+        log::debug!("[i18n] Failed to format message for key '{}': {:?}", key, errors);
+        format_missing_key(key)
     }
 }
 
@@ -128,4 +143,16 @@ macro_rules! fluent_args {
         )*
         args
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_missing_key() {
+        assert_eq!(format_missing_key("touch-boost-channel-disconnected"), "Touch Boost Channel Disconnected");
+        assert_eq!(format_missing_key("scheduler_module_started"), "Scheduler Module Started");
+        assert_eq!(format_missing_key("unknown_key"), "Unknown Key");
+    }
 }

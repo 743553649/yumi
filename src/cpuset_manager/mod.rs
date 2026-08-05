@@ -199,7 +199,7 @@ impl CpuSetManager {
 
     /// 应用指定模式的 CPUSet 配置
     pub fn apply_mode(&mut self, mode: &str) -> anyhow::Result<()> {
-        let config = self.config.read().unwrap();
+        let config = self.config.read().unwrap_or_else(|e| e.into_inner());
         if !config.enabled {
             return Ok(());
         }
@@ -258,7 +258,7 @@ impl CpuSetManager {
 
     /// 处理模式变更事件
     pub fn on_mode_change(&mut self, new_mode: &str) {
-        if !self.config.read().unwrap().enabled {
+        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
             return;
         }
         if new_mode == self.current_mode {
@@ -271,7 +271,7 @@ impl CpuSetManager {
 
     /// 处理息屏事件
     pub fn on_screen_off(&mut self) {
-        if !self.config.read().unwrap().enabled {
+        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
             return;
         }
         if let Err(e) = self.apply_mode("doze") {
@@ -281,7 +281,7 @@ impl CpuSetManager {
 
     /// 处理亮屏事件（恢复当前模式）
     pub fn on_screen_on(&mut self, mode: &str) {
-        if !self.config.read().unwrap().enabled {
+        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
             return;
         }
         if let Err(e) = self.apply_mode(mode) {

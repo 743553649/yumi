@@ -27,7 +27,7 @@ pub struct Meta {
 }
 
 fn default_loglevel() -> String { "INFO".to_string() }
-fn default_language() -> String { "en".to_string() }
+fn default_language() -> String { "zh".to_string() }
 
 // ════════════════════════════════════════════════════════════════
 //  CPU Load Governor 配置

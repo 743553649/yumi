@@ -38,9 +38,6 @@ pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Res
     }
 
     fs::write(path, content)?;
-    
-    // 写完后设为只读
-    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o444));
     Ok(())
 }
 

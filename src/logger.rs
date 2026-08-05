@@ -22,7 +22,7 @@ use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::config::{Appender, Config, Root};
-use log4rs::encode::pattern::PatternEncoder;
+use log4rs::encode::Encode;
 use log4rs::Handle;
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
@@ -31,6 +31,28 @@ use crate::i18n::t_with_args;
 use crate::fluent_args;
 
 static LOG_HANDLE: OnceCell<Mutex<Handle>> = OnceCell::new();
+
+#[derive(Debug)]
+pub struct SlimPatternEncoder;
+
+impl Encode for SlimPatternEncoder {
+    fn encode(
+        &self,
+        writer: &mut dyn log4rs::encode::Write,
+        record: &log::Record,
+    ) -> Result<(), anyhow::Error> {
+        let now = unsafe {
+            let t = libc::time(std::ptr::null_mut());
+            let mut tm: libc::tm = std::mem::zeroed();
+            libc::localtime_r(&t, &mut tm);
+            format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+        };
+        let module = record.module_path().unwrap_or("main");
+        let target = module.strip_prefix("yumi::").unwrap_or(module);
+        writeln!(writer, "[{}] [{}] [{}] {}", now, record.level(), target, record.args())?;
+        Ok(())
+    }
+}
 
 fn parse_level(level_str: &str) -> LevelFilter {
     match level_str.to_uppercase().as_str() {
@@ -55,7 +77,7 @@ fn build_config(level: LevelFilter) -> Result<Config> {
     let policy = CompoundPolicy::new(Box::new(trigger), Box::new(roller));
 
     let appender = RollingFileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("[{d(%Y-%m-%d %H:%M:%S)}] [{l}] [{M}] {m}{n}")))
+        .encoder(Box::new(SlimPatternEncoder))
         .build(log_path, Box::new(policy))?;
 
     let config = Config::builder()

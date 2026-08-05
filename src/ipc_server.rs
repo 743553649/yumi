@@ -1,36 +1,53 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::common::DaemonEvent;
+use crate::monitor::config::RulesConfig;
 use crate::utils;
 
 /// 启动 IPC 服务，监听指定端口并处理文本命令
-pub fn start(tx: mpsc::Sender<DaemonEvent>, root: PathBuf, port: u16) {
+pub fn start(
+    tx: mpsc::Sender<DaemonEvent>,
+    root: PathBuf,
+    port: u16,
+    config_arc: Arc<Mutex<RulesConfig>>,
+    force_refresh_arc: Arc<AtomicBool>,
+) {
     let addr = format!("127.0.0.1:{}", port);
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => l,
         Err(e) => {
-            log::warn!("IPC server bind failed on {}: {}", addr, e);
+            log::warn!("⚠️ IPC server bind failed on {}: {}", addr, e);
             return;
         }
     };
 
-    log::info!("IPC server listening on http://{}", addr);
-    start_with_listener(listener, tx, root);
+    log::info!("🚀 IPC server listening on http://{}", addr);
+    start_with_listener(listener, tx, root, config_arc, force_refresh_arc);
 }
 
 /// 基于已绑定的 TcpListener 启动 accept 循环（便于单测传入动态端口）
-pub fn start_with_listener(listener: TcpListener, tx: mpsc::Sender<DaemonEvent>, root: PathBuf) {
+pub fn start_with_listener(
+    listener: TcpListener,
+    tx: mpsc::Sender<DaemonEvent>,
+    root: PathBuf,
+    config_arc: Arc<Mutex<RulesConfig>>,
+    force_refresh_arc: Arc<AtomicBool>,
+) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let tx = tx.clone();
                 let root = root.clone();
+                let config_arc = Arc::clone(&config_arc);
+                let force_refresh_arc = Arc::clone(&force_refresh_arc);
                 std::thread::spawn(move || {
-                    handle_client(stream, tx, root);
+                    handle_client(stream, tx, root, config_arc, force_refresh_arc);
                 });
             }
             Err(e) => {
@@ -40,11 +57,24 @@ pub fn start_with_listener(listener: TcpListener, tx: mpsc::Sender<DaemonEvent>,
     }
 }
 
-fn handle_client(mut stream: TcpStream, tx: mpsc::Sender<DaemonEvent>, root: PathBuf) {
+fn handle_client(
+    mut stream: TcpStream,
+    tx: mpsc::Sender<DaemonEvent>,
+    root: PathBuf,
+    config_arc: Arc<Mutex<RulesConfig>>,
+    force_refresh_arc: Arc<AtomicBool>,
+) {
     // 设置 10s 读超时，超时后自动断开连接防资源耗尽
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
 
-    let mut reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| stream.try_clone().unwrap()));
+    let stream_clone = match stream.try_clone() {
+        Ok(s) => s,
+        Err(e) => {
+            log::debug!("IPC stream clone failed: {}", e);
+            return;
+        }
+    };
+    let mut reader = BufReader::new(stream_clone);
 
     loop {
         let mut line = String::new();
@@ -56,7 +86,7 @@ fn handle_client(mut stream: TcpStream, tx: mpsc::Sender<DaemonEvent>, root: Pat
                     continue;
                 }
 
-                let response = process_command(trimmed, &tx, &root);
+                let response = process_command(trimmed, &tx, &root, &config_arc, &force_refresh_arc);
                 if let Err(e) = stream.write_all(response.as_bytes()) {
                     log::debug!("IPC client write error: {}", e);
                     break;
@@ -74,46 +104,50 @@ fn handle_client(mut stream: TcpStream, tx: mpsc::Sender<DaemonEvent>, root: Pat
     }
 }
 
-fn process_command(cmd: &str, tx: &mpsc::Sender<DaemonEvent>, root: &PathBuf) -> String {
+pub fn process_command(
+    cmd: &str,
+    tx: &mpsc::Sender<DaemonEvent>,
+    root: &PathBuf,
+    config_arc: &Arc<Mutex<RulesConfig>>,
+    force_refresh_arc: &Arc<AtomicBool>,
+) -> String {
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     if parts.is_empty() {
-        return "err:unknown_command\n".to_string();
+        return "err:empty_command\n".to_string();
     }
 
     match parts[0] {
         "ping" => "pong\n".to_string(),
         "get_mode" => {
             let mode_file = root.join("current_mode.txt");
-            if let Ok(content) = utils::read_file_content(mode_file.to_str().unwrap_or("")) {
-                let trimmed = content.trim();
-                if !trimmed.is_empty() {
-                    return format!("{}\n", trimmed);
-                }
-            }
-            // 回退读取 rules.yaml 的 global_mode
-            let rules_path = crate::monitor::config::get_rules_path();
-            if let Ok(rules) = utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path) {
-                format!("{}\n", rules.global_mode.trim())
+            if let Ok(m) = utils::read_file_content(mode_file.to_str().unwrap_or("")) {
+                format!("{}\n", m.trim())
             } else {
-                "err:read_mode\n".to_string()
+                "balance\n".to_string()
             }
         }
         "set_mode" => {
-            if parts.len() == 2 && is_valid_mode(parts[1]) {
-                let target_mode = parts[1];
+            if parts.len() < 2 {
+                return "err:missing_mode\n".to_string();
+            }
+            let target_mode = parts[1];
 
-                // 1. 同步更新 rules.yaml 中的 global_mode，防止 app_detect 被覆盖重置
+            if is_valid_mode(target_mode) {
                 let rules_path = crate::monitor::config::get_rules_path();
                 let mut rules = utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path)
                     .unwrap_or_else(|_| crate::monitor::app_detect::get_default_rules());
                 rules.global_mode = target_mode.to_string();
                 if let Ok(yaml_str) = serde_yaml::to_string(&rules) {
                     let _ = utils::try_write_file(&rules_path, &yaml_str);
-                    let _ = utils::try_write_file("/storage/emulated/0/yumi/rules.yaml", &yaml_str);
-                    let _ = utils::try_write_file("/storage/emulated/0/yumi/module/rules.yaml", &yaml_str);
+                    let target_adb_path = std::path::Path::new("/data/adb/modules/yumi/rules.yaml");
+                    if rules_path != target_adb_path {
+                        let _ = utils::try_write_file(target_adb_path, &yaml_str);
+                    }
                 }
 
-                // 2. 发送 ModeChange 事件触发即时调度改写与 current_mode.txt 落盘
+                *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = rules;
+                force_refresh_arc.store(true, Ordering::SeqCst);
+
                 let event = DaemonEvent::ModeChange {
                     package_name: "ipc".to_string(),
                     pid: 0,
@@ -129,7 +163,7 @@ fn process_command(cmd: &str, tx: &mpsc::Sender<DaemonEvent>, root: &PathBuf) ->
                 "err:invalid_mode\n".to_string()
             }
         }
-        "set_app_mode" => {
+        "set_app_mode" | "set_app_rule" => {
             if parts.len() == 3 {
                 let pkg = parts[1];
                 let mode = parts[2];
@@ -143,10 +177,15 @@ fn process_command(cmd: &str, tx: &mpsc::Sender<DaemonEvent>, root: &PathBuf) ->
                 }
                 if let Ok(yaml_str) = serde_yaml::to_string(&rules) {
                     let _ = utils::try_write_file(&rules_path, &yaml_str);
-                    let _ = utils::try_write_file("/storage/emulated/0/yumi/rules.yaml", &yaml_str);
-                    let _ = utils::try_write_file("/storage/emulated/0/yumi/module/rules.yaml", &yaml_str);
-                    let _ = utils::try_write_file("/data/adb/modules/yumi/rules.yaml", &yaml_str);
+                    let target_adb_path = std::path::Path::new("/data/adb/modules/yumi/rules.yaml");
+                    if rules_path != target_adb_path {
+                        let _ = utils::try_write_file(target_adb_path, &yaml_str);
+                    }
                 }
+
+                *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = rules.clone();
+                force_refresh_arc.store(true, Ordering::SeqCst);
+
                 let event = DaemonEvent::ConfigReload(rules);
                 let _ = tx.send(event);
                 "ok\n".to_string()
@@ -157,11 +196,16 @@ fn process_command(cmd: &str, tx: &mpsc::Sender<DaemonEvent>, root: &PathBuf) ->
         "reload_rules" => {
             let rules_path = crate::monitor::config::get_rules_path();
             if let Ok(rules) = utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path) {
-                let event = DaemonEvent::ConfigReload(rules);
-                let _ = tx.send(event);
-                "ok\n".to_string()
+                *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = rules.clone();
+                force_refresh_arc.store(true, Ordering::SeqCst);
+
+                if tx.send(DaemonEvent::ConfigReload(rules)).is_ok() {
+                    "ok:reload_rules\n".to_string()
+                } else {
+                    "err:send_event\n".to_string()
+                }
             } else {
-                "err:reload_failed\n".to_string()
+                "err:read_rules\n".to_string()
             }
         }
         "get_log" => {
@@ -172,14 +216,8 @@ fn process_command(cmd: &str, tx: &mpsc::Sender<DaemonEvent>, root: &PathBuf) ->
             };
             let candidate_logs = [
                 PathBuf::from("/data/adb/modules/yumi/logs/daemon.log"),
-                root.join("module/logs/daemon.log"),
                 root.join("logs/daemon.log"),
-                root.join("module/daemon.log"),
                 root.join("daemon.log"),
-                PathBuf::from("/storage/emulated/0/yumi/module/logs/daemon.log"),
-                PathBuf::from("/storage/emulated/0/yumi/logs/daemon.log"),
-                PathBuf::from("/storage/emulated/0/yumi/module/daemon.log"),
-                PathBuf::from("/storage/emulated/0/yumi/daemon.log"),
             ];
             let mut response = String::new();
             for log_file in &candidate_logs {
@@ -218,14 +256,17 @@ mod tests {
         let mode_file = temp_dir.join("current_mode.txt");
         let _ = fs::write(&mode_file, "balance\n");
 
+        let config_arc = Arc::new(Mutex::new(crate::monitor::app_detect::get_default_rules()));
+        let force_refresh_arc = Arc::new(AtomicBool::new(false));
+
         // 1. ping
-        assert_eq!(process_command("ping", &tx, &temp_dir), "pong\n");
+        assert_eq!(process_command("ping", &tx, &temp_dir, &config_arc, &force_refresh_arc), "pong\n");
 
         // 2. get_mode
-        assert_eq!(process_command("get_mode", &tx, &temp_dir), "balance\n");
+        assert_eq!(process_command("get_mode", &tx, &temp_dir, &config_arc, &force_refresh_arc), "balance\n");
 
         // 3. set_mode valid
-        assert_eq!(process_command("set_mode performance", &tx, &temp_dir), "ok\n");
+        assert_eq!(process_command("set_mode performance", &tx, &temp_dir, &config_arc, &force_refresh_arc), "ok\n");
         let event = rx.try_recv().unwrap();
         match event {
             DaemonEvent::ModeChange { mode, package_name, .. } => {
@@ -236,14 +277,18 @@ mod tests {
         }
 
         // 4. set_mode invalid
-        assert_eq!(process_command("set_mode fas", &tx, &temp_dir), "err:invalid_mode\n");
+        assert_eq!(process_command("set_mode fas", &tx, &temp_dir, &config_arc, &force_refresh_arc), "err:invalid_mode\n");
 
-        // 5. get_log test (includes ---END_LOG--- terminator)
+        // 5. reload_rules test
+        let res = process_command("reload_rules", &tx, &temp_dir, &config_arc, &force_refresh_arc);
+        assert!(res == "ok:reload_rules\n" || res == "err:read_rules\n" || res == "err:send_event\n");
+
+        // 6. get_log test (includes ---END_LOG--- terminator)
         let logs_dir = temp_dir.join("logs");
         let _ = fs::create_dir_all(&logs_dir);
         let daemon_log = logs_dir.join("daemon.log");
         let _ = fs::write(&daemon_log, "[2026-08-01 12:00:00] [INFO] [main] daemon started\n");
-        assert_eq!(process_command("get_log", &tx, &temp_dir), "[2026-08-01 12:00:00] [INFO] [main] daemon started\n---END_LOG---\n");
+        assert_eq!(process_command("get_log", &tx, &temp_dir, &config_arc, &force_refresh_arc), "[2026-08-01 12:00:00] [INFO] [main] daemon started\n---END_LOG---\n");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

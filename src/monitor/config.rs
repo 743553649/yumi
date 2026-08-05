@@ -27,12 +27,14 @@ pub fn get_rules_path() -> PathBuf { common::get_module_root().join("rules.yaml"
 //  Rules 配置
 // ════════════════════════════════════════════════════════════════
 
+fn default_global_mode() -> String { "balance".to_string() }
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RulesConfig {
     #[serde(default = "crate::utils::default_true")] pub yumi_scheduler: bool,
-    pub dynamic_enabled: bool,
-    pub global_mode: String,
-    pub app_modes: HashMap<String, String>,
+    #[serde(default = "crate::utils::default_true")] pub dynamic_enabled: bool,
+    #[serde(default = "default_global_mode")] pub global_mode: String,
+    #[serde(default)] pub app_modes: HashMap<String, String>,
     #[serde(default)] pub ignored_apps: Vec<String>,
     #[serde(default)] pub fas_rules: FasRulesConfig,
 }
