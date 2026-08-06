@@ -29,6 +29,7 @@
 - **目标驱动与 TDD 测试闭环**：修改业务前先写/改测试（观察红灯 Red），编写最小实现使测试通过（绿灯 Green），重构验证保持绿灯。连续 3 次尝试失败必须整理日志向用户求助。
 - **小白友好沟通**：用户是底层小白，对话与汇报必须使用**通俗大白话与生活比喻**，严禁堆砌专业黑话。回复统一使用中文；代码变量/方法名保持英文。
 - **Git Commit 规范**：遵循 Conventional Commits（例如：`feat(fas): add target fps scaling`）。
+- **Android 代码语言规范（Kotlin 优先）**：`android-app/` 新增代码强制使用 Kotlin；既有 Java 文件（`MainActivity`、自定义 View、`ipc`/`system`/`apps` 业务类）按文件渐进迁移，优先纯数据类与纯工具类。Java 与 Kotlin 混用期间，Kotlin 暴露给 Java 的静态方法用 `object` + `@JvmStatic`；需保留 Java 直接字段访问的过渡期用 `@JvmField`，待调用方 Kotlin 化后移除。
 
 ---
 
