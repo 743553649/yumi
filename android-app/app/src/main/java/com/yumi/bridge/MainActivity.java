@@ -2,6 +2,7 @@ package com.yumi.bridge;
 
 import com.yumi.bridge.model.AppRuleItem;
 import com.yumi.bridge.model.RealLogEntry;
+import com.yumi.bridge.ipc.IpcClient;
 import com.yumi.bridge.ui.CpuCircleProgressView;
 import com.yumi.bridge.ui.GlassCardView;
 import com.yumi.bridge.utils.CpuStatsParser;
@@ -47,9 +48,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
-import java.net.Socket;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -97,6 +96,9 @@ public class MainActivity extends ComponentActivity {
     private String currentMode = "balance";
     private int daemonPort = 14567;
     private int activeTab = TAB_HOME;
+
+    // IPC 通信层（FIX-022 拆分自上帝类）
+    private final IpcClient ipcClient = new IpcClient(daemonPort);
 
     private final Map<String, String> appModesMap = new LinkedHashMap<>();
     private final List<AppRuleItem> allAppItems = new ArrayList<>();
@@ -720,11 +722,7 @@ public class MainActivity extends ComponentActivity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final List<RealLogEntry> fetched = fetchLogsViaTcp();
-
-                if (fetched.isEmpty()) {
-                    fetched.addAll(fetchLogsViaLocalFiles());
-                }
+                final List<RealLogEntry> fetched = ipcClient.fetchLogs();
 
                 if (fetched.isEmpty()) {
                     SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
@@ -749,145 +747,30 @@ public class MainActivity extends ComponentActivity {
         }).start();
     }
 
-    private List<RealLogEntry> fetchLogsViaTcp() {
-        List<RealLogEntry> fetched = new ArrayList<>();
-        try (Socket socket = new Socket("127.0.0.1", daemonPort)) {
-            socket.setSoTimeout(2500);
-            PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
-            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
-
-            writer.println("get_log 150");
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.equals("---END_LOG---")) break;
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty()) {
-                    if (trimmed.startsWith("err:")) continue;
-                    int level = parseLogLevel(trimmed);
-                    fetched.add(new RealLogEntry(trimmed, formatLineToChinese(trimmed), level));
-                }
-            }
-        } catch (Exception ignored) {}
-        return fetched;
-    }
-
-    private List<RealLogEntry> fetchLogsViaLocalFiles() {
-        List<RealLogEntry> result = new ArrayList<>();
-
-        // Exclusively read from authoritative daemon log path: /data/adb/modules/yumi/logs/daemon.log
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "tail -n 300 /data/adb/modules/yumi/logs/daemon.log"});
-            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String trimmed = line.trim();
-                if (!trimmed.isEmpty()) {
-                    int level = parseLogLevel(trimmed);
-                    result.add(new RealLogEntry(trimmed, formatLineToChinese(trimmed), level));
-                }
-            }
-            p.waitFor();
-            if (!result.isEmpty()) return result;
-        } catch (Exception ignored) {}
-
-        File targetFile = new File("/data/adb/modules/yumi/logs/daemon.log");
-        if (targetFile.exists() && targetFile.length() > 0) {
-            try (BufferedReader br = new BufferedReader(new FileReader(targetFile))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) {
-                        int level = parseLogLevel(trimmed);
-                        result.add(new RealLogEntry(trimmed, formatLineToChinese(trimmed), level));
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-        return result;
-    }
-
     private void renderLogDisplay() {
         ComposeHomeBridgeKt.updateLogState(realLogs, currentFilterLevel);
-    }
-
-    private String formatLineToChinese(String line) {
-        String chineseLine = line;
-        if (chineseLine.contains("IPC server listening on")) {
-            chineseLine = chineseLine.replace("IPC server listening on", "IPC 服务端开始监听于");
-        }
-        if (chineseLine.contains("ModeChange event received")) {
-            chineseLine = chineseLine.replace("ModeChange event received", "收到模式切换指令");
-        }
-        if (chineseLine.contains("FAS controller initialized")) {
-            chineseLine = chineseLine.replace("FAS controller initialized", "FAS 帧感知控制器完成初始化");
-        }
-        return chineseLine;
-    }
-
-    private int parseLogLevel(String line) {
-        String upper = line.toUpperCase(Locale.ROOT);
-        if (upper.contains("[DEBUG]") || upper.contains("[TRACE]")) return LEVEL_DEBUG;
-        if (upper.contains("[WARN]") || upper.contains("[WARNING]")) return LEVEL_WARN;
-        if (upper.contains("[ERROR]") || upper.contains("[FATAL]")) return LEVEL_ERROR;
-        return LEVEL_INFO;
     }
 
     private void sendCommand(final String cmd) {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                try (Socket socket = new Socket("127.0.0.1", daemonPort)) {
-                    socket.setSoTimeout(2500);
-                    PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"), true);
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
-
-                    writer.println(cmd);
-                    final String response = reader.readLine();
-
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (cmd.startsWith("set_mode")) {
-                                parseModeResponse(cmd.replace("set_mode", "").trim());
-                            } else if (cmd.equals("get_mode")) {
-                                parseModeResponse(response);
-                            }
-                            fetchRealModuleLogs();
+                final String response = ipcClient.sendCommand(cmd);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (cmd.startsWith("set_mode")) {
+                            String matched = IpcClient.parseModeResponse(cmd.replace("set_mode", "").trim());
+                            if (matched != null) currentMode = matched;
+                        } else if (cmd.equals("get_mode")) {
+                            String matched = IpcClient.parseModeResponse(response);
+                            if (matched != null) currentMode = matched;
                         }
-                    });
-                } catch (final Exception e) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                        }
-                    });
-                }
+                        fetchRealModuleLogs();
+                    }
+                });
             }
         }).start();
-    }
-
-    private String getModeChineseName(String mode) {
-        switch (mode.toLowerCase()) {
-            case "powersave":   return "省电模式";
-            case "balance":     return "均衡模式";
-            case "performance": return "性能模式";
-            case "fast":        return "极速模式";
-            default:            return mode;
-        }
-    }
-
-    private void parseModeResponse(String response) {
-        if (response == null) return;
-        String lower = response.toLowerCase();
-        String matchedMode = null;
-        if (lower.contains("powersave")) matchedMode = "powersave";
-        else if (lower.contains("balance")) matchedMode = "balance";
-        else if (lower.contains("performance")) matchedMode = "performance";
-        else if (lower.contains("fast")) matchedMode = "fast";
-
-        if (matchedMode != null) {
-            currentMode = matchedMode;
-        }
     }
 
     @Override
