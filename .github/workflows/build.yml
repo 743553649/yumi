@@ -48,9 +48,13 @@ jobs:
         run: npm ci
 
       # 4. 配置 Rust Nightly 环境并添加 Android 交叉编译目标
+      #    注意：固定到 nightly-2026-08-04（08-05→08-06 间 nightly 有破坏性变更，
+      #    导致 aya-ebpf 0.2.1 / bpf-linker 0.10.4 无法编译）。解冻前需验证
+      #    aya-ebpf 和 bpf-linker 均已兼容新版 nightly。
       - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-08-04
           targets: aarch64-linux-android
           components: rust-src # build-std 需要用到 (含 bpfel-unknown-none)
 
