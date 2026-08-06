@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.yumi.bridge.model.RealLogEntry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -39,9 +40,9 @@ import com.yumi.bridge.ui.theme.YumiTheme
  * Filter logs by specified filter level.
  */
 fun filterLogs(
-    logs: List<MainActivity.RealLogEntry>,
+    logs: List<RealLogEntry>,
     filterLevel: Int
-): List<MainActivity.RealLogEntry> {
+): List<RealLogEntry> {
     return logs.filter {
         filterLevel == MainActivity.LEVEL_ALL || it.level == filterLevel
     }
@@ -117,7 +118,7 @@ private fun LogHeader(
 
 @Composable
 private fun LogList(
-    logs: List<MainActivity.RealLogEntry>,
+    logs: List<RealLogEntry>,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -187,7 +188,7 @@ fun LogFilterChips(
 }
 
 @Composable
-fun LogEntryItem(log: MainActivity.RealLogEntry) {
+fun LogEntryItem(log: RealLogEntry) {
     val textColor = when (log.level) {
         MainActivity.LEVEL_ERROR -> Color(0xFFDC2626)
         MainActivity.LEVEL_WARN -> Color(0xFFD97706)

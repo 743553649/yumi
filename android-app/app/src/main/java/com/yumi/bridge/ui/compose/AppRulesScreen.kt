@@ -18,12 +18,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.yumi.bridge.model.AppRuleItem
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
-import com.yumi.bridge.MainActivity
 import com.yumi.bridge.R
 import com.yumi.bridge.ui.theme.YumiTheme
 import kotlinx.coroutines.Dispatchers
@@ -33,9 +33,9 @@ import kotlinx.coroutines.withContext
  * Filter application list based on search query matching app name or package name.
  */
 fun filterAppRules(
-    apps: List<MainActivity.AppRuleItem>,
+    apps: List<AppRuleItem>,
     query: String
-): List<MainActivity.AppRuleItem> {
+): List<AppRuleItem> {
     if (query.isEmpty()) {
         return apps
     }
@@ -116,7 +116,7 @@ private fun AppRulesSearchCard(
 
 @Composable
 fun AppRuleItemRow(
-    appItem: MainActivity.AppRuleItem,
+    appItem: AppRuleItem,
     onAppModeChanged: (String, String) -> Unit
 ) {
     var showDialog by remember { mutableStateOf(false) }

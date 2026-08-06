@@ -1,5 +1,7 @@
 package com.yumi.bridge;
 
+import com.yumi.bridge.model.AppRuleItem;
+import com.yumi.bridge.model.RealLogEntry;
 import com.yumi.bridge.ui.CpuCircleProgressView;
 import com.yumi.bridge.ui.GlassCardView;
 import com.yumi.bridge.utils.CpuStatsParser;
@@ -79,30 +81,6 @@ public class MainActivity extends ComponentActivity {
     public static final int LEVEL_INFO = 2;
     public static final int LEVEL_WARN = 3;
     public static final int LEVEL_ERROR = 4;
-
-    public static class RealLogEntry {
-        public final String rawLine;
-        public final String formattedChineseLine;
-        public final int level;
-
-        public RealLogEntry(String rawLine, String formattedChineseLine, int level) {
-            this.rawLine = rawLine;
-            this.formattedChineseLine = formattedChineseLine;
-            this.level = level;
-        }
-    }
-
-    public static class AppRuleItem {
-        public final String packageName;
-        public final String appName;
-        public String currentMode; // default, powersave, balance, performance, fast, fas
-
-        public AppRuleItem(String packageName, String appName, String currentMode) {
-            this.packageName = packageName;
-            this.appName = appName;
-            this.currentMode = currentMode != null ? currentMode : "default";
-        }
-    }
 
     private View rootContainer;
     private ComposeView composeBackgroundHost;

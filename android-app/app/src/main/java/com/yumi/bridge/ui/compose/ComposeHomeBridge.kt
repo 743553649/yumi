@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.yumi.bridge.model.AppRuleItem
+import com.yumi.bridge.model.RealLogEntry
 import com.yumi.bridge.ui.theme.YumiTheme
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -50,11 +52,11 @@ class HomeUiState {
     var isDaemonOnline by mutableStateOf(true)
 
     // Logs state
-    val realLogs = mutableStateListOf<com.yumi.bridge.MainActivity.RealLogEntry>()
+    val realLogs = mutableStateListOf<RealLogEntry>()
     var currentFilterLevel by mutableStateOf(com.yumi.bridge.MainActivity.LEVEL_ALL)
 
     // Apps state
-    val installedApps = mutableStateListOf<com.yumi.bridge.MainActivity.AppRuleItem>()
+    val installedApps = mutableStateListOf<AppRuleItem>()
     var appSearchQuery by mutableStateOf("")
 
     // Tab State
@@ -292,7 +294,7 @@ fun updateHomeScreenState(
 }
 
 fun updateLogState(
-    logs: List<com.yumi.bridge.MainActivity.RealLogEntry>,
+    logs: List<RealLogEntry>,
     filterLevel: Int
 ) {
     globalHomeState.realLogs.clear()
@@ -309,7 +311,7 @@ fun updateFilterLevel(level: Int) {
     filterLevelChangeListener?.onFilterLevelChanged(level)
 }
 
-fun updateInstalledApps(apps: List<com.yumi.bridge.MainActivity.AppRuleItem>) {
+fun updateInstalledApps(apps: List<AppRuleItem>) {
     globalHomeState.installedApps.clear()
     globalHomeState.installedApps.addAll(apps)
 }
