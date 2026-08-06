@@ -5,20 +5,15 @@ import com.yumi.bridge.model.RealLogEntry;
 import com.yumi.bridge.ipc.IpcClient;
 import com.yumi.bridge.ui.CpuCircleProgressView;
 import com.yumi.bridge.ui.GlassCardView;
-import com.yumi.bridge.utils.CpuStatsParser;
-import com.yumi.bridge.utils.SystemStatsParser;
 
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -90,9 +85,6 @@ public class MainActivity extends ComponentActivity {
     // Real module runtime log cache list
     private final List<RealLogEntry> realLogs = new ArrayList<>();
 
-    private final long[] prevCpuTotal = new long[8];
-    private final long[] prevCpuIdle = new long[8];
-
     private String currentMode = "balance";
     private int daemonPort = 14567;
     private int activeTab = TAB_HOME;
@@ -107,6 +99,10 @@ public class MainActivity extends ComponentActivity {
     private final ExecutorService backgroundIoExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
+    // 系统仪表盘采集器（FIX-022 拆分自上帝类），CPU 占用率依赖其内部 prevCpu 采样
+    private final com.yumi.bridge.system.SystemDashboardMonitor systemDashboardMonitor =
+            new com.yumi.bridge.system.SystemDashboardMonitor(this, mainHandler);
+
     private final Runnable logPollRunnable = new Runnable() {
         @Override
         public void run() {
@@ -114,7 +110,7 @@ public class MainActivity extends ComponentActivity {
             backgroundIoExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    updateSystemDashboardInfoInBackground();
+                    systemDashboardMonitor.updateDashboard(currentMode);
                 }
             });
             pollHandler.postDelayed(this, 2000);
@@ -164,188 +160,6 @@ public class MainActivity extends ComponentActivity {
         rootContainer = findViewById(R.id.rootContainer);
         composeBackgroundHost = findViewById(R.id.composeBackgroundHost);
         composeContentHost = findViewById(R.id.composeContentHost);
-    }
-
-    private String readProcMemInfo() {
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new FileReader("/proc/meminfo"))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append("\n");
-            }
-        } catch (Exception ignored) {}
-        return sb.toString();
-    }
-
-    private long readBatteryCurrentNow(BatteryManager bm) {
-        long current = 0;
-        if (bm != null) {
-            try {
-                current = bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW);
-            } catch (Exception ignored) {}
-        }
-        if (current != 0 && current != Long.MIN_VALUE) {
-            return current;
-        }
-
-        String[] sysfsPaths = new String[]{
-                "/sys/class/power_supply/battery/current_now",
-                "/sys/class/power_supply/bms/current_now",
-                "/sys/class/power_supply/main/current_now"
-        };
-
-        for (String path : sysfsPaths) {
-            try (BufferedReader br = new BufferedReader(new FileReader(path))) {
-                String line = br.readLine();
-                if (line != null) {
-                    long val = Long.parseLong(line.trim());
-                    if (val != 0) {
-                        return val;
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-        return 0L;
-    }
-
-    private void updateSystemDashboardInfoInBackground() {
-        int ramPercent = 0;
-        String ramDetailText = "0.0G / 0.0G";
-        int swapPercent = 0;
-        String swapDetailText = "0.0G / 0.0G";
-
-        int batteryLevel = 100;
-        String batteryTempText = "0.0 ℃";
-        String batteryPowerText = "0.0 W";
-
-        String uptimeText = "0天:00小时:00分钟";
-        int[] usagePercents = new int[8];
-        long[] curFreqs = new long[8];
-
-        // 1. Read RAM & Swap memory stats (/proc/meminfo)
-        try {
-            String memInfo = readProcMemInfo();
-            SystemStatsParser.MemoryStats memStats = SystemStatsParser.parseMemInfo(memInfo);
-            ramPercent = memStats.getRamPercent();
-            ramDetailText = memStats.getRamDetailText();
-            swapPercent = memStats.getSwapPercent();
-            swapDetailText = memStats.getSwapDetailText();
-        } catch (Exception ignored) {}
-
-        // 2. Read real-time battery stats (Level, Power, Temperature)
-        try {
-            long currentRaw = 0;
-            long voltageUv = 4000000L;
-            boolean isCharging = false;
-
-            IntentFilter ifilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-            Intent batteryStatus = registerReceiver(null, ifilter);
-            if (batteryStatus != null) {
-                int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-                isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                             status == BatteryManager.BATTERY_STATUS_FULL;
-
-                int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-                int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-                if (level >= 0 && scale > 0) {
-                    batteryLevel = (level * 100) / scale;
-                }
-
-                int temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0);
-                batteryTempText = SystemStatsParser.formatTemperature(temp);
-
-                int voltageMv = batteryStatus.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 4000);
-                if (voltageMv > 0) {
-                    voltageUv = voltageMv * 1000L;
-                }
-            }
-
-            BatteryManager bm = (BatteryManager) getSystemService(BATTERY_SERVICE);
-            currentRaw = readBatteryCurrentNow(bm);
-            batteryPowerText = SystemStatsParser.formatPowerWatts(currentRaw, voltageUv, isCharging);
-        } catch (Exception ignored) {}
-
-        // 3. System uptime (format: Days:Hours:Minutes)
-        try {
-            long elapsedSec = android.os.SystemClock.elapsedRealtime() / 1000;
-            long days = elapsedSec / 86400;
-            long hours = (elapsedSec % 86400) / 3600;
-            long mins = (elapsedSec % 3600) / 60;
-            uptimeText = String.format(Locale.getDefault(), "%d天:%02d小时:%02d分钟", days, hours, mins);
-        } catch (Exception ignored) {}
-
-        // 4. Read 8 CPU core dynamic stats
-        try {
-            readCpuStatsAndFreqs(usagePercents, curFreqs);
-        } catch (Exception ignored) {}
-
-        final int finalRamPercent = ramPercent;
-        final String finalRamDetailText = ramDetailText;
-        final int finalSwapPercent = swapPercent;
-        final String finalSwapDetailText = swapDetailText;
-        final int finalBatteryLevel = batteryLevel;
-        final String finalBatteryTempText = batteryTempText;
-        final String finalBatteryPowerText = batteryPowerText;
-        final String finalUptimeText = uptimeText;
-
-        mainHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                ComposeHomeBridgeKt.updateHomeScreenState(
-                        currentMode,
-                        curFreqs,
-                        usagePercents,
-                        finalRamPercent,
-                        finalRamDetailText,
-                        finalSwapPercent,
-                        finalSwapDetailText,
-                        finalBatteryLevel,
-                        finalBatteryTempText,
-                        finalBatteryPowerText,
-                        finalUptimeText,
-                        true
-                );
-            }
-        });
-    }
-
-    private void readCpuStatsAndFreqs(int[] usagePercents, long[] curFreqs) {
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{
-                "su", "-c", "grep '^cpu[0-7]' /proc/stat; cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq"
-            });
-            BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line;
-            int freqIdx = 0;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-
-                if (line.startsWith("cpu")) {
-                    CpuStatsParser.CpuStatSnapshot snapshot = CpuStatsParser.parseStatLine(line);
-                    if (snapshot != null) {
-                        int cpuId = snapshot.getCpuId();
-                        if (cpuId >= 0 && cpuId < usagePercents.length) {
-                            CpuStatsParser.CpuStatSnapshot prev = new CpuStatsParser.CpuStatSnapshot(
-                                    cpuId, prevCpuTotal[cpuId], prevCpuIdle[cpuId]);
-                            if (prevCpuTotal[cpuId] > 0) {
-                                usagePercents[cpuId] = CpuStatsParser.calculateUsage(prev, snapshot);
-                            } else {
-                                usagePercents[cpuId] = 0;
-                            }
-                            prevCpuTotal[cpuId] = snapshot.getTotalTime();
-                            prevCpuIdle[cpuId] = snapshot.getIdleTime();
-                        }
-                    }
-                } else {
-                    if (freqIdx < curFreqs.length) {
-                        curFreqs[freqIdx] = CpuStatsParser.parseFreqLineToMhz(line);
-                        freqIdx++;
-                    }
-                }
-            }
-            p.waitFor();
-        } catch (Exception ignored) {}
     }
 
     private void setupFullscreenAndInsets() {
