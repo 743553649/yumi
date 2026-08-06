@@ -24,6 +24,7 @@
 use std::fs;
 use std::os::unix::io::RawFd;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock, mpsc};
 
 use crate::fluent_args;
@@ -233,6 +234,7 @@ pub fn start_touch_listener_thread(
     config: Arc<RwLock<TouchBoostConfig>>,
     policies: Vec<CpuPolicy>,
     touch_tx: mpsc::Sender<bool>,
+    fas_silenced_flag: Arc<AtomicBool>,
 ) {
     std::thread::Builder::new()
         .name("touch_boost".to_string())
@@ -252,6 +254,7 @@ pub fn start_touch_listener_thread(
             };
 
             let mut controller = TouchBoostController::new(config);
+            controller.set_fas_silenced_flag(fas_silenced_flag);
             if let Err(e) = controller.init(&policies) {
                 log::warn!("{}", t_with_args("touch-boost-init-failed",
                     &fluent_args!("error" => e.to_string())));

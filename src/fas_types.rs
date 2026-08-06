@@ -265,3 +265,49 @@ impl Default for FasRulesConfig {
         }
     }
 }
+
+// ════════════════════════════════════════════════════════════════
+//  单元测试
+// ════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 验证阶段十二要求的 FAS 默认 margin = 2.0ms
+    #[test]
+    fn test_default_fps_margin_is_2ms() {
+        assert_eq!(default_fps_margin(), 2.0,
+            "fps_margin 默认值应为 2.0ms（阶段十二要求）");
+        let cfg = FasRulesConfig::default();
+        assert_eq!(cfg.fps_margin, 2.0,
+            "FasRulesConfig::default().fps_margin 应为 2.0ms");
+    }
+
+    /// 验证阶段十二要求的 FAS 初始 perf = 0.35
+    #[test]
+    fn test_default_perf_init_is_0_35() {
+        assert_eq!(default_perf_init(), 0.35,
+            "perf_init 默认值应为 0.35（阶段十二要求）");
+        let cfg = FasRulesConfig::default();
+        assert_eq!(cfg.perf_init, 0.35,
+            "FasRulesConfig::default().perf_init 应为 0.35");
+    }
+
+    /// 验证阶段十二要求的其他关键 FAS 默认参数
+    #[test]
+    fn test_fas_default_key_params() {
+        let cfg = FasRulesConfig::default();
+
+        // perf_floor = 0.22 （更低的起始频率）
+        assert_eq!(cfg.perf_floor, 0.22);
+        // perf_cold_boot = 0.85 （冷启动兜底频率）
+        assert_eq!(cfg.perf_cold_boot, 0.85);
+        // fps_gears 包含常见档位
+        assert_eq!(cfg.fps_gears, vec![30.0, 60.0, 90.0, 120.0, 144.0]);
+        // PID 系数基准
+        assert_eq!(cfg.pid.kp, 0.050);
+        assert_eq!(cfg.pid.ki, 0.010);
+        assert_eq!(cfg.pid.kd, 0.006);
+    }
+}

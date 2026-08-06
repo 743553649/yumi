@@ -21,6 +21,7 @@
 //  IPC 通道下发的 DaemonEvent。
 // ════════════════════════════════════════════════════════════════
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::thread;
 use std::time::Instant;
@@ -174,11 +175,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             let touch_boost_config = shared_touch_boost_config.clone();
             let policies_for_touch = get_cpu_policies();
             let (touch_tx, touch_rx) = mpsc::channel::<bool>();
+            let fas_silenced_flag = Arc::new(AtomicBool::new(false));
             if !policies_for_touch.is_empty() {
                 crate::touch_boost::start_touch_listener_thread(
                     touch_boost_config,
                     policies_for_touch,
                     touch_tx,
+                    fas_silenced_flag.clone(),
                 );
             }
 
@@ -309,6 +312,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             }
 
                             if mode == "fas" {
+                                // FAS 模式：静默 TouchBoost，避免 min_freq 提频与 FAS 冲突
+                                fas_silenced_flag.store(true, Ordering::Relaxed);
+
                                 // 进游戏：释放 CLG 控制权，激活 FAS
                                 cpu_governor.release();
 
@@ -329,6 +335,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 fas_controller.set_temperature(temperature);
                                 fas_controller.set_temp_threshold(current_rules.fas_rules.core_temp_threshold);
                             } else {
+                                // 退出 FAS 模式：恢复 TouchBoost 提频能力
+                                fas_silenced_flag.store(false, Ordering::Relaxed);
+
                                 // 退游戏：尝试挂起 FAS，并激活普通模式
                                 if fas_suspended_at.is_some() {
                                     fas_controller.reset_all_freqs();
@@ -442,8 +451,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 loop {
                     match touch_rx.try_recv() {
                         Ok(_touching) => {
-                            // TouchBoost 控制器在监听线程内部管理状态，
-                            // 这里预留接口供未来 FAS/CLG 联动使用
+                            // FAS 联动：fas_silenced_flag 由调度器在模式切换时设置，
+                            // TouchBoost 监听线程读取标志并自动静默提频，避免与 FAS 冲突
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => {

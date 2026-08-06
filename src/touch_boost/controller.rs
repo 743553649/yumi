@@ -23,6 +23,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
@@ -71,6 +72,10 @@ pub struct TouchBoostController {
     perf_policy: Option<i32>,
     /// 超级大核集群 Policy (如 Policy 6)
     prime_policy: Option<i32>,
+    /// FAS 模式静默标志：FAS 激活时 TouchBoost 自动停止提频，避免冲突
+    fas_silenced: Option<Arc<AtomicBool>>,
+    /// 上次观察到的 fas_silenced 值，用于检测 false→true 边沿
+    last_fas_silenced: bool,
 }
 
 impl TouchBoostController {
@@ -88,7 +93,30 @@ impl TouchBoostController {
             last_enabled: false,
             perf_policy: None,
             prime_policy: None,
+            fas_silenced: None,
+            last_fas_silenced: false,
         }
+    }
+
+    /// 设置 FAS 静默标志，由调度器线程在模式切换时传入。
+    /// FAS 激活后 TouchBoost 自动停止提频，避免与 FAS 频率控制冲突。
+    pub fn set_fas_silenced_flag(&mut self, flag: Arc<AtomicBool>) {
+        self.fas_silenced = Some(flag.clone());
+        self.last_fas_silenced = flag.load(Ordering::Relaxed);
+    }
+
+    /// 同步 FAS 静默状态并检测 false→true 边沿。
+    /// 返回 true 表示 FAS 处于激活状态，TouchBoost 应静默。
+    fn sync_fas_silenced(&mut self) -> bool {
+        let Some(flag) = &self.fas_silenced else { return false };
+        let silenced = flag.load(Ordering::Relaxed);
+        if silenced && !self.last_fas_silenced {
+            // false→true 边沿：FAS 刚激活，立即释放所有正在进行的 boost
+            self.recover_all();
+            self.state = BoostState::Idle;
+        }
+        self.last_fas_silenced = silenced;
+        silenced
     }
 
     /// 识别 骁龙 8 Elite 架构 Cluster (Policy 0 性能大核, Policy 6 超级大核)
@@ -164,7 +192,7 @@ impl TouchBoostController {
 
     /// 处理触摸事件
     pub fn on_touch_event(&mut self, touching: bool) {
-        if !self.initialized || !self.sync_enabled() {
+        if !self.initialized || !self.sync_enabled() || self.sync_fas_silenced() {
             return;
         }
         let now = Instant::now();
@@ -269,7 +297,7 @@ impl TouchBoostController {
 
     /// 定时 tick：处理 50ms 脉冲超时和恢复阶段衰减
     pub fn tick(&mut self) {
-        if !self.initialized {
+        if !self.initialized || self.sync_fas_silenced() {
             return;
         }
 
@@ -500,5 +528,90 @@ mod tests {
 
         assert_eq!(controller.perf_policy_id(), Some(0));
         assert_eq!(controller.prime_policy_id(), Some(6));
+    }
+
+    /// 验证 50ms 脉冲边界：短暂触摸（<50ms）应保持 Touching，超时后自动切入 Cooldown
+    /// 与 test_pulse_boost_50ms_cooldown 不同，此测试不依赖 sleep，
+    /// 而是通过连续两次 on_touch_event(true) 验证 0ms 边界
+    #[test]
+    fn test_50ms_pulse_boundary_immediate_repeat() {
+        let cfg = Arc::new(RwLock::new(TouchBoostConfig {
+            enabled: true,
+            boost_freqs: vec![2000000],
+            release_delay_ms: 0,
+            min_boost_duration_ms: 50,
+            ..Default::default()
+        }));
+        let mut controller = TouchBoostController::new(cfg);
+        controller.initialized = true;
+        controller.last_enabled = true;
+
+        // 1. 触摸按下 → Touching
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching,
+            "触摸按下应进入 Touching");
+
+        // 2. 立即再次收到 touching=true（<50ms 边界）
+        // 此时未满 50ms，应保持 Touching，不能提前释放
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching,
+            "50ms 脉冲未到期前应保持 Touching");
+
+        // 3. 等待超过 50ms 后收到 touching=true → 应切入 Cooldown
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Cooldown,
+            "50ms 脉冲到期后应自动切入 Cooldown");
+    }
+
+    /// 验证 TouchBoost 默认脉冲宽度为 50ms（阶段十二要求）
+    /// 防止未来误修改 min_boost_duration_ms 默认值
+    #[test]
+    fn test_touch_boost_default_min_duration_is_50ms() {
+        let cfg = TouchBoostConfig::default();
+        assert_eq!(cfg.min_boost_duration_ms, 50,
+            "min_boost_duration_ms 默认值应为 50ms（阶段十二要求）");
+        assert_eq!(cfg.release_delay_ms, 100,
+            "release_delay_ms 默认值应为 100ms");
+        assert_eq!(cfg.recover_decay, 0.15,
+            "recover_decay 默认值应为 0.15");
+    }
+
+    /// 验证 FAS 模式下 TouchBoost 自动静默
+    #[test]
+    fn test_fas_mode_silences_touch_boost() {
+        let fas_silenced = Arc::new(AtomicBool::new(false));
+        let cfg = Arc::new(RwLock::new(TouchBoostConfig {
+            enabled: true,
+            boost_freqs: vec![2000000],
+            release_delay_ms: 0,
+            min_boost_duration_ms: 0,
+            ..Default::default()
+        }));
+        let mut controller = TouchBoostController::new(cfg);
+        controller.initialized = true;
+        controller.last_enabled = true;
+        controller.set_fas_silenced_flag(fas_silenced.clone());
+
+        // 1. FAS 未激活时触摸 → Touching 并应用 boost
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching);
+
+        // 2. 激活 FAS → 边沿检测触发 recover_all，强制回到 Idle
+        fas_silenced.store(true, Ordering::Relaxed);
+        controller.on_touch_event(true); // sync_fas_silenced 检测边沿并恢复
+        assert_eq!(controller.state(), BoostState::Idle,
+            "FAS 激活后应强制回到 Idle");
+
+        // 3. FAS 激活时触摸 → 被静默，状态保持 Idle
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Idle,
+            "FAS 激活时触摸不应提频");
+
+        // 4. 退出 FAS → 恢复正常提频
+        fas_silenced.store(false, Ordering::Relaxed);
+        controller.on_touch_event(true);
+        assert_eq!(controller.state(), BoostState::Touching,
+            "FAS 退出后应恢复提频");
     }
 }
