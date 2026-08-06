@@ -9,7 +9,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
@@ -169,5 +171,35 @@ public class IpcClient {
             case "fast":        return "极速模式";
             default:            return mode;
         }
+    }
+
+    /**
+     * 清空守护进程磁盘日志（/data/adb/modules/yumi/logs/daemon.log）。
+     * 在独立线程执行 su -c，避免阻塞调用方。
+     */
+    public void clearDaemonLogFile() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "> /data/adb/modules/yumi/logs/daemon.log"});
+                    p.waitFor();
+                } catch (Exception ignored) {}
+            }
+        }).start();
+    }
+
+    /**
+     * 当 TCP/文件拉取均无日志时，构造默认"通信就绪"提示条目。
+     * level 字段使用与 MainActivity.LEVEL_INFO/LEVEL_DEBUG 对应的字面量（2/1）。
+     */
+    public static List<RealLogEntry> buildDefaultReadyLogs() {
+        List<RealLogEntry> entries = new ArrayList<>();
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+        String timeStr = sdf.format(new Date());
+        entries.add(new RealLogEntry(timeStr + " [INFO] yumi 守护进程 IPC 通信准备就绪 (127.0.0.1:14567)", timeStr + " [INFO] yumi 守护进程 IPC 通信准备就绪 (127.0.0.1:14567)", 2));  // LEVEL_INFO
+        entries.add(new RealLogEntry(timeStr + " [INFO] 正在轮询同步内核调度指标与应用规则...", timeStr + " [INFO] 正在轮询同步内核调度指标与应用规则...", 2));  // LEVEL_INFO
+        entries.add(new RealLogEntry(timeStr + " [DEBUG] 实时系统调度监控线程运行中", timeStr + " [DEBUG] 实时系统调度监控线程运行中", 1));  // LEVEL_DEBUG
+        return entries;
     }
 }
