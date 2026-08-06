@@ -74,6 +74,13 @@ fn try_handle_frame(_ctx: ProbeContext) -> Result<u32, u32> {
 const OFF_PREV_PID: usize = 24;
 const OFF_NEXT_PID: usize = 56;
 
+// ── PerCpuArray 说明 ──────────────────────────────────────────
+// 下方 5 个 PerCpuArray 均用 with_max_entries(1, 0)：max_entries=1 表示全局
+// 唯一 key（key=0），每个 entry 由内核自动复制为 per-CPU 副本（共
+// num_possible_cpus 份）。get_ptr_mut(0) 定位到"当前 CPU"的那份副本，各 CPU
+// 并发读写自己那份、互不干扰。这是 Aya per-CPU map 的标准用法，并非"只有
+// 一个 CPU 能写"——切勿把这里的 1 误读为 bug。下文 ZERO_KEY=0 即对应此 key。
+
 /// 每个核心的上次切换时间戳
 #[map]
 static CORE_LAST_TIME: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
