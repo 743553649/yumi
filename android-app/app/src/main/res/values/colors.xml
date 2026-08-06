@@ -18,23 +18,6 @@
     <color name="ios_fresnel_stroke_mid">#33FFFFFF</color>
     <color name="ios_fresnel_stroke_bot">#4000E5FF</color>
 
-    <!-- iOS Mode Palette (Vivid Neon Glass Accents) -->
-    <color name="ios_mode_powersave">#4ADE80</color>
-    <color name="ios_mode_powersave_glass">#3016A34A</color>
-    <color name="ios_mode_powersave_glow">#4ADE80</color>
-
-    <color name="ios_mode_balance">#38BDF8</color>
-    <color name="ios_mode_balance_glass">#302563EB</color>
-    <color name="ios_mode_balance_glow">#38BDF8</color>
-
-    <color name="ios_mode_performance">#FB923C</color>
-    <color name="ios_mode_performance_glass">#30EA580C</color>
-    <color name="ios_mode_performance_glow">#FB923C</color>
-
-    <color name="ios_mode_fast">#F87171</color>
-    <color name="ios_mode_fast_glass">#30DC2626</color>
-    <color name="ios_mode_fast_glow">#F87171</color>
-
     <!-- Log Level Palette Tokens -->
     <color name="log_level_debug">#94A3B8</color>
     <color name="log_level_info">#4ADE80</color>
