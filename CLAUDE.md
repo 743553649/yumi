@@ -56,3 +56,11 @@
   1. `customize.sh` 严禁覆盖设备现有的 `/data/adb/modules/yumi/rules.yaml`（保护用户应用规则）。
   2. Shell/Yaml/Prop 脚本与配置强制使用 **Unix 换行符 (LF `\n`)**，严禁 Windows CRLF (`\r\n`)。
   3. Zip 根目录禁止残留未 Strip 二进制，Release 必须剥离符号表存放在 `core/bin/yumi`（包体积控制在 15MB 左右）。
+
+---
+
+## 6. 品牌命名约定
+- **唯一对外名 `yumi`**：守护进程、内核模块、仓库与项目的对外名称统一使用 `yumi`；不得以 `Yuki` / `YukiCtrl` 作为项目或模块品牌名。
+- **新代码与新文档强制 `yumi`**：新增源码、配置、文档与前端包名一律使用 `yumi`（前端包名以 `webui/package.json` 的 `name: yumi-webui` 为准），严禁再引入 `yuki-*` 品牌变体。
+- **`yuki` 作为作者署名保留**：既有版权头 `Copyright (C) 2026 yuki`、`author=yuki`、`authors = ["yuki <loyeturz@163.com>"]` 中的 `yuki` 是开发者个人 handle，属作者署名而非项目品牌，保持原样不改动。
+- **仓库 URL 以实际为准**：`Cargo.toml` 的 `repository` 指向 GitHub 实际仓库地址；若在 GitHub 侧将仓库改名为 `yumi`，同步更新该字段，不在代码侧提前改为未生效的 URL。
