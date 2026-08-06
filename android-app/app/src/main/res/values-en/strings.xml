@@ -1,0 +1,58 @@
+<resources>
+    <string name="app_name">yumi Scheduler</string>
+    <string name="app_subtitle">iOS 26 Control Center</string>
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
+    <string name="section_modes">Performance Modes</string>
+    <string name="section_terminal">Module Log</string>
+
+    <string name="mode_powersave_title">Power Save</string>
+    <string name="mode_powersave_sub">Low power usage</string>
+
+    <string name="mode_balance_title">Balance</string>
+    <string name="mode_balance_sub">Standard preset</string>
+
+    <string name="mode_performance_title">Performance</string>
+    <string name="mode_performance_sub">High throughput</string>
+
+    <string name="mode_fast_title">Fast</string>
+    <string name="mode_fast_sub">Ultra-low latency</string>
+
+    <string name="log_level_all">All</string>
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_warn">Warn</string>
+    <string name="log_level_error">Error</string>
+    <string name="btn_clear_log">Clear</string>
+    <string name="btn_refresh_log">Refresh</string>
+    <string name="card_conn_title">Connection Settings</string>
+    <string name="port_hint">14567</string>
+    <string name="btn_ping">Ping</string>
+    <string name="btn_refresh">Refresh Config</string>
+
+    <!-- Bottom navigation tab strings -->
+    <string name="nav_home">Home</string>
+    <string name="nav_logs">Logs</string>
+    <string name="nav_apps">Apps</string>
+
+    <!-- App rules management strings -->
+    <string name="app_rules_title">App Rules</string>
+    <string name="app_rules_subtitle">Bind an independent schedule mode per app/game</string>
+    <string name="search_apps_hint">Search app name or package...</string>
+    <string name="app_mode_default">Follow Global</string>
+    <string name="app_mode_powersave">Power Save</string>
+    <string name="app_mode_balance">Balance</string>
+    <string name="app_mode_performance">Performance</string>
+    <string name="app_mode_fast">Fast</string>
+    <string name="app_mode_fas">FAS Frame-Aware</string>
+    <string name="select_mode_title">Select Schedule Mode</string>
+    <!-- Home CPU dashboard and widget strings -->
+    <string name="section_cpu_dashboard">Cores &amp; Scheduler Engine</string>
+    <string name="cpu_arch_title">CPU Cluster Status</string>
+    <string name="cpu_status_sub">CLG governor &amp; FAS frame-aware running</string>
+    <string name="section_system_widgets">System Realtime Status</string>
+    <string name="widget_ram_title">Memory (RAM) Usage</string>
+    <string name="widget_ram_sub">System memory allocation</string>
+    <string name="widget_uptime_title">Daemon Uptime</string>
+    <string name="widget_uptime_sub">TCP local IPC (14567)</string>
+</resources>

@@ -24,7 +24,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
+
+      # i18n 三端 en/zh 键集对等校验（轻量检查，先于重型构建，失败快速）
+      # 详见 scripts/check-i18n-parity.sh：只校验各端内部 en/zh 键集对等，
+      # 不做跨端 key 相等校验（三端用途不同，键集合按设计就不可能相等）。
+      - name: i18n parity check
+        run: bash scripts/check-i18n-parity.sh
 
       # 2. 配置 Node.js 环境 (用于编译 WebUI) —— 启用 npm 下载缓存
       #    cache: 'npm' 会缓存 ~/.npm/_cacache，加速后续 npm ci 的依赖下载
