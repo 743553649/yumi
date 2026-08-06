@@ -47,9 +47,9 @@ const LIBGUI_PATH: &str = "/system/lib64/libgui.so";
 
 /// RingBuf 输出的帧时间戳事件（与 yumi-ebpf 的 FrameTimestampEvent 内存布局一致）
 #[repr(C)]
-struct FrameTimestampEvent {
-    pid: u32,
-    ktime_ns: u64,
+pub(crate) struct FrameTimestampEvent {
+    pub(crate) pid: u32,
+    pub(crate) ktime_ns: u64,
 }
 
 const MIN_FRAME_NS: u64 = 1_000_000;

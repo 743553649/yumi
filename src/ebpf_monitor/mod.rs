@@ -53,4 +53,22 @@ mod tests {
         assert_eq!(std::mem::align_of::<EbpfFrameEvent>(), 8);
         assert_eq!(std::mem::size_of::<EbpfFrameEvent>(), 24);
     }
+
+    // userspace 侧 FrameTimestampEvent 必须与 yumi-ebpf/src/main.rs 的 eBPF 侧
+    // `struct FrameTimestampEvent { pid: u32, ktime_ns: u64 }` 内存布局完全一致，
+    // 否则从 RingBuf 读取时会错位。两端均为 #[repr(C)]：u32(4B) + 4B 对齐填充
+    // + u64(8B) = 16B，对齐 8。eBPF 侧结构体是私有定义、跨 crate 无法直接引用，
+    // 这里用 size/align 校验守住布局契约，改动任一侧字段时此测试会立即报警。
+    #[test]
+    fn test_frame_event_layout_matches_ebpf() {
+        use std::mem;
+        assert_eq!(
+            mem::size_of::<crate::monitor::fps_monitor::FrameTimestampEvent>(),
+            16
+        );
+        assert_eq!(
+            mem::align_of::<crate::monitor::fps_monitor::FrameTimestampEvent>(),
+            8
+        );
+    }
 }
