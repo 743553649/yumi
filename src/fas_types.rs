@@ -106,51 +106,51 @@ pub struct FasRulesConfig {
     #[serde(default = "default_fps_margin")]       pub fps_margin: f32,
     #[serde(default)]                              pub pid: PidCoefficients,
     #[serde(default = "default_cluster_profiles")] pub cluster_profiles: Vec<ClusterProfile>,
-    #[serde(default = "d_auto_cap")]               pub auto_capacity_weight: bool,
+    #[serde(default = "default_auto_capacity_weight")]               pub auto_capacity_weight: bool,
 
-    #[serde(default = "d_perf_floor")]   pub perf_floor: f32,
-    #[serde(default = "d_perf_ceil")]    pub perf_ceil: f32,
-    #[serde(default = "d_perf_init")]    pub perf_init: f32,
-    #[serde(default = "d_perf_cold")]    pub perf_cold_boot: f32,
-    #[serde(default = "d_hysteresis")]   pub freq_hysteresis: f32,
+    #[serde(default = "default_perf_floor")]   pub perf_floor: f32,
+    #[serde(default = "default_perf_ceil")]    pub perf_ceil: f32,
+    #[serde(default = "default_perf_init")]    pub perf_init: f32,
+    #[serde(default = "default_perf_cold_boot")]    pub perf_cold_boot: f32,
+    #[serde(default = "default_freq_hysteresis")]   pub freq_hysteresis: f32,
 
-    #[serde(default = "d_heavy_ms")]     pub heavy_frame_threshold_ms: f32,
-    #[serde(default = "d_load_ms")]      pub loading_cumulative_ms: f32,
-    #[serde(default = "d_load_tol")]     pub loading_normal_tolerance: u32,
-    #[serde(default = "d_load_pf")]      pub loading_perf_floor: f32,
-    #[serde(default = "d_load_pc")]      pub loading_perf_ceiling: f32,
+    #[serde(default = "default_heavy_frame_threshold_ms")]     pub heavy_frame_threshold_ms: f32,
+    #[serde(default = "default_loading_cumulative_ms")]      pub loading_cumulative_ms: f32,
+    #[serde(default = "default_loading_normal_tolerance")]     pub loading_normal_tolerance: u32,
+    #[serde(default = "default_loading_perf_floor")]      pub loading_perf_floor: f32,
+    #[serde(default = "default_loading_perf_ceiling")]      pub loading_perf_ceiling: f32,
 
-    #[serde(default = "d_post_ign")]     pub post_loading_ignore_frames: u32,
-    #[serde(default = "d_post_perf")]    pub post_loading_perf: f32,
-    #[serde(default = "d_post_guard")]   pub post_loading_downgrade_guard: u32,
+    #[serde(default = "default_post_loading_ignore_frames")]     pub post_loading_ignore_frames: u32,
+    #[serde(default = "default_post_loading_perf")]    pub post_loading_perf: f32,
+    #[serde(default = "default_post_loading_downgrade_guard")]   pub post_loading_downgrade_guard: u32,
 
-    #[serde(default = "d_up_confirm")]   pub upgrade_confirm_frames: u32,
-    #[serde(default = "d_dn_confirm")]   pub downgrade_confirm_frames: u32,
-    #[serde(default = "d_up_cd")]        pub upgrade_cooldown_after_downgrade: u32,
-    #[serde(default = "d_dampen")]       pub gear_dampen_frames: u32,
+    #[serde(default = "default_upgrade_confirm_frames")]   pub upgrade_confirm_frames: u32,
+    #[serde(default = "default_downgrade_confirm_frames")]   pub downgrade_confirm_frames: u32,
+    #[serde(default = "default_upgrade_cooldown_after_downgrade")]        pub upgrade_cooldown_after_downgrade: u32,
+    #[serde(default = "default_gear_dampen_frames")]       pub gear_dampen_frames: u32,
 
-    #[serde(default = "d_boost_inc")]    pub downgrade_boost_perf_inc: f32,
-    #[serde(default = "d_boost_dur")]    pub downgrade_boost_duration: u32,
+    #[serde(default = "default_downgrade_boost_perf_inc")]    pub downgrade_boost_perf_inc: f32,
+    #[serde(default = "default_downgrade_boost_duration")]    pub downgrade_boost_duration: u32,
 
-    #[serde(default = "d_fd_thresh")]    pub fast_decay_frame_threshold: u32,
-    #[serde(default = "d_fd_perf")]      pub fast_decay_perf_threshold: f32,
-    #[serde(default = "d_fd_max")]       pub fast_decay_max_step: f32,
-    #[serde(default = "d_fd_min")]       pub fast_decay_min_step: f32,
+    #[serde(default = "default_fast_decay_frame_threshold")]    pub fast_decay_frame_threshold: u32,
+    #[serde(default = "default_fast_decay_perf_threshold")]      pub fast_decay_perf_threshold: f32,
+    #[serde(default = "default_fast_decay_max_step")]       pub fast_decay_max_step: f32,
+    #[serde(default = "default_fast_decay_min_step")]       pub fast_decay_min_step: f32,
 
-    #[serde(default = "d_jank_cd")]      pub jank_cooldown_frames: u32,
+    #[serde(default = "default_jank_cooldown_frames")]      pub jank_cooldown_frames: u32,
 
-    #[serde(default = "d_max_inc_d")]    pub max_inc_damped: f32,
-    #[serde(default = "d_max_inc_n")]    pub max_inc_normal: f32,
-    #[serde(default = "d_damped_cap")]   pub damped_perf_cap: f32,
+    #[serde(default = "default_max_inc_damped")]    pub max_inc_damped: f32,
+    #[serde(default = "default_max_inc_normal")]    pub max_inc_normal: f32,
+    #[serde(default = "default_damped_perf_cap")]   pub damped_perf_cap: f32,
 
-    #[serde(default = "d_switch_ms")]    pub app_switch_gap_ms: f32,
-    #[serde(default = "d_switch_perf")]  pub app_switch_resume_perf: f32,
+    #[serde(default = "default_app_switch_gap_ms")]    pub app_switch_gap_ms: f32,
+    #[serde(default = "default_app_switch_resume_perf")]  pub app_switch_resume_perf: f32,
 
-    #[serde(default = "d_force_int")]    pub freq_force_reapply_interval: u32,
-    #[serde(default = "d_max_frame")]    pub fixed_max_frame_ms: f32,
-    #[serde(default = "d_cold_ms")]      pub cold_boot_ms: u64,
+    #[serde(default = "default_freq_force_reapply_interval")]    pub freq_force_reapply_interval: u32,
+    #[serde(default = "default_fixed_max_frame_ms")]    pub fixed_max_frame_ms: f32,
+    #[serde(default = "default_cold_boot_ms")]      pub cold_boot_ms: u64,
 
-    #[serde(default = "d_verify_interval")]
+    #[serde(default = "default_verify_freq_interval_secs")]
     pub verify_freq_interval_secs: u32,
 
     #[serde(default)]
@@ -160,57 +160,57 @@ pub struct FasRulesConfig {
     pub per_app_margins: HashMap<String, f32>,
 
     /// 温度降频阈值（℃），0 = 禁用
-    #[serde(default = "d_temp_thresh")]
+    #[serde(default = "default_core_temp_threshold")]
     pub core_temp_threshold: f64,
 
     /// 温度降频时的最低 perf
-    #[serde(default = "d_temp_perf")]
+    #[serde(default = "default_core_temp_throttle_perf")]
     pub core_temp_throttle_perf: f32,
 
     /// CPU 负载辅助：前台线程利用率封顶的除数 (越小越激进)
-    #[serde(default = "d_util_cap_divisor")]
+    #[serde(default = "default_util_cap_divisor")]
     pub util_cap_divisor: f32,
 }
 
 pub fn default_fps_gears() -> Vec<f32> { vec![30.0, 60.0, 90.0, 120.0, 144.0] }
 pub fn default_fps_margin() -> f32 { 2.0 }
-fn d_auto_cap() -> bool { true }
-fn d_perf_floor() -> f32 { 0.22 }
-fn d_perf_ceil() -> f32 { 1.0 }
-fn d_perf_init() -> f32 { 0.35 }
-fn d_perf_cold() -> f32 { 0.85 }
-pub fn d_hysteresis() -> f32 { 0.015 }
-pub fn d_heavy_ms() -> f32 { 150.0 }
-pub fn d_load_ms() -> f32 { 2500.0 }
-fn d_load_tol() -> u32 { 3 }
-fn d_load_pf() -> f32 { 0.60 }
-fn d_load_pc() -> f32 { 0.70 }
-pub fn d_post_ign() -> u32 { 5 }
-pub fn d_post_perf() -> f32 { 0.50 }
-fn d_post_guard() -> u32 { 45 }
-fn d_up_confirm() -> u32 { 60 }
-fn d_dn_confirm() -> u32 { 45 }
-fn d_up_cd() -> u32 { 90 }
-fn d_dampen() -> u32 { 60 }
-fn d_boost_inc() -> f32 { 0.12 }
-fn d_boost_dur() -> u32 { 30 }
-fn d_fd_thresh() -> u32 { 75 }
-fn d_fd_perf() -> f32 { 0.40 }
-fn d_fd_max() -> f32 { 0.045 }
-fn d_fd_min() -> f32 { 0.008 }
-fn d_jank_cd() -> u32 { 15 }
-fn d_max_inc_d() -> f32 { 0.045 }
-fn d_max_inc_n() -> f32 { 0.075 }
-fn d_damped_cap() -> f32 { 0.92 }
-fn d_switch_ms() -> f32 { 3000.0 }
-fn d_switch_perf() -> f32 { 0.60 }
-fn d_force_int() -> u32 { 30 }
-fn d_max_frame() -> f32 { 500.0 }
-fn d_cold_ms() -> u64 { 3500 }
-fn d_verify_interval() -> u32 { 3 }
-fn d_temp_thresh() -> f64 { 0.0 }
-fn d_temp_perf() -> f32 { 0.70 }
-fn d_util_cap_divisor() -> f32 { 0.45 }
+fn default_auto_capacity_weight() -> bool { true }
+fn default_perf_floor() -> f32 { 0.22 }
+fn default_perf_ceil() -> f32 { 1.0 }
+fn default_perf_init() -> f32 { 0.35 }
+fn default_perf_cold_boot() -> f32 { 0.85 }
+pub fn default_freq_hysteresis() -> f32 { 0.015 }
+pub fn default_heavy_frame_threshold_ms() -> f32 { 150.0 }
+pub fn default_loading_cumulative_ms() -> f32 { 2500.0 }
+fn default_loading_normal_tolerance() -> u32 { 3 }
+fn default_loading_perf_floor() -> f32 { 0.60 }
+fn default_loading_perf_ceiling() -> f32 { 0.70 }
+pub fn default_post_loading_ignore_frames() -> u32 { 5 }
+pub fn default_post_loading_perf() -> f32 { 0.50 }
+fn default_post_loading_downgrade_guard() -> u32 { 45 }
+fn default_upgrade_confirm_frames() -> u32 { 60 }
+fn default_downgrade_confirm_frames() -> u32 { 45 }
+fn default_upgrade_cooldown_after_downgrade() -> u32 { 90 }
+fn default_gear_dampen_frames() -> u32 { 60 }
+fn default_downgrade_boost_perf_inc() -> f32 { 0.12 }
+fn default_downgrade_boost_duration() -> u32 { 30 }
+fn default_fast_decay_frame_threshold() -> u32 { 75 }
+fn default_fast_decay_perf_threshold() -> f32 { 0.40 }
+fn default_fast_decay_max_step() -> f32 { 0.045 }
+fn default_fast_decay_min_step() -> f32 { 0.008 }
+fn default_jank_cooldown_frames() -> u32 { 15 }
+fn default_max_inc_damped() -> f32 { 0.045 }
+fn default_max_inc_normal() -> f32 { 0.075 }
+fn default_damped_perf_cap() -> f32 { 0.92 }
+fn default_app_switch_gap_ms() -> f32 { 3000.0 }
+fn default_app_switch_resume_perf() -> f32 { 0.60 }
+fn default_freq_force_reapply_interval() -> u32 { 30 }
+fn default_fixed_max_frame_ms() -> f32 { 500.0 }
+fn default_cold_boot_ms() -> u64 { 3500 }
+fn default_verify_freq_interval_secs() -> u32 { 3 }
+fn default_core_temp_threshold() -> f64 { 0.0 }
+fn default_core_temp_throttle_perf() -> f32 { 0.70 }
+fn default_util_cap_divisor() -> f32 { 0.45 }
 
 impl FasRulesConfig {
     /// 将旧的 per_app_margins 迁移到 per_app_profiles
@@ -230,38 +230,38 @@ impl Default for FasRulesConfig {
             fps_gears: default_fps_gears(), fps_margin: default_fps_margin(),
             pid: PidCoefficients::default(),
             cluster_profiles: default_cluster_profiles(),
-            auto_capacity_weight: d_auto_cap(),
-            perf_floor: d_perf_floor(), perf_ceil: d_perf_ceil(),
-            perf_init: d_perf_init(), perf_cold_boot: d_perf_cold(),
-            freq_hysteresis: d_hysteresis(),
-            heavy_frame_threshold_ms: d_heavy_ms(),
-            loading_cumulative_ms: d_load_ms(),
-            loading_normal_tolerance: d_load_tol(),
-            loading_perf_floor: d_load_pf(), loading_perf_ceiling: d_load_pc(),
-            post_loading_ignore_frames: d_post_ign(),
-            post_loading_perf: d_post_perf(),
-            post_loading_downgrade_guard: d_post_guard(),
-            upgrade_confirm_frames: d_up_confirm(),
-            downgrade_confirm_frames: d_dn_confirm(),
-            upgrade_cooldown_after_downgrade: d_up_cd(),
-            gear_dampen_frames: d_dampen(),
-            downgrade_boost_perf_inc: d_boost_inc(),
-            downgrade_boost_duration: d_boost_dur(),
-            fast_decay_frame_threshold: d_fd_thresh(),
-            fast_decay_perf_threshold: d_fd_perf(),
-            fast_decay_max_step: d_fd_max(), fast_decay_min_step: d_fd_min(),
-            jank_cooldown_frames: d_jank_cd(),
-            max_inc_damped: d_max_inc_d(), max_inc_normal: d_max_inc_n(),
-            damped_perf_cap: d_damped_cap(),
-            app_switch_gap_ms: d_switch_ms(), app_switch_resume_perf: d_switch_perf(),
-            freq_force_reapply_interval: d_force_int(),
-            fixed_max_frame_ms: d_max_frame(), cold_boot_ms: d_cold_ms(),
-            verify_freq_interval_secs: d_verify_interval(),
+            auto_capacity_weight: default_auto_capacity_weight(),
+            perf_floor: default_perf_floor(), perf_ceil: default_perf_ceil(),
+            perf_init: default_perf_init(), perf_cold_boot: default_perf_cold_boot(),
+            freq_hysteresis: default_freq_hysteresis(),
+            heavy_frame_threshold_ms: default_heavy_frame_threshold_ms(),
+            loading_cumulative_ms: default_loading_cumulative_ms(),
+            loading_normal_tolerance: default_loading_normal_tolerance(),
+            loading_perf_floor: default_loading_perf_floor(), loading_perf_ceiling: default_loading_perf_ceiling(),
+            post_loading_ignore_frames: default_post_loading_ignore_frames(),
+            post_loading_perf: default_post_loading_perf(),
+            post_loading_downgrade_guard: default_post_loading_downgrade_guard(),
+            upgrade_confirm_frames: default_upgrade_confirm_frames(),
+            downgrade_confirm_frames: default_downgrade_confirm_frames(),
+            upgrade_cooldown_after_downgrade: default_upgrade_cooldown_after_downgrade(),
+            gear_dampen_frames: default_gear_dampen_frames(),
+            downgrade_boost_perf_inc: default_downgrade_boost_perf_inc(),
+            downgrade_boost_duration: default_downgrade_boost_duration(),
+            fast_decay_frame_threshold: default_fast_decay_frame_threshold(),
+            fast_decay_perf_threshold: default_fast_decay_perf_threshold(),
+            fast_decay_max_step: default_fast_decay_max_step(), fast_decay_min_step: default_fast_decay_min_step(),
+            jank_cooldown_frames: default_jank_cooldown_frames(),
+            max_inc_damped: default_max_inc_damped(), max_inc_normal: default_max_inc_normal(),
+            damped_perf_cap: default_damped_perf_cap(),
+            app_switch_gap_ms: default_app_switch_gap_ms(), app_switch_resume_perf: default_app_switch_resume_perf(),
+            freq_force_reapply_interval: default_freq_force_reapply_interval(),
+            fixed_max_frame_ms: default_fixed_max_frame_ms(), cold_boot_ms: default_cold_boot_ms(),
+            verify_freq_interval_secs: default_verify_freq_interval_secs(),
             per_app_profiles: HashMap::new(),
             per_app_margins: HashMap::new(),
-            core_temp_threshold: d_temp_thresh(),
-            core_temp_throttle_perf: d_temp_perf(),
-            util_cap_divisor: d_util_cap_divisor(),
+            core_temp_threshold: default_core_temp_threshold(),
+            core_temp_throttle_perf: default_core_temp_throttle_perf(),
+            util_cap_divisor: default_util_cap_divisor(),
         }
     }
 }
