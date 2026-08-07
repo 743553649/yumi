@@ -99,7 +99,6 @@ fn build(sh: &Shell) -> Result<()> {
         fs::remove_file(temp_dir.join("yumi"))?;
     }
 
-
     // 规范化换行符：遍历临时目录，强行将所有 .sh/.prop/.yaml/.ftl/.json 等文本文件的 CRLF 转换成 Unix LF (\n)
     sanitize_line_endings(&temp_dir)?;
 

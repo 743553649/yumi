@@ -253,10 +253,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                 // Re-write critical GPU sysfs nodes to prevent third-party override
                 // Probe kgsl path dynamically (same candidates as GpuCompatInfo::probe_compat)
-                let kgsl_candidates = [
-                    "/sys/class/kgsl/kgsl-3d0",
-                    "/sys/kernel/kgsl/kgsl-3d0",
-                ];
+                let kgsl_candidates = ["/sys/class/kgsl/kgsl-3d0", "/sys/kernel/kgsl/kgsl-3d0"];
                 let found_path = kgsl_candidates
                     .iter()
                     .map(|p| std::path::Path::new(p))

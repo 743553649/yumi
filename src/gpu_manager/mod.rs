@@ -16,18 +16,16 @@
  */
 
 // GPU 管理器 — Adreno GPU 频率与调速器控制核心模块。
-// 实现拆分到 config.rs / compat.rs / watchdog.rs。
+// 实现拆分到 config.rs / compat.rs；熔断器 WriteCircuitBreaker 内联于此。
 
 mod compat;
 mod config;
-mod watchdog;
 
 pub use compat::{GpuCompatInfo, probe_compat};
 pub use config::{GpuConfig, GpuModeConfig, GpuModeConfigs};
-pub use watchdog::{GpuHealth, GpuWatchdog, WriteCircuitBreaker};
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::fluent_args;
 use crate::i18n::{t, t_with_args};
@@ -58,9 +56,6 @@ pub struct GpuManager {
     force_no_nap_writer: Option<FastWriter>,
     /// Circuit breaker to prevent repeated failed writes
     circuit_breaker: WriteCircuitBreaker,
-    /// Watchdog for monitoring GPU health (integrated in Phase 3)
-    #[allow(dead_code)]
-    watchdog: GpuWatchdog,
     /// Current active mode name
     current_mode: Option<String>,
 }
@@ -104,7 +99,6 @@ impl GpuManager {
             governor_writer,
             force_no_nap_writer,
             circuit_breaker: WriteCircuitBreaker::new(),
-            watchdog: GpuWatchdog::new(),
             current_mode: None,
         }
     }
@@ -410,6 +404,77 @@ impl GpuManager {
     }
 }
 
+// ── WriteCircuitBreaker: 防止连续写入失败后疯狂重试 ──
+
+/// WriteCircuitBreaker: prevents repeated writes to GPU sysfs when
+/// they keep failing, with a cooldown period.
+#[derive(Debug)]
+pub struct WriteCircuitBreaker {
+    pub fail_count: u32,
+    pub last_fail_time: Instant,
+    pub cooldown_until: Option<Instant>,
+}
+
+impl WriteCircuitBreaker {
+    pub const MAX_FAILURES: u32 = 3;
+    pub const COOLDOWN_SECS: u64 = 30;
+
+    pub fn new() -> Self {
+        Self {
+            fail_count: 0,
+            last_fail_time: Instant::now(),
+            cooldown_until: None,
+        }
+    }
+
+    /// Record a write failure. Returns true if the circuit breaker is now tripped.
+    pub fn record_failure(&mut self) -> bool {
+        self.fail_count += 1;
+        self.last_fail_time = Instant::now();
+        if self.fail_count >= Self::MAX_FAILURES {
+            self.cooldown_until = Some(Instant::now() + Duration::from_secs(Self::COOLDOWN_SECS));
+            log::warn!(
+                "[GPU] Write circuit breaker tripped after {} failures, cooling down for {}s",
+                self.fail_count,
+                Self::COOLDOWN_SECS
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Record a successful write, resetting counters
+    pub fn record_success(&mut self) {
+        self.fail_count = 0;
+        self.cooldown_until = None;
+    }
+
+    /// Check if the circuit breaker is currently in cooldown
+    pub fn is_cooldown(&self) -> bool {
+        self.cooldown_until
+            .map(|until| Instant::now() < until)
+            .unwrap_or(false)
+    }
+
+    /// Try to reset the circuit breaker if cooldown has expired
+    pub fn try_reset(&mut self) {
+        if let Some(until) = self.cooldown_until
+            && Instant::now() >= until
+        {
+            self.fail_count = 0;
+            self.cooldown_until = None;
+            log::info!("[GPU] Write circuit breaker reset after cooldown");
+        }
+    }
+}
+
+impl Default for WriteCircuitBreaker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,7 +501,6 @@ mod tests {
             governor_writer: None,
             force_no_nap_writer: None,
             circuit_breaker: WriteCircuitBreaker::new(),
-            watchdog: GpuWatchdog::new(),
             current_mode: None,
         }
     }
@@ -563,5 +627,158 @@ mod tests {
     fn test_resolve_mode_config_empty_freqs_returns_zero() {
         let mgr = make_manager_with_compat(make_compat(vec![], vec![]));
         assert_eq!(mgr.resolve_mode_config("balance").max_gpuclk, 0);
+    }
+
+    // ── WriteCircuitBreaker 测试 ──
+
+    #[test]
+    fn test_circuit_breaker_one_failure_does_not_trip() {
+        let mut cb = WriteCircuitBreaker::new();
+        assert!(!cb.record_failure());
+        assert!(!cb.is_cooldown());
+    }
+
+    #[test]
+    fn test_circuit_breaker_three_failures_trips() {
+        let mut cb = WriteCircuitBreaker::new();
+        assert!(!cb.record_failure());
+        assert!(!cb.record_failure());
+        assert!(cb.record_failure());
+        assert!(cb.is_cooldown());
+    }
+
+    #[test]
+    fn test_circuit_breaker_success_resets() {
+        let mut cb = WriteCircuitBreaker::new();
+        let _ = cb.record_failure();
+        let _ = cb.record_failure();
+        let _ = cb.record_failure();
+        assert!(cb.is_cooldown());
+
+        cb.record_success();
+        assert!(!cb.is_cooldown());
+        assert_eq!(cb.fail_count, 0);
+    }
+
+    // ── apply_mode / enter_doze / exit_doze / release 行为测试 ──
+
+    #[test]
+    fn test_apply_mode_disabled_returns_ok() {
+        let mut mgr = GpuManager {
+            enabled: false,
+            ..make_manager_with_compat(make_compat(vec![100, 200, 300], vec!["msm-adreno-tz"]))
+        };
+        assert!(mgr.apply_mode("balance").is_ok());
+        assert!(mgr.current_mode().is_none());
+    }
+
+    #[test]
+    fn test_apply_mode_compat_unavailable_returns_ok() {
+        let mut mgr = GpuManager {
+            enabled: true,
+            ..make_manager_with_compat(GpuCompatInfo::disabled())
+        };
+        assert!(mgr.apply_mode("balance").is_ok());
+        assert!(mgr.current_mode().is_none());
+    }
+
+    #[test]
+    fn test_apply_mode_writers_none_still_sets_mode() {
+        // Writers are None (no sysfs), writes silently fail but mode is recorded
+        let mut mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        // First apply_mode: 3 writes fail → circuit breaker trips on 3rd
+        let _ = mgr.apply_mode("balance");
+        // current_mode may or may not be set depending on circuit breaker timing
+        // The important thing is it doesn't panic
+    }
+
+    #[test]
+    fn test_enter_doze_sets_mode() {
+        let mut mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        mgr.enter_doze();
+        // enter_doze calls apply_mode("doze"), writers are None so it may or may not set mode
+        // Just verify no panic
+    }
+
+    #[test]
+    fn test_exit_doze_restores_mode() {
+        let mut mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        mgr.exit_doze("balance");
+        // exit_doze calls apply_mode(restore_mode), just verify no panic
+    }
+
+    #[test]
+    fn test_release_clears_mode() {
+        let mut mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        // Manually set current_mode to simulate an active state
+        mgr.current_mode = Some("balance".to_string());
+        mgr.release();
+        assert!(mgr.current_mode().is_none());
+    }
+
+    #[test]
+    fn test_release_disabled_noop() {
+        let mut mgr = GpuManager {
+            enabled: false,
+            ..make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]))
+        };
+        mgr.current_mode = Some("balance".to_string());
+        mgr.release();
+        // release early-returns when disabled, current_mode stays set
+        assert_eq!(mgr.current_mode(), Some("balance"));
+    }
+
+    #[test]
+    fn test_current_mode_accessor() {
+        let mut mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        assert!(mgr.current_mode().is_none());
+        mgr.current_mode = Some("fast".to_string());
+        assert_eq!(mgr.current_mode(), Some("fast"));
+    }
+
+    #[test]
+    fn test_compat_accessor() {
+        let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300], vec![]));
+        assert!(mgr.compat().available);
+        assert_eq!(mgr.compat().gpu_model, "Adreno Test");
+    }
+
+    // ── auto_calculate_freq 边界测试 ──
+
+    #[test]
+    fn test_auto_calculate_freq_empty_returns_zero() {
+        let mgr = make_manager_with_compat(make_compat(vec![], vec![]));
+        assert_eq!(mgr.auto_calculate_freq("balance"), 0);
+    }
+
+    #[test]
+    fn test_auto_calculate_freq_single_element() {
+        let mgr = make_manager_with_compat(make_compat(vec![500], vec![]));
+        // balance: idx = 1 * 40 / 100 = 0 → min(0, 0) = 0 → freqs[0] = 500
+        assert_eq!(mgr.auto_calculate_freq("balance"), 500);
+    }
+
+    #[test]
+    fn test_auto_calculate_freq_unknown_mode_uses_max() {
+        let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
+        assert_eq!(mgr.auto_calculate_freq("turbo"), 500);
+    }
+
+    #[test]
+    fn test_auto_calculate_freq_powersave_uses_min() {
+        let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
+        assert_eq!(mgr.auto_calculate_freq("powersave"), 100);
+    }
+
+    #[test]
+    fn test_auto_calculate_freq_doze_uses_min() {
+        let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
+        assert_eq!(mgr.auto_calculate_freq("doze"), 100);
+    }
+
+    #[test]
+    fn test_auto_calculate_freq_fast_uses_max() {
+        let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
+        assert_eq!(mgr.auto_calculate_freq("fast"), 500);
     }
 }

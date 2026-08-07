@@ -22,7 +22,7 @@
 
 ### 1.1 创建 `src/gpu_manager/mod.rs` — GpuManager 主控制器
 
-- `GpuManager` 结构体（字段：`enabled`、`compat`、各 sysfs 写入器 `FastWriter`、熔断器 `WriteCircuitBreaker`、看门狗 `GpuWatchdog`、当前模式缓存）
+- `GpuManager` 结构体（字段：`enabled`、`compat`、各 sysfs 写入器 `FastWriter`、熔断器 `WriteCircuitBreaker`、当前模式缓存）
 - 核心接口：
   - `new(config: &GpuConfig)` — 根据配置创建实例
   - `init(&mut self)` — 启动时探测兼容性，应用 balance 模式
@@ -67,11 +67,10 @@
   - 写入 `Disabled` 兼容信息时的兜底
 - `GpuCompatInfo::disabled()` 静态方法
 
-### 1.4 创建 `src/gpu_manager/watchdog.rs` — GPU 健康监控与熔断器
+### 1.4 `WriteCircuitBreaker` 熔断器（内联于 mod.rs）
 
-- `GpuWatchdog` 结构体（检测频率锁死 + 自动恢复三阶段流程）
 - `WriteCircuitBreaker` 结构体（连续 3 次写入失败 → 30s 熔断冷却）
-- 检测与恢复流程（参考方案第 6 节，三阶段：释放限频 → 切换 governor → force_no_nap 脉冲唤醒）
+- 已从独立的 `watchdog.rs` 移入 `mod.rs`，遵循极简原则（Watchdog 功能已移除）
 
 ### 1.5 在 `src/main.rs` 注册模块
 
@@ -147,9 +146,6 @@ keepalive_interval_s: 5
 | `gpu-release` | [GPU] 已释放控制权，恢复默认设置 | [GPU] Released control, restored to defaults |
 | `gpu-write-failed` | [GPU] 写入 { $node } 失败: { $error } | [GPU] Write to { $node } failed: { $error } |
 | `gpu-circuit-breaker` | [GPU] 写入熔断器触发，冷却 { $secs }s | [GPU] Write circuit breaker tripped, cooling { $secs }s |
-| `gpu-watchdog-detected` | [GPU] 看门狗检测到 GPU 频率卡死 | [GPU] Watchdog detected GPU frequency stall |
-| `gpu-watchdog-recovered` | [GPU] 看门狗恢复成功 | [GPU] Watchdog recovered successfully |
-| `gpu-watchdog-hung` | [GPU] GPU 无响应，放弃控制权 | [GPU] GPU unresponsive, relinquishing control |
 | `gpu-keepalive-started` | [GPU] 保活线程已启动 (间隔 { $secs }s) | [GPU] Keepalive thread started (interval { $secs }s) |
 
 ### 2.4 配置热重载支持
@@ -383,13 +379,12 @@ cargo fmt --check
 
 ## 交付检查清单（全部已完成）
 
-- [x] `src/gpu_manager/mod.rs` — GpuManager 主控制器（603 行）
-- [x] `src/gpu_manager/config.rs` — GpuConfig 配置结构体（153 行）
-- [x] `src/gpu_manager/compat.rs` — 兼容性探测（185 行）
-- [x] `src/gpu_manager/watchdog.rs` — GPU 健康监控与熔断器（226 行）
+- [x] `src/gpu_manager/mod.rs` — GpuManager 主控制器 + WriteCircuitBreaker 熔断器
+- [x] `src/gpu_manager/config.rs` — GpuConfig 配置结构体
+- [x] `src/gpu_manager/compat.rs` — 兼容性探测
 - [x] `module/config/gpu.yaml` — GPU 控制配置文件（完整 5 模式）
 - [x] `module/config/config.yaml` — 增加 `function.GPUControl` 开关
-- [x] `module/config/i18n/zh.ftl` + `en.ftl` — 新增 16 个 GPU 翻译键
+- [x] `module/config/i18n/zh.ftl` + `en.ftl` — 12 个 GPU 翻译键
 - [x] `src/main.rs` — 注册 `gpu_manager` 模块
 - [x] `src/scheduler/runner.rs` — 集成 GpuManager（初始化、模式切换、息屏/亮屏、保活线程 + 热重载）
 - [x] `webui/src/utils/bridge.ts` — 新增 `getGpuState()` 方法 (RealBridge + MockBridge)

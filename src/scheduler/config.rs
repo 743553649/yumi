@@ -218,7 +218,6 @@ pub struct FunctionToggles {
     pub io_optimization: bool,
 }
 
-
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     #[serde(default, alias = "Meta")]
