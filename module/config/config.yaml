@@ -9,6 +9,7 @@ meta:
 function:
   CpuIdleScalingGovernor: false
   IOOptimization: true
+  GPUControl: false
 
 # IO 设置
 IO_Settings:

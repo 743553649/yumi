@@ -30,7 +30,7 @@ use anyhow::Result;
 
 use crate::common::{self, DaemonEvent};
 use crate::fluent_args;
-use crate::i18n::{t, load_language, t_with_args};
+use crate::i18n::{load_language, t, t_with_args};
 use crate::logger;
 use crate::utils;
 
@@ -58,23 +58,34 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     // CPUSet 共享配置（支持热重载）
     let cpuset_path = config_dir.join("cpuset.yaml");
     let shared_cpuset_config = Arc::new(std::sync::RwLock::new(
-        crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path).unwrap_or_default()
+        crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path)
+            .unwrap_or_default(),
     ));
     let cpuset_config_watcher = shared_cpuset_config.clone();
 
     // CPU 静止下潜共享配置（支持热重载）
     let idle_dive_path = config_dir.join("idle_dive.yaml");
     let shared_idle_dive_config = Arc::new(std::sync::RwLock::new(
-        crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path).unwrap_or_default()
+        crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path)
+            .unwrap_or_default(),
     ));
     let idle_dive_config_watcher = shared_idle_dive_config.clone();
 
     // TouchBoost 共享配置（支持热重载）
     let touch_boost_path = config_dir.join("touch_boost.yaml");
     let shared_touch_boost_config = Arc::new(std::sync::RwLock::new(
-        crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path).unwrap_or_default()
+        crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path)
+            .unwrap_or_default(),
     ));
     let touch_boost_config_watcher = shared_touch_boost_config.clone();
+
+    // GPU 共享配置（支持热重载）
+    let gpu_path = config_dir.join("gpu.yaml");
+    let shared_gpu_config = Arc::new(std::sync::RwLock::new(
+        crate::utils::read_config::<crate::gpu_manager::GpuConfig, _>(&gpu_path)
+            .unwrap_or_default(),
+    ));
+    let gpu_config_watcher = shared_gpu_config.clone();
 
     thread::Builder::new()
         .name("config_watcher".to_string())
@@ -83,55 +94,123 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 let changed_file = match utils::watch_path_for_file(&config_dir) {
                     Ok(file) => file,
                     Err(e) => {
-                        log::error!("{}", t_with_args("config-watch-error", &fluent_args!("error" => e.to_string())));
+                        log::error!(
+                            "{}",
+                            t_with_args(
+                                "config-watch-error",
+                                &fluent_args!("error" => e.to_string())
+                            )
+                        );
                         continue;
                     }
                 };
 
-                log::info!("{}", t_with_args("config-file-changed", &fluent_args!("file" => changed_file.clone())));
+                log::info!(
+                    "{}",
+                    t_with_args(
+                        "config-file-changed",
+                        &fluent_args!("file" => changed_file.clone())
+                    )
+                );
 
                 // 主配置文件变更
                 if changed_file == "config.yaml" || changed_file.is_empty() {
-                    let old_lang = config_clone.read().unwrap_or_else(|e| e.into_inner()).meta.language.clone();
+                    let old_lang = config_clone
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .meta
+                        .language
+                        .clone();
 
                     match Config::from_file(config_path.to_str().unwrap_or("")) {
                         Ok(new_config) => {
                             logger::update_level(&new_config.meta.loglevel);
                             *config_clone.write().unwrap_or_else(|e| e.into_inner()) = new_config;
 
-                            let new_lang = config_clone.read().unwrap_or_else(|e| e.into_inner()).meta.language.clone();
-                            if old_lang != new_lang { load_language(&new_lang); }
+                            let new_lang = config_clone
+                                .read()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .meta
+                                .language
+                                .clone();
+                            if old_lang != new_lang {
+                                load_language(&new_lang);
+                            }
 
                             log::info!("{}", t("config-reloaded-success"));
 
-                            let scheduler = CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
+                            let scheduler =
+                                CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
                             if let Err(e) = scheduler.apply_system_tweaks() {
-                                log::error!("{}", t_with_args("config-apply-tweaks-failed", &fluent_args!("error" => e.to_string())));
+                                log::error!(
+                                    "{}",
+                                    t_with_args(
+                                        "config-apply-tweaks-failed",
+                                        &fluent_args!("error" => e.to_string())
+                                    )
+                                );
                             }
                         }
-                        Err(load_err) => log::error!("{}", t_with_args("config-reload-fail", &fluent_args!("error" => load_err.to_string()))),
+                        Err(load_err) => log::error!(
+                            "{}",
+                            t_with_args(
+                                "config-reload-fail",
+                                &fluent_args!("error" => load_err.to_string())
+                            )
+                        ),
                     }
                 }
 
                 // CPUSet 配置变更
                 if changed_file == "cpuset.yaml" || changed_file.is_empty() {
-                    let new_cpuset = crate::utils::read_config::<crate::cpuset_manager::CpuSetConfig, _>(&cpuset_path).unwrap_or_default();
-                    *cpuset_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_cpuset;
+                    let new_cpuset = crate::utils::read_config::<
+                        crate::cpuset_manager::CpuSetConfig,
+                        _,
+                    >(&cpuset_path)
+                    .unwrap_or_default();
+                    *cpuset_config_watcher
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner()) = new_cpuset;
                     log::info!("{}", t("cpuset-config-reloaded"));
                 }
 
                 // IdleDive 配置变更
                 if changed_file == "idle_dive.yaml" || changed_file.is_empty() {
-                    let new_idle_dive = crate::utils::read_config::<crate::idle_dive::IdleDiveConfig, _>(&idle_dive_path).unwrap_or_default();
-                    *idle_dive_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_idle_dive;
+                    let new_idle_dive = crate::utils::read_config::<
+                        crate::idle_dive::IdleDiveConfig,
+                        _,
+                    >(&idle_dive_path)
+                    .unwrap_or_default();
+                    *idle_dive_config_watcher
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner()) = new_idle_dive;
                     log::info!("{}", t("idle-dive-config-reloaded"));
                 }
 
                 // TouchBoost 配置变更
                 if changed_file == "touch_boost.yaml" || changed_file.is_empty() {
-                    let new_touch_boost = crate::utils::read_config::<crate::touch_boost::TouchBoostConfig, _>(&touch_boost_path).unwrap_or_default();
-                    *touch_boost_config_watcher.write().unwrap_or_else(|e| e.into_inner()) = new_touch_boost;
+                    let new_touch_boost = crate::utils::read_config::<
+                        crate::touch_boost::TouchBoostConfig,
+                        _,
+                    >(&touch_boost_path)
+                    .unwrap_or_default();
+                    *touch_boost_config_watcher
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner()) = new_touch_boost;
                     log::info!("{}", t("touch-boost-config-reloaded"));
+                }
+
+                // GPU 配置变更
+                if changed_file == "gpu.yaml" || changed_file.is_empty() {
+                    let new_gpu = crate::utils::read_config::<
+                        crate::gpu_manager::GpuConfig,
+                        _,
+                    >(&gpu_path)
+                    .unwrap_or_default();
+                    *gpu_config_watcher
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner()) = new_gpu;
+                    log::info!("{}", t("gpu-config-reloaded"));
                 }
             }
         })?;

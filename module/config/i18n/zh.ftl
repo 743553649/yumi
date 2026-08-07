@@ -156,3 +156,13 @@ gpu-mode-switch = [GPU] 模式切换: →{ $mode } 延迟={ $ms }ms 频率={ $fr
 gpu-enter-doze = [GPU] 进入息屏 GPU 节能模式
 gpu-exit-doze = [GPU] 退出息屏 GPU 节能模式
 gpu-release = [GPU] 已释放 GPU 控制，恢复默认值
+gpu-unavailable = [GPU] kgsl sysfs 不可用，GPU 控制已禁用
+gpu-insufficient-freqs = [GPU] 可用频率不足 ({ $count })，GPU 控制已禁用
+gpu-init-failed = [GPU] 初始化失败: { $error }
+gpu-write-failed = [GPU] 写入 { $node } 失败: { $error }
+gpu-circuit-breaker = [GPU] 写入熔断器触发，冷却 { $secs }s
+gpu-watchdog-detected = [GPU] 看门狗检测到 GPU 频率卡死
+gpu-watchdog-recovered = [GPU] 看门狗恢复成功
+gpu-watchdog-hung = [GPU] GPU 无响应，放弃控制权
+gpu-keepalive-started = [GPU] 保活线程已启动 (间隔 { $secs }s)
+gpu-config-reloaded = [GPU] 配置已热重载

@@ -157,3 +157,13 @@ gpu-mode-switch = [GPU] Mode switch: →{ $mode } latency={ $ms }ms freq={ $freq
 gpu-enter-doze = [GPU] Entering screen-off GPU power-saving mode
 gpu-exit-doze = [GPU] Exiting screen-off GPU power-saving mode
 gpu-release = [GPU] Released GPU control, restored defaults
+gpu-unavailable = [GPU] kgsl sysfs unavailable, GPU control disabled
+gpu-insufficient-freqs = [GPU] Insufficient frequencies ({ $count }), GPU control disabled
+gpu-init-failed = [GPU] Initialization failed: { $error }
+gpu-write-failed = [GPU] Write to { $node } failed: { $error }
+gpu-circuit-breaker = [GPU] Write circuit breaker tripped, cooling { $secs }s
+gpu-watchdog-detected = [GPU] Watchdog detected GPU frequency stall
+gpu-watchdog-recovered = [GPU] Watchdog recovered successfully
+gpu-watchdog-hung = [GPU] GPU unresponsive, relinquishing control
+gpu-keepalive-started = [GPU] Keepalive thread started (interval { $secs }s)
+gpu-config-reloaded = [GPU] Config hot-reloaded

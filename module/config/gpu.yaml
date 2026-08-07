@@ -1,0 +1,31 @@
+# ── GPU 控制配置 ──
+# 扁平顶层结构，无包装键（与 idle_dive.yaml / touch_boost.yaml 一致）
+enabled: true
+
+modes:
+  powersave:
+    max_gpuclk: 0        # 0 = 自动选择最低档
+    governor: "powersave"
+    force_no_nap: 0
+
+  balance:
+    max_gpuclk: 0        # 0 = 自动选择 40% 分位频率
+    governor: "simple_ondemand"
+    force_no_nap: 0
+
+  performance:
+    max_gpuclk: 0        # 0 = 自动选择 85% 分位频率
+    governor: "msm-adreno-tz"
+    force_no_nap: 0
+
+  fast:
+    max_gpuclk: 0        # 0 = 自动选择最高档
+    governor: "msm-adreno-tz"
+    force_no_nap: 1
+
+  doze:
+    max_gpuclk: 0        # 0 = 自动选择最低档
+    governor: "powersave"
+    force_no_nap: 0
+
+keepalive_interval_s: 5
