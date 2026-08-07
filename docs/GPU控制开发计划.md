@@ -147,7 +147,7 @@ keepalive_interval_s: 5
 | `gpu-release` | [GPU] 已释放控制权，恢复默认设置 | [GPU] Released control, restored to defaults |
 | `gpu-write-failed` | [GPU] 写入 { $node } 失败: { $error } | [GPU] Write to { $node } failed: { $error } |
 | `gpu-circuit-breaker` | [GPU] 写入熔断器触发，冷却 { $secs }s | [GPU] Write circuit breaker tripped, cooling { $secs }s |
-| `gpu-watchdog-stalled` | [GPU] 看门狗检测到 GPU 频率卡死 | [GPU] Watchdog detected GPU frequency stall |
+| `gpu-watchdog-detected` | [GPU] 看门狗检测到 GPU 频率卡死 | [GPU] Watchdog detected GPU frequency stall |
 | `gpu-watchdog-recovered` | [GPU] 看门狗恢复成功 | [GPU] Watchdog recovered successfully |
 | `gpu-watchdog-hung` | [GPU] GPU 无响应，放弃控制权 | [GPU] GPU unresponsive, relinquishing control |
 | `gpu-keepalive-started` | [GPU] 保活线程已启动 (间隔 { $secs }s) | [GPU] Keepalive thread started (interval { $secs }s) |
@@ -255,25 +255,15 @@ thread::Builder::new()
 
 ## 阶段 4：WebUI 侧 GPU 状态显示
 
-**说明**：放弃 Android App 侧修改（`SystemDashboardMonitor.java` 等 Java/(已移除) 文件），改为在 WebUI 前端增加 GPU 状态卡片。WebUI 通过 IPC 协议直接从 daemon 读取 GPU 状态，无需修改任何 Android App 代码。
+**说明**：放弃 Android App 侧修改（`SystemDashboardMonitor.java` 等文件，Android App 已移除），改为在 WebUI 前端增加 GPU 状态卡片。WebUI 通过 KernelSU bridge 的 Root Shell 直接读取 GPU sysfs（`/sys/class/kgsl/kgsl-3d0/`），无需 daemon 端 IPC 协议。
 
-### 4.1 Rust IPC 新增 `get_gpu_state` 协议
+### 4.1 说明：无需新增 IPC 协议
 
-- 在 `src/(已移除).rs` 的 `process_command` 函数中新增命令分支：
+`ipc_server.rs` 已随 Android App 移除。WebUI 通过 `KernelSU.exec()` 直接 `cat /sys/class/kgsl/kgsl-3d0/gpuclk` 读取 GPU 频率，无需经过 daemon TCP IPC 代理。
 
-```rust
-"get_gpu_state" => {
-    // 读取 GPU 当前频率 + 模型 + 利用率
-    let gpuclk_path = "/sys/class/kgsl/kgsl-3d0/gpuclk";
-    let model_path = "/sys/class/kgsl/kgsl-3d0/gpu_model";
-    let gpuclk = std::fs::read_to_string(gpuclk_path).unwrap_or_default().trim().to_string();
-    let model = std::fs::read_to_string(model_path).unwrap_or_default().trim().to_string();
-    format!("gpuclk={}\nmodel={}\n---END_GPU_STATE---\n", gpuclk, model)
-}
-```
-
-- 遵循既有 IPC 协议风格（文本行协议，`---END_GPU_STATE---` 终止符与 `get_log` 的 `---END_LOG---` 一致）
-- **熔断说明**：`(已移除).rs` 是跨模块公共文件，实施前需确认
+- **不再需要** `src/ipc_server.rs` 新增 `get_gpu_state` 命令分支
+- **不再需要** Rust 端新增 IPC 协议定义
+- WebUI 的 `bridge.ts` 直接调用 `cat` sysfs 节点（已有 Root 权限）
 
 ### 4.2 WebUI bridge.ts 新增 `getGpuState` 方法
 
@@ -312,8 +302,8 @@ async getGpuState(): Promise<{ gpuclk: string; model: string }> {
   <div class="status-indicator" style="background: var(--accent-purple)"></div>
   <van-icon name="video-o" size="28" color="var(--accent-purple)" />
   <div class="info">
-    <h2>{{ gpuModel }}</h2>
-    <p>{{ $t('gpu_freq', { freq: gpuClk }) }}</p>
+    <h2>{{ store.gpuState.model }}</h2>
+    <p>{{ t('gpu_frequency', { freq: formatGpuFreq(store.gpuState.frequency) }) }}</p>
   </div>
 </div>
 ```
@@ -327,10 +317,10 @@ async getGpuState(): Promise<{ gpuclk: string; model: string }> {
 
 ```typescript
 // zh.ts
-gpu_freq: 'GPU 频率: {freq} Hz'
+gpu_frequency: 'GPU 频率: {freq}'
 
 // en.ts
-gpu_freq: 'GPU Freq: {freq} Hz'
+gpu_frequency: 'GPU Freq: {freq}'
 ```
 
 ### 4.5 WebUI store.ts 新增 GPU 状态管理
@@ -340,15 +330,13 @@ gpu_freq: 'GPU Freq: {freq} Hz'
 ```typescript
 state: () => ({
   // ... 现有字段
-  gpuModel: 'N/A',
-  gpuClk: 'N/A',
+  gpuState: { available: false, frequency: 0, model: '' },
 }),
 actions: {
   // ... 现有 actions
   async getGpuState() {
     const state = await Bridge.getGpuState();
-    this.gpuModel = state.model;
-    this.gpuClk = state.gpuclk;
+    this.gpuState = state;
   },
 }
 ```
@@ -387,29 +375,28 @@ cargo fmt --check
 | 熔断节点 | 触发条件 | 动作 |
 |:---|:---|:---|
 | 阶段 3 集成到 runner.rs | 需要修改 IPC 线程核心事件循环 | 仅按规范增删，不改动现有逻辑流程；涉及跨模块核心文件时提前向用户确认 |
-| 阶段 4 WebUI 侧 | 涉及 `bridge.ts` 新增 Root Shell 直接读取 GPU sysfs 节点 | 仅对 WebUI 特定文件修改，不影响 Rust/Android App。如需改 `(已移除).rs` 需提前确认 |
+| 阶段 4 WebUI 侧 | 涉及 `bridge.ts` 新增 Root Shell 直接读取 GPU sysfs 节点 | 仅对 WebUI 特定文件修改，不影响 Rust 核心代码。ipc_server.rs 已移除，无需改 Rust IPC |
 | 任何阶段连续 3 次编译失败 | `cargo check` / `clippy` 报错 | 整理错误日志 + 已尝试修复路径，向用户求助 |
 | gpu.yaml 配置键冲突 | 与 config.yaml 或其他配置格式不一致 | 熔断，检查现有配置模式对齐后再继续 |
 
 ---
 
-## 交付检查清单
+## 交付检查清单（全部已完成）
 
-- [ ] `src/gpu_manager/mod.rs` — GpuManager 主控制器
-- [ ] `src/gpu_manager/config.rs` — GpuConfig 配置结构体
-- [ ] `src/gpu_manager/compat.rs` — 兼容性探测
-- [ ] `src/gpu_manager/watchdog.rs` — GPU 健康监控与熔断器
-- [ ] `module/config/gpu.yaml` — GPU 控制配置文件
-- [ ] `module/config/config.yaml` — 增加 `function.GPUControl` 开关
-- [ ] `module/config/i18n/zh.ftl` + `en.ftl` — 新增 ~15 个 GPU 翻译键
-- [ ] `src/main.rs` — 注册 `gpu_manager` 模块
-- [ ] `src/scheduler/runner.rs` — 集成 GpuManager（初始化、模式切换、息屏/亮屏、保活线程 + 热重载）
-- [ ] `webui/src/utils/bridge.ts` — 新增 `getGpuState()` 方法 (RealBridge + MockBridge)
-- [ ] `webui/src/stores/scheduler.ts` — 新增 gpuModel / gpuClk 状态 + getGpuState action
-- [ ] `webui/src/views/HomeView.vue` — 新增 GPU 状态卡片（频率 + 型号）
-- [ ] `webui/src/i18n/locales/zh.ts` + `en.ts` — 新增 `gpu_freq` 翻译键
-- [ ] 可选：`src/(已移除).rs` — 新增 `get_gpu_state` IPC 协议命令（若 WebUI 需要 daemon 代理读取）
-- [ ] Rust 编译通过（`cargo check --target aarch64-linux-android`）
-- [ ] Clippy 无新警告
-- [ ] 代码格式化通过（`cargo fmt --check`）
-- [ ] 文档：工作日志同步
+- [x] `src/gpu_manager/mod.rs` — GpuManager 主控制器（603 行）
+- [x] `src/gpu_manager/config.rs` — GpuConfig 配置结构体（153 行）
+- [x] `src/gpu_manager/compat.rs` — 兼容性探测（185 行）
+- [x] `src/gpu_manager/watchdog.rs` — GPU 健康监控与熔断器（226 行）
+- [x] `module/config/gpu.yaml` — GPU 控制配置文件（完整 5 模式）
+- [x] `module/config/config.yaml` — 增加 `function.GPUControl` 开关
+- [x] `module/config/i18n/zh.ftl` + `en.ftl` — 新增 16 个 GPU 翻译键
+- [x] `src/main.rs` — 注册 `gpu_manager` 模块
+- [x] `src/scheduler/runner.rs` — 集成 GpuManager（初始化、模式切换、息屏/亮屏、保活线程 + 热重载）
+- [x] `webui/src/utils/bridge.ts` — 新增 `getGpuState()` 方法 (RealBridge + MockBridge)
+- [x] `webui/src/stores/scheduler.ts` — 新增 gpuState 状态 + getGpuState action
+- [x] `webui/src/views/HomeView.vue` — 新增 GPU 状态卡片（频率 + 型号）
+- [x] `webui/src/i18n/locales/zh.ts` + `en.ts` — 新增 `gpu_frequency` 翻译键
+- [x] Rust 编译通过（`cargo check --target aarch64-linux-android`）
+- [x] Clippy 无新警告
+- [x] 代码格式化通过（`cargo fmt --check`）
+- [x] 文档：工作日志同步完成
