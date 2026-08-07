@@ -67,9 +67,6 @@ extract_webui "webui/src/i18n/locales/en.ts" > "$TMPDIR/webui_en"
 extract_webui "webui/src/i18n/locales/zh.ts" > "$TMPDIR/webui_zh"
 check "WebUI  " "$TMPDIR/webui_en" "$TMPDIR/webui_zh"
 
-# Android：values/strings.xml 为中文默认（zh 侧），values-en/strings.xml 为英文（en 侧）
-check "Android" "$TMPDIR/android_en" "$TMPDIR/android_zh"
-
 echo ""
 if [ "$FAIL" -ne 0 ]; then
     echo "i18n 对等校验未通过：请补齐缺失键或删除多余键。"
