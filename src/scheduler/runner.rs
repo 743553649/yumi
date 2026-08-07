@@ -251,15 +251,23 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     .map(|c| c.governor.as_str())
                     .unwrap_or("msm-adreno-tz");
 
-                // Re-write critical GPU sysfs nodes
+                // Re-write critical GPU sysfs nodes to prevent third-party override
                 let kgsl_path = std::path::Path::new("/sys/class/kgsl/kgsl-3d0");
                 if kgsl_path.exists() {
-                    // Re-write max_gpuclk (0 = auto, keep governor in control)
-                    let _ = crate::utils::try_write_file(kgsl_path.join("max_gpuclk"), b"0");
-                    // Re-write governor
+                    // Only keep alive the governor (most common override target).
+                    // max_gpuclk is already set by GpuManager on every mode switch
+                    // and doesn't need keepalive protection.
                     let _ = crate::utils::try_write_file(
                         kgsl_path.join("devfreq/governor"),
                         gov.as_bytes(),
+                    );
+                    // force_no_nap: for fast mode, re-apply if overridden
+                    let nap_val = mode_cfg
+                        .map(|c| if c.force_no_nap > 0 { b"1" as &[u8] } else { b"0" as &[u8] })
+                        .unwrap_or(b"0");
+                    let _ = crate::utils::try_write_file(
+                        kgsl_path.join("force_no_nap"),
+                        nap_val,
                     );
                 }
             }
