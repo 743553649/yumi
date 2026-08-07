@@ -247,7 +247,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 }
 
                 let mode_cfg = cfg.modes.get(&mode);
-                let gov = mode_cfg
+                let raw_gov = mode_cfg
                     .map(|c| c.governor.as_str())
                     .unwrap_or("msm-adreno-tz");
 
@@ -260,18 +260,39 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     .find(|p| p.exists());
 
                 if let Some(kgsl_path) = found_path {
-                    // Only keep alive the governor if it's writable (some kernels lock it read-only).
-                    // max_gpuclk is already set by GpuManager on every mode switch
-                    // and doesn't need keepalive protection.
+                    // Validate governor: read available governors from sysfs,
+                    // apply fallback chain if requested governor is not available.
                     let gov_path = kgsl_path.join("devfreq/governor");
                     if gov_path.exists()
                         && nix::unistd::access(&gov_path, nix::unistd::AccessFlags::W_OK).is_ok()
                     {
-                        let _ = crate::utils::try_write_file(&gov_path, gov.as_bytes());
+                        let available_govs =
+                            std::fs::read_to_string(kgsl_path.join("devfreq/available_governors"))
+                                .map(|c| {
+                                    c.split_whitespace()
+                                        .map(|s| s.to_string())
+                                        .collect::<Vec<_>>()
+                                })
+                                .unwrap_or_default();
+
+                        let validated_gov = if available_govs.iter().any(|g| g == raw_gov) {
+                            raw_gov.to_string()
+                        } else {
+                            let fallbacks = ["msm-adreno-tz", "simple_ondemand", "powersave"];
+                            fallbacks
+                                .iter()
+                                .find(|fb| available_govs.iter().any(|g| g == *fb))
+                                .unwrap_or(&"msm-adreno-tz")
+                                .to_string()
+                        };
+                        let _ = crate::utils::try_write_file(&gov_path, validated_gov.as_bytes());
                     }
-                    // force_no_nap: only write if the node exists (not present on all kernels)
+                    // force_no_nap: only write if the node is writable (some kernels
+                    // expose the node but reject writes with EOPNOTSUPP)
                     let nap_path = kgsl_path.join("force_no_nap");
-                    if nap_path.exists() {
+                    if nap_path.exists()
+                        && nix::unistd::access(&nap_path, nix::unistd::AccessFlags::W_OK).is_ok()
+                    {
                         let nap_val = mode_cfg
                             .map(|c| {
                                 if c.force_no_nap > 0 {

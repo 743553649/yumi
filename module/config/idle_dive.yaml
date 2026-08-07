@@ -13,7 +13,7 @@ enabled: true
 
 # ── 触发/退出阈值 (0.0 ~ 1.0，系统平均 CPU 利用率) ──
 dive_threshold: 0.15      # 平均负载低于 15% 时触发下潜
-exit_threshold: 0.25      # 平均负载高于 25% 时退出下潜
+exit_threshold: 0.20      # 平均负载高于 20% 时退出下潜
 
 # ── 延迟设置 (ms) ──
 dive_delay_ms: 300        # 持续低负载 300ms 后触发

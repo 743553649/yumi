@@ -32,13 +32,13 @@ powersave:
   cpu_load_governor:
     up_threshold: 0.90
     down_threshold: 0.55
-    smoothing_up: 0.30
+    smoothing_up: 0.20
     smoothing_down: 0.70
     down_rate_limit_ticks: 2
     up_rate_limit_ticks: 3
-    headroom_factor: 1.05
-    perf_floor: 0.08
-    perf_ceil: 0.65
+    headroom_factor: 1.02
+    perf_floor: 0.05
+    perf_ceil: 0.55
     perf_init: 0.25
     headroom_ramp: 0.20
     up_jump_threshold: 0.40
@@ -56,18 +56,18 @@ balance:
     up_threshold: 0.75
     down_threshold: 0.45
     smoothing_up: 0.55
-    smoothing_down: 0.35
-    down_rate_limit_ticks: 3
+    smoothing_down: 0.50
+    down_rate_limit_ticks: 2
     up_rate_limit_ticks: 2
     headroom_factor: 1.20
-    perf_floor: 0.12
-    perf_ceil: 1.0
+    perf_floor: 0.08
+    perf_ceil: 0.85
     perf_init: 0.40
     headroom_ramp: 0.15
     up_jump_threshold: 0.35
     slow_up_scale: 0.02
     slow_down_scale: 0.5
-    down_fast_threshold: 0.15
+    down_fast_threshold: 0.20
     down_fast_mult: 3.0
     spike_jump_threshold: 0.35
     spike_decay: 0.5

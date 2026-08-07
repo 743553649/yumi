@@ -121,7 +121,10 @@ pub fn start_monitor_with_shared(
     thread::Builder::new()
         .name("fps_monitor_ebpf".to_string())
         .spawn(move || {
-            if let Ok(rt) = tokio::runtime::Runtime::new() {
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
                 rt.block_on(async {
                     if let Err(e) = fps_monitor::start_fps_loop(tx_fps).await {
                         error!(
@@ -143,7 +146,10 @@ pub fn start_monitor_with_shared(
     thread::Builder::new()
         .name("cpu_monitor_ebpf".to_string())
         .spawn(move || {
-            if let Ok(rt) = tokio::runtime::Runtime::new() {
+            if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
                 rt.block_on(async {
                     if let Err(e) = cpu_monitor::start_cpu_loop(tx_cpu).await {
                         error!(

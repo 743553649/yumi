@@ -28,4 +28,4 @@ modes:
     governor: "powersave"
     force_no_nap: 0
 
-keepalive_interval_s: 5
+keepalive_interval_s: 10

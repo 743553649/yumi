@@ -213,7 +213,10 @@ impl GpuManager {
         if !self.enabled || !self.compat.available {
             return;
         }
-        if !self.write_max_gpuclk(0) {
+        // Write max frequency (0 means "no limit" but some kernels reject it,
+        // so we use the actual maximum from available_frequencies)
+        let max_freq = self.compat.frequencies.last().copied().unwrap_or(0);
+        if !self.write_max_gpuclk(max_freq) {
             log::warn!("[GPU] release: failed to restore max_gpuclk");
         }
         if !self.write_governor("msm-adreno-tz") {

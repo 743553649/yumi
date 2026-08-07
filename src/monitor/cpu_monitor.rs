@@ -158,7 +158,7 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
 
         let mut log_counter: u32 = 0;
 
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(200));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
 
         loop {
             interval.tick().await;
