@@ -38,6 +38,13 @@ const copyQQGroup = async () => {
 };
 
 const currentModeMeta = computed(() => modes.value.find(m => m.key === store.currentMode));
+
+const formatGpuFreq = (hz: number): string => {
+  if (hz >= 1_000_000_000) return (hz / 1_000_000_000).toFixed(2) + ' GHz';
+  if (hz >= 1_000_000) return (hz / 1_000_000).toFixed(0) + ' MHz';
+  if (hz >= 1_000) return (hz / 1_000).toFixed(0) + ' KHz';
+  return hz + ' Hz';
+};
 </script>
 
 <template>
@@ -76,6 +83,15 @@ const currentModeMeta = computed(() => modes.value.find(m => m.key === store.cur
         <div class="info">
           <h2>{{ currentModeMeta?.name || t('unknown_mode') }}</h2>
           <p>{{ t('current_status') }}</p>
+        </div>
+      </div>
+
+      <div class="status-card glass-card fade-in-up" style="animation-delay: 0.15s" v-if="store.gpuState.available">
+        <div class="status-indicator" style="background: var(--accent-purple)"></div>
+        <van-icon name="video-o" size="28" color="var(--accent-purple)" />
+        <div class="info">
+          <h2>{{ store.gpuState.model }}</h2>
+          <p>{{ t('gpu_frequency', { freq: formatGpuFreq(store.gpuState.frequency) }) }}</p>
         </div>
       </div>
     </div>

@@ -67,5 +67,7 @@ export default {
   path_name_placeholder: 'Path name, e.g. path4',
   name_empty: 'Name cannot be empty',
   governor_exists: 'Governor already exists',
-  path_exists: 'Path already exists'
+  path_exists: 'Path already exists',
+  gpu_frequency: 'GPU Freq: {freq}',
+  gpu_unavailable: 'GPU Unavailable',
 } as const;

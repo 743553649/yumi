@@ -85,5 +85,10 @@ export const MockBridge = {
   },
   async getCpuPolicies(): Promise<number[]> { return []; },
   async getAvailableFreqs(policyNum: number): Promise<string[]> { return []; },
-  async getAvailableGovernors(policyNum: number): Promise<string[]> { return []; }
+  async getAvailableGovernors(policyNum: number): Promise<string[]> { return []; },
+
+  async getGpuState(): Promise<{ available: boolean; frequency: number; model: string }> {
+    await delay(200);
+    return { available: true, frequency: 553000000, model: 'Adreno 830' };
+  }
 };

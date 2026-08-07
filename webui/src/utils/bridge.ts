@@ -145,6 +145,23 @@ const RealBridge = {
     } catch (e) {
       return [];
     }
+  },
+
+  async getGpuState(): Promise<{ available: boolean; frequency: number; model: string }> {
+    try {
+      const { errno: testErrno } = await exec(`test -f /sys/class/kgsl/kgsl-3d0/gpu_model`);
+      if (testErrno !== 0) return { available: false, frequency: 0, model: '' };
+
+      const { stdout: modelRaw } = await exec(`cat /sys/class/kgsl/kgsl-3d0/gpu_model 2>/dev/null || echo unknown`);
+      const model = modelRaw.trim() || 'unknown';
+
+      const { stdout: freqRaw } = await exec(`cat /sys/class/kgsl/kgsl-3d0/gpuclk 2>/dev/null || echo 0`);
+      const frequency = parseInt(freqRaw.trim(), 10) || 0;
+
+      return { available: true, frequency, model };
+    } catch (e) {
+      return { available: false, frequency: 0, model: '' };
+    }
   }
 };
 
