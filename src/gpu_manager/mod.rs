@@ -253,15 +253,13 @@ impl GpuManager {
             _ => self.auto_calculate_freq(mode),
         };
 
-        let governor = mode_cfg
-            .map(|c| c.governor.clone())
-            .unwrap_or_else(|| {
-                match mode {
-                    "powersave" | "doze" => "powersave",
-                    _ => "msm-adreno-tz",
-                }
-                .to_string()
-            });
+        let governor = mode_cfg.map(|c| c.governor.clone()).unwrap_or_else(|| {
+            match mode {
+                "powersave" | "doze" => "powersave",
+                _ => "msm-adreno-tz",
+            }
+            .to_string()
+        });
 
         let force_no_nap = mode_cfg
             .map(|c| if c.force_no_nap > 0 { 1 } else { 0 })
@@ -404,14 +402,12 @@ impl GpuManager {
             "[GPU] Failed to set governor '{}' after retries, falling back to msm-adreno-tz",
             gov
         );
-        if writer.write_value_force_str("msm-adreno-tz") {
-            if let Ok(content) =
+        if writer.write_value_force_str("msm-adreno-tz")
+            && let Ok(content) =
                 std::fs::read_to_string(self.compat.kgsl_path.join("devfreq/governor"))
-            {
-                if content.trim() == "msm-adreno-tz" {
-                    return true;
-                }
-            }
+            && content.trim() == "msm-adreno-tz"
+        {
+            return true;
         }
         log::error!(
             "[GPU] Fallback governor write also failed, governor control may be inconsistent"

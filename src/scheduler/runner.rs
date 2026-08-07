@@ -24,7 +24,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
@@ -202,15 +202,65 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                 // GPU 配置变更
                 if changed_file == "gpu.yaml" || changed_file.is_empty() {
-                    let new_gpu = crate::utils::read_config::<
-                        crate::gpu_manager::GpuConfig,
-                        _,
-                    >(&gpu_path)
-                    .unwrap_or_default();
+                    let new_gpu =
+                        crate::utils::read_config::<crate::gpu_manager::GpuConfig, _>(&gpu_path)
+                            .unwrap_or_default();
                     *gpu_config_watcher
                         .write()
                         .unwrap_or_else(|e| e.into_inner()) = new_gpu;
                     log::info!("{}", t("gpu-config-reloaded"));
+                }
+            }
+        })?;
+
+    // GPU 保活线程：定期重新写入当前模式的 GPU 配置，防止第三方覆盖
+    let gpu_keepalive_config = shared_gpu_config.clone();
+    let gpu_keepalive_mode = shared_mode_name.clone();
+    thread::Builder::new()
+        .name("gpu_keepalive".to_string())
+        .spawn(move || {
+            let interval = Duration::from_secs(
+                gpu_keepalive_config
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .keepalive_interval_s,
+            );
+            log::info!(
+                "{}",
+                t_with_args(
+                    "gpu-keepalive-started",
+                    &fluent_args!("secs" => interval.as_secs().to_string())
+                )
+            );
+            loop {
+                thread::sleep(interval);
+                let mode = gpu_keepalive_mode
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone();
+                let cfg = gpu_keepalive_config
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
+
+                if !cfg.enabled {
+                    continue;
+                }
+
+                let mode_cfg = cfg.modes.get(&mode);
+                let gov = mode_cfg
+                    .map(|c| c.governor.as_str())
+                    .unwrap_or("msm-adreno-tz");
+
+                // Re-write critical GPU sysfs nodes
+                let kgsl_path = std::path::Path::new("/sys/class/kgsl/kgsl-3d0");
+                if kgsl_path.exists() {
+                    // Re-write max_gpuclk (0 = auto, keep governor in control)
+                    let _ = crate::utils::try_write_file(kgsl_path.join("max_gpuclk"), b"0");
+                    // Re-write governor
+                    let _ = crate::utils::try_write_file(
+                        kgsl_path.join("devfreq/governor"),
+                        gov.as_bytes(),
+                    );
                 }
             }
         })?;
@@ -222,6 +272,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     // ==========================================
     let config_clone = shared_config.clone();
     let mode_clone = shared_mode_name.clone();
+    let shared_gpu_config_for_ipc = shared_gpu_config.clone();
 
     thread::Builder::new()
         .name("scheduler_ipc".to_string())
@@ -264,6 +315,15 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 );
             }
 
+            // GPU 控制器：Adreno GPU 频率与调速器管理
+            let gpu_config = shared_gpu_config_for_ipc.clone();
+            let mut gpu_manager = crate::gpu_manager::GpuManager::new(
+                &gpu_config.read().unwrap_or_else(|e| e.into_inner())
+            );
+            if let Err(e) = gpu_manager.init() {
+                log::error!("{}", t_with_args("gpu-init-failed", &fluent_args!("error" => e.to_string())));
+            }
+
             let rules_path = crate::monitor::config::get_rules_path();
             let mut current_rules = crate::utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path).unwrap_or_default();
 
@@ -300,6 +360,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 }
                 // 启动时应用当前模式的 CPUSet 分配
                 let _ = cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).apply_mode(&current_mode);
+
+                // 启动时 GPU 跟随当前模式
+                let _ = gpu_manager.apply_mode(&current_mode);
             }
 
             for msg in rx {
@@ -336,6 +399,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             cpu_governor.init_policies(&doze_cfg);
                             cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_screen_off();
+                            gpu_manager.enter_doze();
                         } else {
                             log::info!("{}", t("scheduler-doze-restore"));
 
@@ -358,6 +422,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             // 亮屏恢复 CPUSet 分配（游戏模式使用 performance 策略）
                             let restore_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&current_mode);
                             cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_screen_on(restore_mode);
+                            gpu_manager.exit_doze(&current_mode);
                         }
                     },
 
@@ -381,6 +446,11 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             if is_screen_on && cpuset_manager.read().unwrap_or_else(|e| e.into_inner()).current_mode() != mode {
                                 let cpuset_mode = crate::cpuset_manager::CpuSetManager::mode_to_cpuset_mode(&mode);
                                 cpuset_manager.write().unwrap_or_else(|e| e.into_inner()).on_mode_change(cpuset_mode);
+                            }
+
+                            // GPU 跟随模式切换（息屏时 GPU 保持在 doze 模式）
+                            if is_screen_on {
+                                let _ = gpu_manager.apply_mode(&mode);
                             }
 
                             if mode != "fas" {
