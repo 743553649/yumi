@@ -33,6 +33,8 @@ pub struct GpuCompatInfo {
     pub gpu_model: String,
     /// Whether governor switching is supported
     pub has_governor_control: bool,
+    /// Whether the devfreq/governor node is writable (some kernels lock it read-only)
+    pub governor_writable: bool,
     /// Whether frequency control is supported
     pub has_freq_control: bool,
 }
@@ -47,6 +49,7 @@ impl GpuCompatInfo {
             governors: Vec::new(),
             gpu_model: String::new(),
             has_governor_control: false,
+            governor_writable: false,
             has_freq_control: false,
         }
     }
@@ -79,13 +82,23 @@ pub fn probe_compat() -> GpuCompatInfo {
     let gpu_model = read_gpu_model(&kgsl_path);
 
     let has_governor_control = !governors.is_empty();
+    let governor_writable = if has_governor_control {
+        nix::unistd::access(
+            &kgsl_path.join("devfreq/governor"),
+            nix::unistd::AccessFlags::W_OK,
+        )
+        .is_ok()
+    } else {
+        false
+    };
     let has_freq_control = !frequencies.is_empty();
 
     log::info!(
-        "[GPU] Detected {} | freqs={} governors={}",
+        "[GPU] Detected {} | freqs={} governors={} gov_writable={}",
         gpu_model,
         frequencies.len(),
-        governors.len()
+        governors.len(),
+        governor_writable
     );
 
     GpuCompatInfo {
@@ -95,6 +108,7 @@ pub fn probe_compat() -> GpuCompatInfo {
         governors,
         gpu_model,
         has_governor_control,
+        governor_writable,
         has_freq_control,
     }
 }

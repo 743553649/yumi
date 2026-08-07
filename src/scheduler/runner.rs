@@ -254,21 +254,29 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 // Re-write critical GPU sysfs nodes to prevent third-party override
                 let kgsl_path = std::path::Path::new("/sys/class/kgsl/kgsl-3d0");
                 if kgsl_path.exists() {
-                    // Only keep alive the governor (most common override target).
+                    // Only keep alive the governor if it's writable (some kernels lock it read-only).
                     // max_gpuclk is already set by GpuManager on every mode switch
                     // and doesn't need keepalive protection.
-                    let _ = crate::utils::try_write_file(
-                        kgsl_path.join("devfreq/governor"),
-                        gov.as_bytes(),
-                    );
-                    // force_no_nap: for fast mode, re-apply if overridden
-                    let nap_val = mode_cfg
-                        .map(|c| if c.force_no_nap > 0 { b"1" as &[u8] } else { b"0" as &[u8] })
-                        .unwrap_or(b"0");
-                    let _ = crate::utils::try_write_file(
-                        kgsl_path.join("force_no_nap"),
-                        nap_val,
-                    );
+                    let gov_path = kgsl_path.join("devfreq/governor");
+                    if gov_path.exists()
+                        && nix::unistd::access(&gov_path, nix::unistd::AccessFlags::W_OK).is_ok()
+                    {
+                        let _ = crate::utils::try_write_file(&gov_path, gov.as_bytes());
+                    }
+                    // force_no_nap: only write if the node exists (not present on all kernels)
+                    let nap_path = kgsl_path.join("force_no_nap");
+                    if nap_path.exists() {
+                        let nap_val = mode_cfg
+                            .map(|c| {
+                                if c.force_no_nap > 0 {
+                                    b"1" as &[u8]
+                                } else {
+                                    b"0" as &[u8]
+                                }
+                            })
+                            .unwrap_or(b"0");
+                        let _ = crate::utils::try_write_file(&nap_path, nap_val);
+                    }
                 }
             }
         })?;

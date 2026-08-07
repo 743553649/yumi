@@ -79,8 +79,18 @@ impl GpuManager {
             let kgsl = &compat.kgsl_path;
             (
                 Self::open_writer(kgsl.join("max_gpuclk")),
-                Self::open_writer(kgsl.join("devfreq/governor")),
-                Self::open_writer(kgsl.join("force_no_nap")),
+                // Only create governor writer if the node is writable
+                if compat.governor_writable {
+                    Self::open_writer(kgsl.join("devfreq/governor"))
+                } else {
+                    None
+                },
+                // Only create force_no_nap writer if the node exists
+                if kgsl.join("force_no_nap").exists() {
+                    Self::open_writer(kgsl.join("force_no_nap"))
+                } else {
+                    None
+                },
             )
         } else {
             (None, None, None)
@@ -112,12 +122,6 @@ impl GpuManager {
     }
 
     /// Main mode-switch entry point.
-    /// 1. Guard: if !enabled || !compat.available => return Ok(())
-    /// 2. Resolve mode config from GpuConfig (0 → auto-calculate freq)
-    /// 3. Clamp max_gpuclk to a valid frequency
-    /// 4. Validate governor with fallback
-    /// 5. Write max_gpuclk (with retry), write governor (with read-back confirm), write force_no_nap
-    /// 6. Update current_mode, log with latency
     pub fn apply_mode(&mut self, mode: &str) -> anyhow::Result<()> {
         if !self.enabled || !self.compat.available {
             return Ok(());
@@ -215,7 +219,6 @@ impl GpuManager {
         if !self.enabled || !self.compat.available {
             return;
         }
-        // Restore defaults: max_gpuclk=0, governor=msm-adreno-tz, force_no_nap=0
         if !self.write_max_gpuclk(0) {
             log::warn!("[GPU] release: failed to restore max_gpuclk");
         }
@@ -238,10 +241,6 @@ impl GpuManager {
     pub fn compat(&self) -> &GpuCompatInfo {
         &self.compat
     }
-
-    // ════════════════════════════════════════════════════════════
-    // Internal helpers
-    // ════════════════════════════════════════════════════════════
 
     /// Resolve the GPU config for a mode, pulling values from GpuModeConfig
     /// and auto-calculating max_gpuclk when it's 0.
@@ -294,8 +293,6 @@ impl GpuManager {
     }
 
     /// Binary search in frequencies, clamp to nearest valid value.
-    /// If target is 0, return the max frequency (default/unlock).
-    /// If frequencies is empty, return 0.
     fn clamp_max_gpuclk(&self, target: u32) -> u32 {
         let freqs = &self.compat.frequencies;
         if freqs.is_empty() {
@@ -304,33 +301,23 @@ impl GpuManager {
         if target == 0 {
             return *freqs.last().unwrap_or(&0);
         }
-
-        // Binary search for the closest frequency
         match freqs.binary_search(&target) {
-            Ok(idx) => freqs[idx],                                    // exact match
-            Err(0) => freqs[0],                                       // target lower than all
-            Err(idx) if idx >= freqs.len() => *freqs.last().unwrap(), // target higher than all
-            Err(idx) => {
-                // Between two values: pick the lower one (round down)
-                freqs[idx - 1]
-            }
+            Ok(idx) => freqs[idx],
+            Err(0) => freqs[0],
+            Err(idx) if idx >= freqs.len() => *freqs.last().unwrap(),
+            Err(idx) => freqs[idx - 1],
         }
     }
 
     /// Validate governor: check if requested governor is in available_governors.
-    /// Falls back through: msm-adreno-tz → simple_ondemand → powersave
     fn validate_governor(&self, requested: &str) -> Option<String> {
         let available = &self.compat.governors;
         if available.is_empty() {
             return None;
         }
-
-        // Check if requested governor is available
         if available.iter().any(|g| g == requested) {
             return Some(requested.to_string());
         }
-
-        // Fallback chain
         let fallbacks = ["msm-adreno-tz", "simple_ondemand", "powersave"];
         for fb in &fallbacks {
             if available.iter().any(|g| g == fb) {
@@ -342,8 +329,6 @@ impl GpuManager {
                 return Some(fb.to_string());
             }
         }
-
-        // Last resort: use the first available governor
         available.first().cloned()
     }
 
@@ -353,12 +338,9 @@ impl GpuManager {
             Some(w) => w,
             None => return false,
         };
-
         if writer.write_value_force(freq) {
             return true;
         }
-
-        // First retry with brief delay (sysfs may need settle time)
         log::debug!(
             "[GPU] max_gpuclk write failed ({}), retrying after 50ms...",
             freq
@@ -367,17 +349,14 @@ impl GpuManager {
         writer.write_value_force(freq)
     }
 
-    /// Write governor string with read-back confirm (2 retries 100ms apart).
-    /// Falls back to msm-adreno-tz on failure.
+    /// Write governor string with read-back confirm. Falls back to msm-adreno-tz on failure.
     fn write_governor(&mut self, gov: &str) -> bool {
         let writer = match &mut self.governor_writer {
             Some(w) => w,
             None => return false,
         };
-
         for attempt in 0..3 {
             if writer.write_value_force_str(gov) {
-                // Read back to confirm
                 let gov_path = self.compat.kgsl_path.join("devfreq/governor");
                 if let Ok(content) = std::fs::read_to_string(&gov_path) {
                     let readback = content.trim();
@@ -391,13 +370,10 @@ impl GpuManager {
                     );
                 }
             }
-
             if attempt < 2 {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
-
-        // Fallback to msm-adreno-tz with read-back confirm
         log::warn!(
             "[GPU] Failed to set governor '{}' after retries, falling back to msm-adreno-tz",
             gov
@@ -421,12 +397,9 @@ impl GpuManager {
             Some(w) => w,
             None => return false,
         };
-
-        let clamped = if val > 0 { 1 } else { 0 };
-        writer.write_value_force(clamped)
+        writer.write_value_force(if val > 0 { 1 } else { 0 })
     }
 
-    /// Open a FastWriter for a given sysfs path, returning None if it fails.
     fn open_writer(path: impl AsRef<Path>) -> Option<FastWriter> {
         let writer = FastWriter::new(path);
         if writer.is_valid() {
@@ -449,6 +422,7 @@ mod tests {
             governors: governors.iter().map(|s| s.to_string()).collect(),
             gpu_model: "Adreno Test".into(),
             has_governor_control: !governors.is_empty(),
+            governor_writable: !governors.is_empty(),
             has_freq_control: !freqs.is_empty(),
         }
     }
@@ -466,8 +440,6 @@ mod tests {
             current_mode: None,
         }
     }
-
-    // ── clamp_max_gpuclk tests ──
 
     #[test]
     fn test_clamp_gpuclk_empty_list_returns_zero() {
@@ -505,43 +477,42 @@ mod tests {
         assert_eq!(mgr.clamp_max_gpuclk(999), 300);
     }
 
-    // ── validate_governor tests ──
-
     #[test]
     fn test_validate_governor_exact_match() {
         let mgr = make_manager_with_compat(make_compat(
             vec![],
             vec!["msm-adreno-tz", "simple_ondemand"],
         ));
-        let result = mgr.validate_governor("msm-adreno-tz");
-        assert_eq!(result, Some("msm-adreno-tz".to_string()));
+        assert_eq!(
+            mgr.validate_governor("msm-adreno-tz"),
+            Some("msm-adreno-tz".to_string())
+        );
     }
 
     #[test]
     fn test_validate_governor_fallback_chain() {
         let mgr =
             make_manager_with_compat(make_compat(vec![], vec!["simple_ondemand", "powersave"]));
-        // "msm-adreno-tz" not available, should fallback to simple_ondemand
-        let result = mgr.validate_governor("performance");
-        assert_eq!(result, Some("simple_ondemand".to_string()));
+        assert_eq!(
+            mgr.validate_governor("performance"),
+            Some("simple_ondemand".to_string())
+        );
     }
 
     #[test]
     fn test_validate_governor_empty_available_returns_none() {
         let mgr = make_manager_with_compat(make_compat(vec![], vec![]));
-        let result = mgr.validate_governor("msm-adreno-tz");
-        assert_eq!(result, None);
+        assert_eq!(mgr.validate_governor("msm-adreno-tz"), None);
     }
 
     #[test]
     fn test_validate_governor_fallback_to_first() {
         let mgr = make_manager_with_compat(make_compat(vec![], vec!["custom_gov"]));
-        // None of the fallbacks match, should return first available
-        let result = mgr.validate_governor("performance");
-        assert_eq!(result, Some("custom_gov".to_string()));
+        assert_eq!(
+            mgr.validate_governor("performance"),
+            Some("custom_gov".to_string())
+        );
     }
-
-    // ── resolve_mode_config tests ──
 
     #[test]
     fn test_resolve_mode_config_powersave_min_freq() {
@@ -562,24 +533,19 @@ mod tests {
     #[test]
     fn test_resolve_mode_config_balance_40pct() {
         let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
-        let resolved = mgr.resolve_mode_config("balance");
-        // 5 * 40 / 100 = 2 -> index 2 -> 300
-        assert_eq!(resolved.max_gpuclk, 300);
+        assert_eq!(mgr.resolve_mode_config("balance").max_gpuclk, 300);
     }
 
     #[test]
     fn test_resolve_mode_config_performance_85pct() {
         let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
-        let resolved = mgr.resolve_mode_config("performance");
-        // 5 * 85 / 100 = 4 -> index 4 -> 500
-        assert_eq!(resolved.max_gpuclk, 500);
+        assert_eq!(mgr.resolve_mode_config("performance").max_gpuclk, 500);
     }
 
     #[test]
     fn test_resolve_mode_config_fast_max_freq() {
         let mgr = make_manager_with_compat(make_compat(vec![100, 200, 300, 400, 500], vec![]));
-        let resolved = mgr.resolve_mode_config("fast");
-        assert_eq!(resolved.max_gpuclk, 500);
+        assert_eq!(mgr.resolve_mode_config("fast").max_gpuclk, 500);
     }
 
     #[test]
@@ -590,14 +556,12 @@ mod tests {
             governor: "msm-adreno-tz".into(),
             force_no_nap: 0,
         };
-        let resolved = mgr.resolve_mode_config("balance");
-        assert_eq!(resolved.max_gpuclk, 350);
+        assert_eq!(mgr.resolve_mode_config("balance").max_gpuclk, 350);
     }
 
     #[test]
     fn test_resolve_mode_config_empty_freqs_returns_zero() {
         let mgr = make_manager_with_compat(make_compat(vec![], vec![]));
-        let resolved = mgr.resolve_mode_config("balance");
-        assert_eq!(resolved.max_gpuclk, 0);
+        assert_eq!(mgr.resolve_mode_config("balance").max_gpuclk, 0);
     }
 }
