@@ -252,8 +252,17 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     .unwrap_or("msm-adreno-tz");
 
                 // Re-write critical GPU sysfs nodes to prevent third-party override
-                let kgsl_path = std::path::Path::new("/sys/class/kgsl/kgsl-3d0");
-                if kgsl_path.exists() {
+                // Probe kgsl path dynamically (same candidates as GpuCompatInfo::probe_compat)
+                let kgsl_candidates = [
+                    "/sys/class/kgsl/kgsl-3d0",
+                    "/sys/kernel/kgsl/kgsl-3d0",
+                ];
+                let found_path = kgsl_candidates
+                    .iter()
+                    .map(|p| std::path::Path::new(p))
+                    .find(|p| p.exists());
+
+                if let Some(kgsl_path) = found_path {
                     // Only keep alive the governor if it's writable (some kernels lock it read-only).
                     // max_gpuclk is already set by GpuManager on every mode switch
                     // and doesn't need keepalive protection.
