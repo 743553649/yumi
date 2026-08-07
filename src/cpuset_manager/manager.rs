@@ -62,7 +62,13 @@ impl CpuSetManager {
         let root = Self::detect_cpuset_root()?;
         self.cpuset_root = root;
 
-        for group in ["top-app", "foreground", "background", "system-background", "restricted"] {
+        for group in [
+            "top-app",
+            "foreground",
+            "background",
+            "system-background",
+            "restricted",
+        ] {
             let cpus_path = self.cpuset_root.join(group).join("cpus");
             if cpus_path.exists() {
                 let writer = FastWriter::new(&cpus_path);
@@ -76,10 +82,16 @@ impl CpuSetManager {
             log::warn!("{}", t("cpuset-no-groups"));
         } else {
             self.initialized = true;
-            log::info!("{}", t_with_args("cpuset-init", &fluent_args!(
-                "path" => self.cpuset_root.display().to_string(),
-                "count" => self.writers.len().to_string()
-            )));
+            log::info!(
+                "{}",
+                t_with_args(
+                    "cpuset-init",
+                    &fluent_args!(
+                        "path" => self.cpuset_root.display().to_string(),
+                        "count" => self.writers.len().to_string()
+                    )
+                )
+            );
         }
         Ok(())
     }
@@ -129,16 +141,28 @@ impl CpuSetManager {
 
         self.current_mode = mode.to_string();
         if failed > 0 {
-            log::warn!("{}", t_with_args("cpuset-partial-failed", &fluent_args!(
-                "mode" => mode,
-                "failed" => failed.to_string()
-            )));
+            log::warn!(
+                "{}",
+                t_with_args(
+                    "cpuset-partial-failed",
+                    &fluent_args!(
+                        "mode" => mode,
+                        "failed" => failed.to_string()
+                    )
+                )
+            );
         }
         if !applied.is_empty() {
-            log::debug!("{}", t_with_args("cpuset-applied", &fluent_args!(
-                "mode" => mode,
-                "detail" => applied.join(" ")
-            )));
+            log::debug!(
+                "{}",
+                t_with_args(
+                    "cpuset-applied",
+                    &fluent_args!(
+                        "mode" => mode,
+                        "detail" => applied.join(" ")
+                    )
+                )
+            );
         }
         Ok(())
     }
@@ -146,43 +170,72 @@ impl CpuSetManager {
     /// 将调度模式映射为 CPUSet 模式
     /// 例如：fas -> performance（游戏模式使用性能策略）
     pub fn mode_to_cpuset_mode(mode: &str) -> &str {
-        if mode == "fas" {
-            "performance"
-        } else {
-            mode
-        }
+        if mode == "fas" { "performance" } else { mode }
     }
 
     /// 处理模式变更事件
     pub fn on_mode_change(&mut self, new_mode: &str) {
-        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
+        if !self
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .enabled
+        {
             return;
         }
         if new_mode == self.current_mode {
             return;
         }
         if let Err(e) = self.apply_mode(new_mode) {
-            log::error!("{}", t_with_args("cpuset-apply-failed", &fluent_args!("error" => e.to_string())));
+            log::error!(
+                "{}",
+                t_with_args(
+                    "cpuset-apply-failed",
+                    &fluent_args!("error" => e.to_string())
+                )
+            );
         }
     }
 
     /// 处理息屏事件
     pub fn on_screen_off(&mut self) {
-        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
+        if !self
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .enabled
+        {
             return;
         }
         if let Err(e) = self.apply_mode("doze") {
-            log::error!("{}", t_with_args("cpuset-apply-failed", &fluent_args!("error" => e.to_string())));
+            log::error!(
+                "{}",
+                t_with_args(
+                    "cpuset-apply-failed",
+                    &fluent_args!("error" => e.to_string())
+                )
+            );
         }
     }
 
     /// 处理亮屏事件（恢复当前模式）
     pub fn on_screen_on(&mut self, mode: &str) {
-        if !self.config.read().unwrap_or_else(|e| e.into_inner()).enabled {
+        if !self
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .enabled
+        {
             return;
         }
         if let Err(e) = self.apply_mode(mode) {
-            log::error!("{}", t_with_args("cpuset-apply-failed", &fluent_args!("error" => e.to_string())));
+            log::error!(
+                "{}",
+                t_with_args(
+                    "cpuset-apply-failed",
+                    &fluent_args!("error" => e.to_string())
+                )
+            );
         }
     }
 
@@ -296,9 +349,6 @@ mod tests {
             CpuSetManager::classify_thread_qos("RxCachedThreadS"),
             Some(ThreadQosGroup::SystemBackground)
         );
-        assert_eq!(
-            CpuSetManager::classify_thread_qos("other_worker"),
-            None
-        );
+        assert_eq!(CpuSetManager::classify_thread_qos("other_worker"), None);
     }
 }

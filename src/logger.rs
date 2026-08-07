@@ -15,20 +15,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use anyhow::{anyhow, Result};
+use crate::common;
+use crate::fluent_args;
+use crate::i18n::t_with_args;
+use anyhow::{Result, anyhow};
 use log::LevelFilter;
+use log4rs::Handle;
 use log4rs::append::rolling_file::RollingFileAppender;
 use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::Encode;
-use log4rs::Handle;
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
-use crate::common;
-use crate::i18n::t_with_args;
-use crate::fluent_args;
 
 static LOG_HANDLE: OnceCell<Mutex<Handle>> = OnceCell::new();
 
@@ -49,7 +49,14 @@ impl Encode for SlimPatternEncoder {
         };
         let module = record.module_path().unwrap_or("main");
         let target = module.strip_prefix("yumi::").unwrap_or(module);
-        writeln!(writer, "[{}] [{}] [{}] {}", now, record.level(), target, record.args())?;
+        writeln!(
+            writer,
+            "[{}] [{}] [{}] {}",
+            now,
+            record.level(),
+            target,
+            record.args()
+        )?;
         Ok(())
     }
 }
@@ -71,8 +78,7 @@ fn build_config(level: LevelFilter) -> Result<Config> {
     let log_path = root.join("logs/daemon.log");
     let archive_pattern = root.join("logs/daemon.{}.log");
 
-    let roller = FixedWindowRoller::builder()
-        .build(archive_pattern.to_str().unwrap(), 3)?;
+    let roller = FixedWindowRoller::builder().build(archive_pattern.to_str().unwrap(), 3)?;
     let trigger = SizeTrigger::new(5 * 1024 * 1024); // 5MB
     let policy = CompoundPolicy::new(Box::new(trigger), Box::new(roller));
 
@@ -92,7 +98,8 @@ pub fn init(level_str: &str) -> Result<()> {
     let level = parse_level(level_str);
     let config = build_config(level)?;
     let handle = log4rs::init_config(config)?;
-    LOG_HANDLE.set(Mutex::new(handle))
+    LOG_HANDLE
+        .set(Mutex::new(handle))
         .map_err(|_| anyhow!("Logger already initialized"))?;
     Ok(())
 }
@@ -105,7 +112,13 @@ pub fn update_level(level_str: &str) {
             match build_config(level) {
                 Ok(cfg) => {
                     handle.set_config(cfg);
-                    log::debug!("{}", t_with_args("log-level-updated", &fluent_args!("level" => level.to_string())));
+                    log::debug!(
+                        "{}",
+                        t_with_args(
+                            "log-level-updated",
+                            &fluent_args!("level" => level.to_string())
+                        )
+                    );
                 }
                 Err(e) => eprintln!("Failed to rebuild logger config: {}", e),
             }

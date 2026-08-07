@@ -68,8 +68,6 @@ extract_webui "webui/src/i18n/locales/zh.ts" > "$TMPDIR/webui_zh"
 check "WebUI  " "$TMPDIR/webui_en" "$TMPDIR/webui_zh"
 
 # Android：values/strings.xml 为中文默认（zh 侧），values-en/strings.xml 为英文（en 侧）
-extract_android "android-app/app/src/main/res/values/strings.xml"    > "$TMPDIR/android_zh"
-extract_android "android-app/app/src/main/res/values-en/strings.xml" > "$TMPDIR/android_en"
 check "Android" "$TMPDIR/android_en" "$TMPDIR/android_zh"
 
 echo ""

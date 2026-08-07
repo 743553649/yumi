@@ -21,13 +21,17 @@ use serde::Deserialize;
 pub struct Meta {
     #[serde(default = "default_loglevel", alias = "Loglevel")]
     pub loglevel: String,
-    
+
     #[serde(default = "default_language", alias = "Language")]
     pub language: String,
 }
 
-fn default_loglevel() -> String { "INFO".to_string() }
-fn default_language() -> String { "zh".to_string() }
+fn default_loglevel() -> String {
+    "INFO".to_string()
+}
+fn default_language() -> String {
+    "zh".to_string()
+}
 
 // ════════════════════════════════════════════════════════════════
 //  CPU Load Governor 配置
@@ -35,46 +39,101 @@ fn default_language() -> String { "zh".to_string() }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CpuLoadGovernorConfig {
-    #[serde(default = "crate::utils::default_true")] pub enabled: bool,
-    #[serde(default = "d_clg_up_thresh")] pub up_threshold: f32,
-    #[serde(default = "d_clg_down_thresh")] pub down_threshold: f32,
-    #[serde(default = "d_clg_smooth_up")] pub smoothing_up: f32,
-    #[serde(default = "d_clg_smooth_down")] pub smoothing_down: f32,
-    #[serde(default = "d_clg_down_rate")] pub down_rate_limit_ticks: u32,
-    #[serde(default = "d_clg_up_rate")] pub up_rate_limit_ticks: u32,
-    #[serde(default = "d_clg_headroom")] pub headroom_factor: f32,
-    #[serde(default = "d_clg_floor")] pub perf_floor: f32,
-    #[serde(default = "d_clg_ceil")] pub perf_ceil: f32,
-    #[serde(default = "d_clg_init")] pub perf_init: f32,
+    #[serde(default = "crate::utils::default_true")]
+    pub enabled: bool,
+    #[serde(default = "d_clg_up_thresh")]
+    pub up_threshold: f32,
+    #[serde(default = "d_clg_down_thresh")]
+    pub down_threshold: f32,
+    #[serde(default = "d_clg_smooth_up")]
+    pub smoothing_up: f32,
+    #[serde(default = "d_clg_smooth_down")]
+    pub smoothing_down: f32,
+    #[serde(default = "d_clg_down_rate")]
+    pub down_rate_limit_ticks: u32,
+    #[serde(default = "d_clg_up_rate")]
+    pub up_rate_limit_ticks: u32,
+    #[serde(default = "d_clg_headroom")]
+    pub headroom_factor: f32,
+    #[serde(default = "d_clg_floor")]
+    pub perf_floor: f32,
+    #[serde(default = "d_clg_ceil")]
+    pub perf_ceil: f32,
+    #[serde(default = "d_clg_init")]
+    pub perf_init: f32,
 
-    #[serde(default = "d_clg_hramp")] pub headroom_ramp: f32,
-    #[serde(default = "d_clg_upjump")] pub up_jump_threshold: f32,
-    #[serde(default = "d_clg_slow_up")] pub slow_up_scale: f32,
-    #[serde(default = "d_clg_slow_dn")] pub slow_down_scale: f32,
-    #[serde(default = "d_clg_dn_fast_t")] pub down_fast_threshold: f32,
-    #[serde(default = "d_clg_dn_fast_m")] pub down_fast_mult: f32,
-    #[serde(default = "d_clg_spike_t")] pub spike_jump_threshold: f32,
-    #[serde(default = "d_clg_spike_d")] pub spike_decay: f32,
+    #[serde(default = "d_clg_hramp")]
+    pub headroom_ramp: f32,
+    #[serde(default = "d_clg_upjump")]
+    pub up_jump_threshold: f32,
+    #[serde(default = "d_clg_slow_up")]
+    pub slow_up_scale: f32,
+    #[serde(default = "d_clg_slow_dn")]
+    pub slow_down_scale: f32,
+    #[serde(default = "d_clg_dn_fast_t")]
+    pub down_fast_threshold: f32,
+    #[serde(default = "d_clg_dn_fast_m")]
+    pub down_fast_mult: f32,
+    #[serde(default = "d_clg_spike_t")]
+    pub spike_jump_threshold: f32,
+    #[serde(default = "d_clg_spike_d")]
+    pub spike_decay: f32,
 }
 
-fn d_clg_up_thresh() -> f32 { 0.80 }
-fn d_clg_down_thresh() -> f32 { 0.50 }
-fn d_clg_smooth_up() -> f32 { 0.60 }
-fn d_clg_smooth_down() -> f32 { 0.30 }
-fn d_clg_down_rate() -> u32 { 3 }
-fn d_clg_up_rate() -> u32 { 2 }
-fn d_clg_headroom() -> f32 { 1.25 }
-fn d_clg_floor() -> f32 { 0.15 }
-fn d_clg_ceil() -> f32 { 1.0 }
-fn d_clg_init() -> f32 { 0.50 }
-fn d_clg_hramp() -> f32 { 0.15 }
-fn d_clg_upjump() -> f32 { 0.35 } // Sensitive up-jump threshold kept unchanged
-fn d_clg_slow_up() -> f32 { 0.02 }
-fn d_clg_slow_dn() -> f32 { 0.5 }
-fn d_clg_dn_fast_t() -> f32 { 0.15 } // Fast down threshold (0.15)
-fn d_clg_dn_fast_m() -> f32 { 3.0 } // Race-to-Idle steep ramp-down multiplier (3.0x)
-fn d_clg_spike_t() -> f32 { 0.35 }
-fn d_clg_spike_d() -> f32 { 0.5 }
+fn d_clg_up_thresh() -> f32 {
+    0.80
+}
+fn d_clg_down_thresh() -> f32 {
+    0.50
+}
+fn d_clg_smooth_up() -> f32 {
+    0.60
+}
+fn d_clg_smooth_down() -> f32 {
+    0.30
+}
+fn d_clg_down_rate() -> u32 {
+    3
+}
+fn d_clg_up_rate() -> u32 {
+    2
+}
+fn d_clg_headroom() -> f32 {
+    1.25
+}
+fn d_clg_floor() -> f32 {
+    0.15
+}
+fn d_clg_ceil() -> f32 {
+    1.0
+}
+fn d_clg_init() -> f32 {
+    0.50
+}
+fn d_clg_hramp() -> f32 {
+    0.15
+}
+fn d_clg_upjump() -> f32 {
+    0.35
+} // Sensitive up-jump threshold kept unchanged
+fn d_clg_slow_up() -> f32 {
+    0.02
+}
+fn d_clg_slow_dn() -> f32 {
+    0.5
+}
+fn d_clg_dn_fast_t() -> f32 {
+    0.15
+} // Fast down threshold (0.15)
+fn d_clg_dn_fast_m() -> f32 {
+    3.0
+} // Race-to-Idle steep ramp-down multiplier (3.0x)
+fn d_clg_spike_t() -> f32 {
+    0.35
+}
+fn d_clg_spike_d() -> f32 {
+    0.5
+}
 
 impl Default for CpuLoadGovernorConfig {
     fn default() -> Self {
@@ -114,10 +173,14 @@ pub struct Mode {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct IOSettings {
-    #[serde(default, rename = "Scheduler")] pub scheduler: String,
-    #[serde(default = "default_read_ahead_kb")] pub read_ahead_kb: String,
-    #[serde(default = "default_nomerges")] pub nomerges: String,
-    #[serde(default = "default_iostats")] pub iostats: String,
+    #[serde(default, rename = "Scheduler")]
+    pub scheduler: String,
+    #[serde(default = "default_read_ahead_kb")]
+    pub read_ahead_kb: String,
+    #[serde(default = "default_nomerges")]
+    pub nomerges: String,
+    #[serde(default = "default_iostats")]
+    pub iostats: String,
 }
 
 impl Default for IOSettings {
@@ -131,9 +194,15 @@ impl Default for IOSettings {
     }
 }
 
-fn default_read_ahead_kb() -> String { "128".to_string() }
-fn default_nomerges() -> String { "2".to_string() }
-fn default_iostats() -> String { "0".to_string() }
+fn default_read_ahead_kb() -> String {
+    "128".to_string()
+}
+fn default_nomerges() -> String {
+    "2".to_string()
+}
+fn default_iostats() -> String {
+    "0".to_string()
+}
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -143,29 +212,12 @@ pub struct CpuIdle {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FunctionToggles {
-    #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
-    #[serde(rename = "IOOptimization")] pub io_optimization: bool,
+    #[serde(rename = "CpuIdleScalingGovernor")]
+    pub cpu_idle_scaling_governor: bool,
+    #[serde(rename = "IOOptimization")]
+    pub io_optimization: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct IpcConfig {
-    #[serde(default = "default_ipc_enabled")]
-    pub enabled: bool,
-    #[serde(default = "default_ipc_port")]
-    pub port: u16,
-}
-
-impl Default for IpcConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_ipc_enabled(),
-            port: default_ipc_port(),
-        }
-    }
-}
-
-fn default_ipc_enabled() -> bool { true }
-fn default_ipc_port() -> u16 { 14567 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
@@ -177,14 +229,16 @@ pub struct Config {
     pub io_settings: IOSettings,
     #[serde(default, rename = "CpuIdle")]
     pub cpu_idle: CpuIdle,
-    #[serde(default)]
-    pub ipc: IpcConfig,
-    
+
     // 按场景划分的性能模式
-    #[serde(default)] pub powersave: Mode,
-    #[serde(default)] pub balance: Mode,
-    #[serde(default)] pub performance: Mode,
-    #[serde(default)] pub fast: Mode,
+    #[serde(default)]
+    pub powersave: Mode,
+    #[serde(default)]
+    pub balance: Mode,
+    #[serde(default)]
+    pub performance: Mode,
+    #[serde(default)]
+    pub fast: Mode,
 }
 
 impl Config {

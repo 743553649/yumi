@@ -16,9 +16,9 @@
  */
 
 use crate::monitor::config::RulesConfig;
+use std::env;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::env;
 
 /// 模块根目录缓存。首次探测后全局复用，避免高频调用重复执行系统调用。
 static MODULE_ROOT: OnceLock<PathBuf> = OnceLock::new();
@@ -42,7 +42,7 @@ pub enum DaemonEvent {
         /// 每个 CPU 核心的真实利用率 (0.0 ~ 1.0)，数组索引即 cpu_id
         core_utils: Vec<f32>,
         /// 如果当前有前台应用，这是该应用最吃 CPU 的那 1 个线程的利用率
-        foreground_max_util: f32, 
+        foreground_max_util: f32,
     },
 
     ConfigReload(RulesConfig),
@@ -52,7 +52,7 @@ pub enum DaemonEvent {
 
 /// 获取模块根目录的绝对路径（首次调用探测，之后缓存复用）
 ///
-/// 被 logger、i18n、app_detect、ipc_server 等高频调用，探测逻辑含多次
+/// 被 logger、i18n、app_detect 等高频调用，探测逻辑含多次
 /// `Path::exists()` 系统调用与 exe 回溯，缓存后整段探测仅执行一次。
 pub fn get_module_root() -> PathBuf {
     MODULE_ROOT.get_or_init(detect_module_root).clone()
@@ -65,7 +65,8 @@ fn detect_module_root() -> PathBuf {
         if cwd.join("rules.yaml").exists() || cwd.join("config/config.yaml").exists() {
             return cwd;
         }
-        if cwd.join("module/rules.yaml").exists() || cwd.join("module/config/config.yaml").exists() {
+        if cwd.join("module/rules.yaml").exists() || cwd.join("module/config/config.yaml").exists()
+        {
             return cwd.join("module");
         }
     }

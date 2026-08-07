@@ -74,7 +74,9 @@ impl TouchListener {
         };
 
         if devices.is_empty() {
-            unsafe { libc::close(epoll_fd); }
+            unsafe {
+                libc::close(epoll_fd);
+            }
             anyhow::bail!("{}", t("touch-boost-no-device"));
         }
 
@@ -82,25 +84,38 @@ impl TouchListener {
             let fd = Self::open_device(device_path)?;
             device_fds.push(fd);
 
-            let mut event = libc::epoll_event { events: EPOLLIN, u64: fd as u64 };
-            let ret = unsafe {
-                libc::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &mut event)
+            let mut event = libc::epoll_event {
+                events: EPOLLIN,
+                u64: fd as u64,
             };
+            let ret = unsafe { libc::epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &mut event) };
             if ret < 0 {
-                unsafe { libc::close(fd); }
+                unsafe {
+                    libc::close(fd);
+                }
                 device_fds.pop();
                 continue;
             }
         }
 
         if device_fds.is_empty() {
-            unsafe { libc::close(epoll_fd); }
+            unsafe {
+                libc::close(epoll_fd);
+            }
             anyhow::bail!("{}", t("touch-boost-no-device"));
         }
 
-        log::info!("{}", t_with_args("touch-boost-listener-started",
-            &fluent_args!("count" => device_fds.len().to_string())));
-        Ok(Self { epoll_fd, device_fds })
+        log::info!(
+            "{}",
+            t_with_args(
+                "touch-boost-listener-started",
+                &fluent_args!("count" => device_fds.len().to_string())
+            )
+        );
+        Ok(Self {
+            epoll_fd,
+            device_fds,
+        })
     }
 
     /// 打开输入设备
@@ -108,7 +123,10 @@ impl TouchListener {
         use std::ffi::CString;
         let c_path = CString::new(path)?;
         let fd = unsafe {
-            libc::open(c_path.as_ptr(), libc::O_RDONLY | libc::O_NONBLOCK | libc::O_CLOEXEC)
+            libc::open(
+                c_path.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
         };
         if fd < 0 {
             anyhow::bail!("open {} failed", path);
@@ -161,9 +179,7 @@ impl TouchListener {
     /// timeout_ms: 超时时间，-1 表示阻塞等待
     pub fn poll(&self, timeout_ms: i32) -> Option<bool> {
         let mut events = [libc::epoll_event { events: 0, u64: 0 }; 4];
-        let n = unsafe {
-            libc::epoll_wait(self.epoll_fd, events.as_mut_ptr(), 4, timeout_ms)
-        };
+        let n = unsafe { libc::epoll_wait(self.epoll_fd, events.as_mut_ptr(), 4, timeout_ms) };
 
         if n <= 0 {
             return None;
@@ -187,13 +203,8 @@ impl TouchListener {
         loop {
             let mut event = InputEvent::default();
             let size = std::mem::size_of::<InputEvent>();
-            let ret = unsafe {
-                libc::read(
-                    fd,
-                    &mut event as *mut InputEvent as *mut libc::c_void,
-                    size,
-                )
-            };
+            let ret =
+                unsafe { libc::read(fd, &mut event as *mut InputEvent as *mut libc::c_void, size) };
 
             if ret == -1 {
                 let errno = std::io::Error::last_os_error().raw_os_error();
@@ -219,9 +230,13 @@ impl TouchListener {
 impl Drop for TouchListener {
     fn drop(&mut self) {
         for &fd in &self.device_fds {
-            unsafe { libc::close(fd); }
+            unsafe {
+                libc::close(fd);
+            }
         }
-        unsafe { libc::close(self.epoll_fd); }
+        unsafe {
+            libc::close(self.epoll_fd);
+        }
     }
 }
 
@@ -244,8 +259,13 @@ pub fn start_touch_listener_thread(
             let listener = match TouchListener::new(&cfg_snapshot) {
                 Ok(l) => l,
                 Err(e) => {
-                    log::warn!("{}", t_with_args("touch-boost-init-failed",
-                        &fluent_args!("error" => e.to_string())));
+                    log::warn!(
+                        "{}",
+                        t_with_args(
+                            "touch-boost-init-failed",
+                            &fluent_args!("error" => e.to_string())
+                        )
+                    );
                     // 优雅降级：当设备不支持 TouchBoost 监听或初始化失败时，保持线程存活（持有 touch_tx），避免通道断开
                     loop {
                         std::thread::park();
@@ -256,8 +276,13 @@ pub fn start_touch_listener_thread(
             let mut controller = TouchBoostController::new(config);
             controller.set_fas_silenced_flag(fas_silenced_flag);
             if let Err(e) = controller.init(&policies) {
-                log::warn!("{}", t_with_args("touch-boost-init-failed",
-                    &fluent_args!("error" => e.to_string())));
+                log::warn!(
+                    "{}",
+                    t_with_args(
+                        "touch-boost-init-failed",
+                        &fluent_args!("error" => e.to_string())
+                    )
+                );
                 // 优雅降级：初始化失败时保持线程存活（持有 touch_tx），避免通道断开
                 loop {
                     std::thread::park();

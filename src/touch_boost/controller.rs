@@ -108,7 +108,9 @@ impl TouchBoostController {
     /// 同步 FAS 静默状态并检测 false→true 边沿。
     /// 返回 true 表示 FAS 处于激活状态，TouchBoost 应静默。
     fn sync_fas_silenced(&mut self) -> bool {
-        let Some(flag) = &self.fas_silenced else { return false };
+        let Some(flag) = &self.fas_silenced else {
+            return false;
+        };
         let silenced = flag.load(Ordering::Relaxed);
         if silenced && !self.last_fas_silenced {
             // false→true 边沿：FAS 刚激活，立即释放所有正在进行的 boost
@@ -180,7 +182,11 @@ impl TouchBoostController {
     /// 同步 enabled 状态并处理"启用 → 禁用"边沿。
     /// 禁用边沿时清理残留的 boost 状态并恢复原始频率。
     fn sync_enabled(&mut self) -> bool {
-        let enabled = self.config.read().unwrap_or_else(|e| e.into_inner()).enabled;
+        let enabled = self
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .enabled;
         if !enabled && self.last_enabled {
             // 禁用边沿：重置状态机并恢复原始频率
             self.state = BoostState::Idle;
@@ -253,7 +259,9 @@ impl TouchBoostController {
                 self.apply_boost();
                 log::debug!("{}", t("touch-boost-reapply"));
             }
-            _ => { drop(cfg); }
+            _ => {
+                drop(cfg);
+            }
         }
     }
 
@@ -548,20 +556,29 @@ mod tests {
 
         // 1. 触摸按下 → Touching
         controller.on_touch_event(true);
-        assert_eq!(controller.state(), BoostState::Touching,
-            "触摸按下应进入 Touching");
+        assert_eq!(
+            controller.state(),
+            BoostState::Touching,
+            "触摸按下应进入 Touching"
+        );
 
         // 2. 立即再次收到 touching=true（<50ms 边界）
         // 此时未满 50ms，应保持 Touching，不能提前释放
         controller.on_touch_event(true);
-        assert_eq!(controller.state(), BoostState::Touching,
-            "50ms 脉冲未到期前应保持 Touching");
+        assert_eq!(
+            controller.state(),
+            BoostState::Touching,
+            "50ms 脉冲未到期前应保持 Touching"
+        );
 
         // 3. 等待超过 50ms 后收到 touching=true → 应切入 Cooldown
         std::thread::sleep(std::time::Duration::from_millis(60));
         controller.on_touch_event(true);
-        assert_eq!(controller.state(), BoostState::Cooldown,
-            "50ms 脉冲到期后应自动切入 Cooldown");
+        assert_eq!(
+            controller.state(),
+            BoostState::Cooldown,
+            "50ms 脉冲到期后应自动切入 Cooldown"
+        );
     }
 
     /// 验证 TouchBoost 默认脉冲宽度为 50ms（阶段十二要求）
@@ -569,12 +586,15 @@ mod tests {
     #[test]
     fn test_touch_boost_default_min_duration_is_50ms() {
         let cfg = TouchBoostConfig::default();
-        assert_eq!(cfg.min_boost_duration_ms, 50,
-            "min_boost_duration_ms 默认值应为 50ms（阶段十二要求）");
-        assert_eq!(cfg.release_delay_ms, 100,
-            "release_delay_ms 默认值应为 100ms");
-        assert_eq!(cfg.recover_decay, 0.15,
-            "recover_decay 默认值应为 0.15");
+        assert_eq!(
+            cfg.min_boost_duration_ms, 50,
+            "min_boost_duration_ms 默认值应为 50ms（阶段十二要求）"
+        );
+        assert_eq!(
+            cfg.release_delay_ms, 100,
+            "release_delay_ms 默认值应为 100ms"
+        );
+        assert_eq!(cfg.recover_decay, 0.15, "recover_decay 默认值应为 0.15");
     }
 
     /// 验证 FAS 模式下 TouchBoost 自动静默
@@ -600,18 +620,27 @@ mod tests {
         // 2. 激活 FAS → 边沿检测触发 recover_all，强制回到 Idle
         fas_silenced.store(true, Ordering::Relaxed);
         controller.on_touch_event(true); // sync_fas_silenced 检测边沿并恢复
-        assert_eq!(controller.state(), BoostState::Idle,
-            "FAS 激活后应强制回到 Idle");
+        assert_eq!(
+            controller.state(),
+            BoostState::Idle,
+            "FAS 激活后应强制回到 Idle"
+        );
 
         // 3. FAS 激活时触摸 → 被静默，状态保持 Idle
         controller.on_touch_event(true);
-        assert_eq!(controller.state(), BoostState::Idle,
-            "FAS 激活时触摸不应提频");
+        assert_eq!(
+            controller.state(),
+            BoostState::Idle,
+            "FAS 激活时触摸不应提频"
+        );
 
         // 4. 退出 FAS → 恢复正常提频
         fas_silenced.store(false, Ordering::Relaxed);
         controller.on_touch_event(true);
-        assert_eq!(controller.state(), BoostState::Touching,
-            "FAS 退出后应恢复提频");
+        assert_eq!(
+            controller.state(),
+            BoostState::Touching,
+            "FAS 退出后应恢复提频"
+        );
     }
 }

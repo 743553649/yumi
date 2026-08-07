@@ -9,8 +9,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use fs_extra::dir;
 use serde::Deserialize;
-use xshell::{cmd, Shell};
-use zip::{write::FileOptions, CompressionMethod};
+use xshell::{Shell, cmd};
+use zip::{CompressionMethod, write::FileOptions};
 
 use crate::zip_ext::zip_create_from_directory_with_options;
 
@@ -66,7 +66,7 @@ fn get_date() -> String {
 
 fn build(sh: &Shell) -> Result<()> {
     let temp_dir = temp_dir();
-    
+
     // 读取 Cargo.toml (注意：因为通过 `cargo xtask` 运行，工作目录是项目根目录)
     let toml_content = fs::read_to_string("Cargo.toml")?;
     let data: CargoConfig = toml::from_str(&toml_content)?;
@@ -99,14 +99,6 @@ fn build(sh: &Shell) -> Result<()> {
         fs::remove_file(temp_dir.join("yumi"))?;
     }
 
-    // 防御性清理：APK 不打包进模块（App 需单独分发，避免模块 zip 臃肿）
-    for entry in fs::read_dir(&temp_dir)? {
-        let path = entry?.path();
-        if path.is_file() && path.extension().map_or(false, |ext| ext == "apk") {
-            println!("剔除 APK 文件（不打包进模块）: {}", path.display());
-            fs::remove_file(&path)?;
-        }
-    }
 
     // 规范化换行符：遍历临时目录，强行将所有 .sh/.prop/.yaml/.ftl/.json 等文本文件的 CRLF 转换成 Unix LF (\n)
     sanitize_line_endings(&temp_dir)?;
@@ -114,9 +106,9 @@ fn build(sh: &Shell) -> Result<()> {
     // 5. 组装 bin 目录
     let bin_path = temp_dir.join("core").join("bin");
     fs::create_dir_all(&bin_path)?;
-    
+
     fs::copy(aarch64_bin_path(), bin_path.join("yumi"))?;
-    
+
     let webroot_dir = temp_dir.join("webroot");
     let webui_dist = Path::new("webui").join("dist");
     if webui_dist.exists() {
@@ -128,11 +120,11 @@ fn build(sh: &Shell) -> Result<()> {
     } else {
         fs::create_dir_all(&webroot_dir)?;
     }
-    
+
     // 6. 打包 Zip
     let output_dir = Path::new("output");
     fs::create_dir_all(output_dir)?; // 确保 output 目录存在
-    
+
     let zip_filename = format!(
         "yumi-{}-{}-{}.zip",
         data.package.version,
@@ -146,10 +138,12 @@ fn build(sh: &Shell) -> Result<()> {
     let options: FileOptions<'_, ()> = FileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .compression_level(Some(9));
-        
+
     zip_create_from_directory_with_options(&zip_path, &temp_dir, |path| {
         let is_exec = path.extension().map_or(false, |ext| ext == "sh")
-            || path.file_name().map_or(false, |name| name == "update-binary" || name == "yumi");
+            || path
+                .file_name()
+                .map_or(false, |name| name == "update-binary" || name == "yumi");
         if is_exec {
             options.unix_permissions(0o755)
         } else {
@@ -175,12 +169,19 @@ fn aarch64_bin_path() -> PathBuf {
 fn build_core(sh: &Shell) -> Result<()> {
     let ebpf_binary = Path::new("target/bpfel-unknown-none/release/yumi-ebpf");
     if ebpf_binary.exists() {
-        println!("检测到预编译 eBPF 探针已存在: {}，跳过 eBPF 编译", ebpf_binary.display());
+        println!(
+            "检测到预编译 eBPF 探针已存在: {}，跳过 eBPF 编译",
+            ebpf_binary.display()
+        );
     } else if std::env::var("YUMI_SKIP_EBPF").map_or(true, |v| v != "1") {
         println!("正在预编译 eBPF 探针 (bpfel-unknown-none)...");
         let _env_flags = sh.push_env("RUSTFLAGS", "");
         let _env_encoded = sh.push_env("CARGO_ENCODED_RUSTFLAGS", "");
-        cmd!(sh, "cargo build --package yumi-ebpf --target bpfel-unknown-none -Z build-std=core -r").run()?;
+        cmd!(
+            sh,
+            "cargo build --package yumi-ebpf --target bpfel-unknown-none -Z build-std=core -r"
+        )
+        .run()?;
     }
     println!("正在编译 Rust Core...");
     cmd!(sh, "cargo ndk --platform 26 -t arm64-v8a build -r").run()?;
@@ -196,7 +197,9 @@ fn build_webui(sh: &Shell) -> Result<()> {
 }
 
 fn sanitize_line_endings(dir: &Path) -> Result<()> {
-    if !dir.is_dir() { return Ok(()); }
+    if !dir.is_dir() {
+        return Ok(());
+    }
     for entry in fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_dir() {

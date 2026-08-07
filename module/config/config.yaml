@@ -22,9 +22,6 @@ IO_Settings:
 CpuIdle:
   current_governor: ""
 
-# IPC 接口设置
-ipc:
-  enabled: true
   port: 14567
 
 # --- 性能模式 ---

@@ -65,7 +65,10 @@ struct ProbeState {
 
 impl ProbeState {
     fn new() -> Self {
-        Self { last_ktime_ns: None, frametimes: VecDeque::with_capacity(FRAMETIME_WINDOW) }
+        Self {
+            last_ktime_ns: None,
+            frametimes: VecDeque::with_capacity(FRAMETIME_WINDOW),
+        }
     }
 
     fn ingest(&mut self, ktime_ns: u64) {
@@ -113,13 +116,16 @@ impl FpsManager {
             "/ebpf_target/bpfel-unknown-none/release/yumi-ebpf"
         )))?;
 
-        let program: &mut UProbe = bpf.program_mut("handle_frame")
+        let program: &mut UProbe = bpf
+            .program_mut("handle_frame")
             .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
             .try_into()?;
         program.load()?;
 
         let ring_fd = {
-            let ring_map = bpf.map_mut("RING_BUF").ok_or_else(|| anyhow::anyhow!("RING_BUF not found"))?;
+            let ring_map = bpf
+                .map_mut("RING_BUF")
+                .ok_or_else(|| anyhow::anyhow!("RING_BUF not found"))?;
             let ring = RingBuf::try_from(ring_map)?;
             ring.as_raw_fd()
         };
@@ -142,22 +148,24 @@ impl FpsManager {
         // detach 旧 PID
         if self.current_pid > 0 {
             if let Some(link_id) = self.links.remove(&self.current_pid) {
-                let program: &mut UProbe =
-                    self.bpf.program_mut("handle_frame")
-                        .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
-                        .try_into()?;
+                let program: &mut UProbe = self
+                    .bpf
+                    .program_mut("handle_frame")
+                    .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
+                    .try_into()?;
                 let _ = program.detach(link_id);
             }
         }
 
         // attach 新 PID
         let pid_i32 = new_pid as i32;
-        let scope =
-            UProbeScope::OneProcess(
-                NonZeroU32::new(new_pid).ok_or_else(|| anyhow::anyhow!("pid must be > 0"))?,
-            );
+        let scope = UProbeScope::OneProcess(
+            NonZeroU32::new(new_pid).ok_or_else(|| anyhow::anyhow!("pid must be > 0"))?,
+        );
 
-        let program: &mut UProbe = self.bpf.program_mut("handle_frame")
+        let program: &mut UProbe = self
+            .bpf
+            .program_mut("handle_frame")
             .ok_or_else(|| anyhow::anyhow!("eBPF program handle_frame not found"))?
             .try_into()?;
         let link = program
@@ -180,7 +188,10 @@ impl FpsManager {
 
         info!(
             "{}",
-            t_with_args("fps-monitor-attached", &fluent_args!("pid" => pid_i32.to_string()))
+            t_with_args(
+                "fps-monitor-attached",
+                &fluent_args!("pid" => pid_i32.to_string())
+            )
         );
         Ok(())
     }
@@ -188,7 +199,9 @@ impl FpsManager {
     /// 从共享 RingBuf 读取帧事件，按 PID 分派
     fn poll_frames(&mut self) {
         // RING_BUF 在 init 后不会消失；防御性早退，避免热路径 panic 拖垮 fps 线程
-        let Some(ring_map) = self.bpf.map_mut("RING_BUF") else { return; };
+        let Some(ring_map) = self.bpf.map_mut("RING_BUF") else {
+            return;
+        };
         let mut ring = match RingBuf::try_from(ring_map) {
             Ok(r) => r,
             Err(_) => return,
@@ -198,8 +211,7 @@ impl FpsManager {
             if data.len() < size_of::<FrameTimestampEvent>() {
                 continue;
             }
-            let event =
-                unsafe { ptr::read_unaligned(data.as_ptr().cast::<FrameTimestampEvent>()) };
+            let event = unsafe { ptr::read_unaligned(data.as_ptr().cast::<FrameTimestampEvent>()) };
 
             if let Some(state) = self.states.get_mut(&event.pid) {
                 state.ingest(event.ktime_ns);

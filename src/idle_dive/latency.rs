@@ -23,7 +23,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use crate::utils::{enable_perm, FastWriter};
+use crate::utils::{FastWriter, enable_perm};
 
 /// Idle latency 写入器，支持 `/sys/devices/system/cpu/cpuidle/latency_us`
 /// 与 PM-QoS `/dev/cpu_dma_latency` 自动降级与回退

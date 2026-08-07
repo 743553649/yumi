@@ -122,7 +122,11 @@ impl IdleDiveController {
     /// 避免关闭功能后系统仍停留在 Diving/DozeDiving 的 sysfs 状态。
     /// 返回当前是否应继续执行 (enabled)。
     fn sync_enabled(&mut self) -> bool {
-        let enabled = self.config.read().unwrap_or_else(|e| e.into_inner()).enabled;
+        let enabled = self
+            .config
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .enabled;
         if !enabled && self.last_enabled {
             // 禁用边沿：重置状态机并恢复系统正常状态
             self.state = DiveState::Normal;
@@ -450,16 +454,22 @@ mod tests {
         controller.update(0.05);
 
         // 计时未达到 300ms，应保持 Normal
-        assert_eq!(controller.state(), DiveState::Normal,
-            "300ms 延迟未到期不应进入下潜");
+        assert_eq!(
+            controller.state(),
+            DiveState::Normal,
+            "300ms 延迟未到期不应进入下潜"
+        );
 
         // 等待 310ms（略超 300ms 边界），再次喂入低负载触发计时检查
         std::thread::sleep(std::time::Duration::from_millis(310));
         controller.update(0.05);
 
         // 应进入 Diving 状态
-        assert_eq!(controller.state(), DiveState::Diving,
-            "默认 300ms 下潜延迟应生效，超时后进入下潜");
+        assert_eq!(
+            controller.state(),
+            DiveState::Diving,
+            "默认 300ms 下潜延迟应生效，超时后进入下潜"
+        );
     }
 
     /// 验证 IdleDive 配置中关键省电参数与阶段十二一致
@@ -469,17 +479,25 @@ mod tests {
         let cfg = IdleDiveConfig::default();
 
         // 阶段十二：亮屏下潜延迟从 2000ms 压缩至 300ms
-        assert_eq!(cfg.dive_delay_ms, 300,
-            "dive_delay_ms 应为 300ms（阶段十二要求）");
+        assert_eq!(
+            cfg.dive_delay_ms, 300,
+            "dive_delay_ms 应为 300ms（阶段十二要求）"
+        );
 
         // 阶段十二：唤醒延迟从 500ms 降至 50ms
-        assert_eq!(cfg.exit_delay_ms, 50,
-            "exit_delay_ms 应为 50ms（阶段十二要求）");
+        assert_eq!(
+            cfg.exit_delay_ms, 50,
+            "exit_delay_ms 应为 50ms（阶段十二要求）"
+        );
 
         // 阶段十二：下潜后放宽 latency 至 500μs，息屏 1000μs
-        assert_eq!(cfg.params.diving_latency_us, 500,
-            "diving_latency_us 应为 500μs（阶段十二要求）");
-        assert_eq!(cfg.params.doze_latency_us, 1000,
-            "doze_latency_us 应为 1000μs（阶段十二要求）");
+        assert_eq!(
+            cfg.params.diving_latency_us, 500,
+            "diving_latency_us 应为 500μs（阶段十二要求）"
+        );
+        assert_eq!(
+            cfg.params.doze_latency_us, 1000,
+            "doze_latency_us 应为 1000μs（阶段十二要求）"
+        );
     }
 }

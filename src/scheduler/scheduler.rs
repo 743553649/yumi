@@ -30,10 +30,7 @@ pub struct CpuScheduler {
 }
 
 impl CpuScheduler {
-    pub fn new(
-        config: Arc<RwLock<Config>>,
-        sys_path_exist: Arc<SysPathExist>,
-    ) -> Self {
+    pub fn new(config: Arc<RwLock<Config>>, sys_path_exist: Arc<SysPathExist>) -> Self {
         Self {
             config,
             sys_path_exist,
@@ -49,12 +46,16 @@ impl CpuScheduler {
 
     fn apply_cpu_idle_governor(&self) -> Result<()> {
         let config = self.config.read().unwrap_or_else(|e| e.into_inner());
-        if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty() {
+        if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty()
+        {
             if self.sys_path_exist.cpuidle_governor_exist {
-                let _ = utils::try_write_file("/sys/devices/system/cpu/cpuidle/current_governor", &config.cpu_idle.current_governor);
+                let _ = utils::try_write_file(
+                    "/sys/devices/system/cpu/cpuidle/current_governor",
+                    &config.cpu_idle.current_governor,
+                );
             }
         }
-        log::info!("{}",t("apply-cpu-idle-governor-start"));
+        log::info!("{}", t("apply-cpu-idle-governor-start"));
         Ok(())
     }
 
@@ -76,25 +77,38 @@ impl CpuScheduler {
             for entry in entries.flatten() {
                 let dev_path = entry.path();
                 let queue_path = dev_path.join("queue");
-                if !queue_path.exists() { continue; }
+                if !queue_path.exists() {
+                    continue;
+                }
 
                 if !io.scheduler.is_empty() {
                     let p = queue_path.join("scheduler");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.scheduler); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.scheduler);
+                    }
                 }
                 if !io.read_ahead_kb.is_empty() {
                     let p = queue_path.join("read_ahead_kb");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.read_ahead_kb); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.read_ahead_kb);
+                    }
                 }
                 if !io.nomerges.is_empty() {
                     let p = queue_path.join("nomerges");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.nomerges); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.nomerges);
+                    }
                 }
                 if !io.iostats.is_empty() {
                     let p = queue_path.join("iostats");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.iostats); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.iostats);
+                    }
                 }
-                log::debug!("IOOptimization: applied to {:?}", dev_path.file_name().unwrap_or_default());
+                log::debug!(
+                    "IOOptimization: applied to {:?}",
+                    dev_path.file_name().unwrap_or_default()
+                );
             }
         }
 

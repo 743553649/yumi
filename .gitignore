@@ -16,6 +16,7 @@ xtask/target
 .reasonix/
 .backup/
 .claude/
+.trae/
 
 # OS
 .DS_Store
@@ -26,20 +27,16 @@ yumi-*.zip
 *.bak
 output/
 *.log
-*.apk
-*.aab
-*.jar
-!android-app/gradle/wrapper/gradle-wrapper.jar
 
 # Android build & Tooling
-android-app/app/build/
-android-app/build/
 .agents/
 .mimocode/
 .superpowers/
 
 # Android SDK (本地配置，不入库)
-android-sdk/
+
+# AI Agent 本地配置
+reasonix.toml
 
 # 大图资源（按需，防止 docs/ 入库无关图片）
 docs/**/*.png

@@ -17,12 +17,12 @@
 
 use crate::fas_types::ClusterProfile;
 use crate::utils::FastWriter;
+use log::warn;
 use std::fs;
 use std::time::Instant;
-use log::warn;
 
-use crate::i18n::t_with_args;
 use crate::fluent_args;
+use crate::i18n::t_with_args;
 
 pub struct PolicyController {
     pub max_writer: FastWriter,
@@ -54,13 +54,21 @@ impl PolicyController {
         let freq_min = *available_freqs.first().unwrap_or(&0) as f32;
         let freq_max = *available_freqs.last().unwrap_or(&1) as f32;
         let range = (freq_max - freq_min).max(1.0);
-        let cached_ratios: Vec<f32> = available_freqs.iter()
+        let cached_ratios: Vec<f32> = available_freqs
+            .iter()
             .map(|&f| (f as f32 - freq_min) / range)
             .collect();
         Self {
-            max_writer, min_writer, available_freqs, cached_ratios,
-            current_freq, policy_id, cluster_profile,
-            freq_hold_frames: 0, freq_min, freq_max,
+            max_writer,
+            min_writer,
+            available_freqs,
+            cached_ratios,
+            current_freq,
+            policy_id,
+            cluster_profile,
+            freq_hold_frames: 0,
+            freq_min,
+            freq_max,
             verify_freq: None,
             verify_timer: Instant::now(),
             ignore_write: false,
@@ -78,7 +86,11 @@ impl PolicyController {
             let hi = idx;
             if (self.cached_ratios[hi] - target_ratio).abs()
                 < (self.cached_ratios[lo] - target_ratio).abs()
-            { self.available_freqs[hi] } else { self.available_freqs[lo] }
+            {
+                self.available_freqs[hi]
+            } else {
+                self.available_freqs[lo]
+            }
         }
     }
 
@@ -88,7 +100,9 @@ impl PolicyController {
 
     /// 锁频写入 (min=max)，用于关键 cluster
     pub fn apply_freq_locked(&mut self, target_freq: u32) {
-        if self.ignore_write { return; }
+        if self.ignore_write {
+            return;
+        }
         if target_freq >= self.current_freq {
             self.max_writer.write_value_force(target_freq);
             self.min_writer.write_value_force(target_freq);
@@ -109,17 +123,32 @@ impl PolicyController {
             self.verify_timer = Instant::now();
             if let Some(expected) = self.verify_freq {
                 if let Some(actual) = self.read_current_freq() {
-                    let min_ok = self.available_freqs.iter()
-                        .take_while(|&&f| f <= expected).last().copied().unwrap_or(expected);
-                    let max_ok = self.available_freqs.iter()
-                        .find(|&&f| f >= expected).copied().unwrap_or(expected);
+                    let min_ok = self
+                        .available_freqs
+                        .iter()
+                        .take_while(|&&f| f <= expected)
+                        .last()
+                        .copied()
+                        .unwrap_or(expected);
+                    let max_ok = self
+                        .available_freqs
+                        .iter()
+                        .find(|&&f| f >= expected)
+                        .copied()
+                        .unwrap_or(expected);
                     if actual < min_ok || actual > max_ok {
-                        warn!("{}", t_with_args("fas-freq-mismatch", &fluent_args!(
-                            "pid" => self.policy_id.to_string(),
-                            "min" => min_ok.to_string(),
-                            "max" => max_ok.to_string(),
-                            "actual" => actual.to_string()
-                        )));
+                        warn!(
+                            "{}",
+                            t_with_args(
+                                "fas-freq-mismatch",
+                                &fluent_args!(
+                                    "pid" => self.policy_id.to_string(),
+                                    "min" => min_ok.to_string(),
+                                    "max" => max_ok.to_string(),
+                                    "actual" => actual.to_string()
+                                )
+                            )
+                        );
                         self.max_writer.re_unmount();
                         self.min_writer.re_unmount();
                         if write_freq >= actual {
@@ -145,7 +174,9 @@ impl PolicyController {
     }
 
     pub fn force_reapply(&mut self) {
-        if self.ignore_write { return; }
+        if self.ignore_write {
+            return;
+        }
         self.max_writer.re_unmount();
         self.min_writer.re_unmount();
         self.min_writer.write_value_force(self.current_freq);

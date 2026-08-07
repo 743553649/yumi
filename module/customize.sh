@@ -52,24 +52,6 @@ elif [ -f "/data/adb/modules/yumi/config.yaml" ]; then
     cp -f "/data/adb/modules/yumi/config.yaml" "$BAK_DIR/user_config.yaml.bak"
 fi
 
-# --- 检查控制 App (已不再打包进模块，需单独安装) ---
-APP_PKG="com.yumi.bridge"
-if pm list packages 2>/dev/null | grep -q "$APP_PKG"; then
-    ui_print "✓ yumi Bridge 控制 App 已安装"
-elif [ -f "$MODPATH/yumi-bridge.apk" ]; then
-    # 兼容旧版：模块包内带有 APK 时仍自动安装
-    ui_print "正在自动安装 yumi Bridge 控制 App..."
-    pm install -r "$MODPATH/yumi-bridge.apk" >/dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        ui_print "✓ yumi Bridge 控制 App 安装成功！"
-    else
-        ui_print "! yumi Bridge 控制 App 安装失败，请手动安装"
-    fi
-else
-    ui_print "! 未检测到 yumi Bridge 控制 App"
-    ui_print "  请单独下载 yumi-bridge.apk 安装"
-fi
-
 # --- 恢复用户配置 (rules.yaml & config.yaml) ---
 if [ -f "$BAK_DIR/user_rules.yaml.bak" ]; then
     cp -f "$BAK_DIR/user_rules.yaml.bak" "$MODPATH/rules.yaml"

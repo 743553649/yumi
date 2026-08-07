@@ -15,23 +15,23 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use inotify::{Inotify, WatchMask};
+use log::{debug, info, warn};
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use log::{info, warn, debug};
-use inotify::{Inotify, WatchMask};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering, AtomicI32};
-use std::error::Error;
-use std::process::Command;
-use std::sync::mpsc::Sender;
-use once_cell::sync::Lazy;
 
-use crate::common::DaemonEvent;
-use crate::i18n::{t, t_with_args};
-use crate::fluent_args;
-use crate::utils;
 use super::config::{self, RulesConfig};
+use crate::common::DaemonEvent;
+use crate::fluent_args;
+use crate::i18n::{t, t_with_args};
+use crate::utils;
 
 // 缓存有效的 Cgroup 路径索引，避免每次循环都去探测无效路径
 static VALID_CGROUP_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -41,7 +41,7 @@ static CURRENT_PID: AtomicI32 = AtomicI32::new(0);
 // 获取系统已启用的输入法列表
 fn get_system_ime_packages() -> HashSet<String> {
     let mut imes = HashSet::new();
-    
+
     let output = Command::new("settings")
         .arg("get")
         .arg("secure")
@@ -55,12 +55,15 @@ fn get_system_ime_packages() -> HashSet<String> {
                 let clean_pkg = pkg.trim();
                 if !clean_pkg.is_empty() {
                     imes.insert(clean_pkg.to_string());
-                    debug!("{}", t_with_args("app-detect-ime-auto", &fluent_args!("pkg" => clean_pkg)));
+                    debug!(
+                        "{}",
+                        t_with_args("app-detect-ime-auto", &fluent_args!("pkg" => clean_pkg))
+                    );
                 }
             }
         }
     }
-    
+
     if imes.is_empty() {
         warn!("{}", t("app-detect-ime-fallback"));
         imes.insert("com.sohu.inputmethod.sogou.xiaomi".to_string());
@@ -69,11 +72,12 @@ fn get_system_ime_packages() -> HashSet<String> {
         imes.insert("com.baidu.input_mi".to_string());
         imes.insert("com.iflytek.inputmethod.miui".to_string());
     }
-    
+
     imes
 }
 
-static CURRENT_PACKAGE: Lazy<Arc<Mutex<String>>> = Lazy::new(|| Arc::new(Mutex::new("".to_string())));
+static CURRENT_PACKAGE: Lazy<Arc<Mutex<String>>> =
+    Lazy::new(|| Arc::new(Mutex::new("".to_string())));
 static IME_BLOCKLIST: Lazy<HashSet<String>> = Lazy::new(get_system_ime_packages);
 
 pub fn get_current_pid() -> i32 {
@@ -90,13 +94,21 @@ fn set_current_package(pkg: &str, pid: i32) {
 
 /// 判断是否为有效的用户应用包名
 fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
-    if pkg.is_empty() || !pkg.contains('.') || pkg.starts_with('/') || pkg.starts_with('.') || pkg.contains(':') {
+    if pkg.is_empty()
+        || !pkg.contains('.')
+        || pkg.starts_with('/')
+        || pkg.starts_with('.')
+        || pkg.contains(':')
+    {
         return false;
     }
     if IME_BLOCKLIST.contains(pkg) {
-        return false; 
+        return false;
     }
-    if ignored_apps.iter().any(|ignored| pkg == ignored || pkg.contains(ignored)) {
+    if ignored_apps
+        .iter()
+        .any(|ignored| pkg == ignored || pkg.contains(ignored))
+    {
         return false;
     }
     match pkg {
@@ -111,9 +123,15 @@ fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
         // gms.ui / mibrain.speech）已下沉到 ignored_apps 配置（rules.yaml +
         // get_default_rules 兜底），按设备可配，不再硬编码
         _ => {
-            if pkg.contains("magisk") || pkg.contains("mtiodaemon") { return false; }
-            if pkg.contains("ads_monitor") { return false; }
-            if pkg.contains("inputmethod") { return false; }
+            if pkg.contains("magisk") || pkg.contains("mtiodaemon") {
+                return false;
+            }
+            if pkg.contains("ads_monitor") {
+                return false;
+            }
+            if pkg.contains("inputmethod") {
+                return false;
+            }
             true
         }
     }
@@ -142,24 +160,26 @@ fn get_focused_app_from_cgroup(ignored_apps: &[String]) -> Result<(String, i32),
     let paths = [
         "/dev/cpuset/top-app/cgroup.procs",
         "/sys/fs/cgroup/cpuset/top-app/cgroup.procs",
-        "/dev/stune/top-app/cgroup.procs"
+        "/dev/stune/top-app/cgroup.procs",
     ];
 
     let cached = VALID_CGROUP_IDX.load(Ordering::Relaxed);
     if cached < paths.len() {
         if let Some(res) = check_cgroup_path(paths[cached], ignored_apps) {
-            return Ok(res); 
+            return Ok(res);
         }
     }
 
     for (i, path) in paths.iter().enumerate() {
-        if i == cached { continue; }
+        if i == cached {
+            continue;
+        }
         if let Some(res) = check_cgroup_path(path, ignored_apps) {
             VALID_CGROUP_IDX.store(i, Ordering::Relaxed);
             return Ok(res);
         }
     }
-    
+
     Err("No valid app found".into())
 }
 
@@ -192,8 +212,12 @@ mod tests {
     fn test_determine_mode_override_global() {
         let mut config = get_default_rules();
         config.global_mode = "balance".to_string();
-        config.app_modes.insert("com.tencent.tmgp.sgame".to_string(), "fas".to_string());
-        config.app_modes.insert("com.example.defaultapp".to_string(), "default".to_string());
+        config
+            .app_modes
+            .insert("com.tencent.tmgp.sgame".to_string(), "fas".to_string());
+        config
+            .app_modes
+            .insert("com.example.defaultapp".to_string(), "default".to_string());
 
         // 1. App with specific valid rule should override global mode
         let (mode, is_override) = determine_mode(&config, "com.tencent.tmgp.sgame");
@@ -234,34 +258,54 @@ pub fn get_default_rules() -> RulesConfig {
 pub fn watch_config_file(
     config_arc: Arc<Mutex<RulesConfig>>,
     force_refresh_arc: Arc<AtomicBool>,
-    tx: Sender<DaemonEvent>
+    tx: Sender<DaemonEvent>,
 ) -> Result<(), Box<dyn Error>> {
     let mut inotify = Inotify::init()?;
     let rules_path = config::get_rules_path();
-    if !rules_path.exists() { let _ = utils::try_write_file(&rules_path, ""); }
-    inotify.watches().add(&rules_path, WatchMask::MODIFY | WatchMask::CLOSE_WRITE)?;
-    info!("{}", t_with_args("app-detect-config-watch", &fluent_args!("path" => format!("{:?}", rules_path))));
+    if !rules_path.exists() {
+        let _ = utils::try_write_file(&rules_path, "");
+    }
+    inotify
+        .watches()
+        .add(&rules_path, WatchMask::MODIFY | WatchMask::CLOSE_WRITE)?;
+    info!(
+        "{}",
+        t_with_args(
+            "app-detect-config-watch",
+            &fluent_args!("path" => format!("{:?}", rules_path))
+        )
+    );
     let mut buffer = [0u8; 1024];
     loop {
         let events = inotify.read_events_blocking(&mut buffer)?;
         if events.peekable().peek().is_some() {
             info!("{}", t("app-detect-change-detected"));
             thread::sleep(Duration::from_millis(100));
-            while let Ok(events) = inotify.read_events(&mut buffer) { if events.peekable().peek().is_none() { break; } }
+            while let Ok(events) = inotify.read_events(&mut buffer) {
+                if events.peekable().peek().is_none() {
+                    break;
+                }
+            }
             info!("{}", t("app-detect-reloading"));
-            
+
             let new_config = crate::utils::read_config::<RulesConfig, _>(&rules_path)
-                                .unwrap_or_else(|e| { 
-                                    warn!("⚠️ {}", t_with_args("app-detect-load-failed", &fluent_args!("error" => e.to_string()))); 
-                                    get_default_rules() 
-                                });
-            
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "⚠️ {}",
+                        t_with_args(
+                            "app-detect-load-failed",
+                            &fluent_args!("error" => e.to_string())
+                        )
+                    );
+                    get_default_rules()
+                });
+
             *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = new_config.clone();
-            
+
             if let Err(e) = tx.send(DaemonEvent::ConfigReload(new_config)) {
                 warn!("⚠️ [Config] Failed to send ConfigReload event: {}", e);
             }
-            
+
             info!("{}", t("app-detect-reload-success"));
             force_refresh_arc.store(true, Ordering::SeqCst);
         }
@@ -269,32 +313,38 @@ pub fn watch_config_file(
 }
 
 pub fn app_detection_loop(
-    config_arc: Arc<Mutex<RulesConfig>>, 
+    config_arc: Arc<Mutex<RulesConfig>>,
     screen_state_arc: Arc<Mutex<bool>>,
     force_refresh_arc: Arc<AtomicBool>,
-    tx: Sender<DaemonEvent>
+    tx: Sender<DaemonEvent>,
 ) -> Result<(), Box<dyn Error>> {
     info!("🚀 {}", t("app-detect-loop-started"));
-    
+
     let temp_sensor_path = utils::find_cpu_temp_path().unwrap_or_default();
     let mut last_package = String::new();
     let mut last_mode = String::new();
-    let mut last_screen_state = true; 
-    
+    let mut last_screen_state = true;
+
     // 状态机变量：用于无阻塞防抖
     let mut pending_package = String::new();
     let mut pending_pid = 0;
     let mut debounce_start = Instant::now();
-    
+
     // 性能优化：缓存配置快照，仅在 force_refresh 时重新 fetch
     let mut cached_config: Option<RulesConfig> = None;
 
     loop {
         let force_refresh = force_refresh_arc.swap(false, Ordering::SeqCst);
         let current_screen_state = { *screen_state_arc.lock().unwrap_or_else(|e| e.into_inner()) };
-        
+
         if current_screen_state != last_screen_state {
-            info!("{}", t_with_args("app-detect-screen-changed", &fluent_args!("old" => last_screen_state.to_string(), "new" => current_screen_state.to_string())));
+            info!(
+                "{}",
+                t_with_args(
+                    "app-detect-screen-changed",
+                    &fluent_args!("old" => last_screen_state.to_string(), "new" => current_screen_state.to_string())
+                )
+            );
             last_screen_state = current_screen_state;
             let _ = tx.send(DaemonEvent::ScreenStateChange(current_screen_state));
 
@@ -305,11 +355,11 @@ pub fn app_detection_loop(
             }
         }
 
-        if !current_screen_state { 
+        if !current_screen_state {
             thread::sleep(Duration::from_secs(1));
             continue;
         }
-                
+
         // 性能优化：仅当配置更新 (force_refresh) 或首次运行时获取锁并拷贝全量配置
         if force_refresh || cached_config.is_none() {
             cached_config = Some(config_arc.lock().unwrap_or_else(|e| e.into_inner()).clone());
@@ -344,8 +394,10 @@ pub fn app_detection_loop(
 
         let current_temp = if !temp_sensor_path.is_empty() {
             utils::read_f64_from_file(&temp_sensor_path).unwrap_or(0.0) / 1000.0
-        } else { 0.0 };
-        
+        } else {
+            0.0
+        };
+
         if last_package != final_pkg || force_refresh {
             if !final_pkg.is_empty() {
                 set_current_package(&final_pkg, final_pid);
@@ -354,9 +406,19 @@ pub fn app_detection_loop(
                 if last_mode != new_mode {
                     let icon = if new_mode == "fas" { "🎮" } else { "⚡" };
                     if is_override {
-                        info!("{} 前台应用 [{}] 触发独立模式: [{}] (覆盖全局模式 [{}])", icon, final_pkg, new_mode, config_snapshot.global_mode);
+                        info!(
+                            "{} 前台应用 [{}] 触发独立模式: [{}] (覆盖全局模式 [{}])",
+                            icon, final_pkg, new_mode, config_snapshot.global_mode
+                        );
                     } else {
-                        info!("{} {}", icon, t_with_args("app-detect-mode-change-pkg", &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())));
+                        info!(
+                            "{} {}",
+                            icon,
+                            t_with_args(
+                                "app-detect-mode-change-pkg",
+                                &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
+                            )
+                        );
                     }
 
                     // ModeChange 事件携带 pid 字段

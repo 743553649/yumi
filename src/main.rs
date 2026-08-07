@@ -22,7 +22,6 @@ pub mod fas_types;
 pub mod gpu_manager;
 pub mod i18n;
 pub mod idle_dive;
-pub mod ipc_server;
 mod logger;
 mod monitor;
 mod scheduler;
@@ -92,28 +91,7 @@ fn main() -> Result<()> {
     }
     info!("{}", t("scheduler-module-started"));
 
-    // 7. 启动 IPC Server
-    if config.ipc.enabled {
-        let ipc_tx = tx.clone();
-        let ipc_root = root.clone();
-        let ipc_port = config.ipc.port;
-        let ipc_config_arc = Arc::clone(&config_arc);
-        let ipc_force_refresh_arc = Arc::clone(&force_refresh_arc);
-        thread::Builder::new()
-            .name("ipc_server".to_string())
-            .spawn(move || {
-                ipc_server::start(
-                    ipc_tx,
-                    ipc_root,
-                    ipc_port,
-                    ipc_config_arc,
-                    ipc_force_refresh_arc,
-                );
-            })?;
-        info!("IPC server starting on port {}", config.ipc.port);
-    }
-
-    // 8. 启动 Monitor
+    // 7. 启动 Monitor
     let monitor_thread = thread::Builder::new()
         .name("monitor_core".to_string())
         .spawn(move || {
@@ -130,7 +108,7 @@ fn main() -> Result<()> {
 
     info!("{}", t("monitor-module-started"));
 
-    // 9. 挂起
+    // 8. 挂起
     monitor_thread.join().unwrap();
 
     Ok(())

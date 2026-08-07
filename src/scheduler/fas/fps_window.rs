@@ -28,7 +28,14 @@ pub(super) struct FpsWindow {
 
 impl FpsWindow {
     pub(super) fn new() -> Self {
-        Self { buf: [0.0; WINDOW_SIZE], pos: 0, len: 0, sum: 0.0, sq_sum: 0.0, push_count: 0 }
+        Self {
+            buf: [0.0; WINDOW_SIZE],
+            pos: 0,
+            len: 0,
+            sum: 0.0,
+            sq_sum: 0.0,
+            push_count: 0,
+        }
     }
 
     pub(super) fn push(&mut self, fps: f32) {
@@ -58,13 +65,23 @@ impl FpsWindow {
         self.sq_sum = slice.iter().map(|x| x * x).sum();
     }
 
-    #[inline] pub(super) fn count(&self) -> usize { self.len }
-    #[inline] pub(super) fn mean(&self) -> f32 {
-        if self.len == 0 { 0.0 } else { self.sum / self.len as f32 }
+    #[inline]
+    pub(super) fn count(&self) -> usize {
+        self.len
+    }
+    #[inline]
+    pub(super) fn mean(&self) -> f32 {
+        if self.len == 0 {
+            0.0
+        } else {
+            self.sum / self.len as f32
+        }
     }
 
     pub(super) fn recent_mean(&self, n: usize) -> f32 {
-        if self.len == 0 { return 0.0; }
+        if self.len == 0 {
+            return 0.0;
+        }
         let count = n.min(self.len);
         let mut sum = 0.0;
         for i in 0..count {
@@ -75,7 +92,9 @@ impl FpsWindow {
     }
 
     pub(super) fn stddev(&self) -> f32 {
-        if self.len < 2 { return 0.0; }
+        if self.len < 2 {
+            return 0.0;
+        }
         let n = self.len as f32;
         let mean = self.sum / n;
         (self.sq_sum / n - mean * mean).max(0.0).sqrt()
@@ -83,7 +102,10 @@ impl FpsWindow {
 
     pub(super) fn clear(&mut self) {
         self.buf = [0.0; WINDOW_SIZE];
-        self.pos = 0; self.len = 0; self.sum = 0.0; self.sq_sum = 0.0;
+        self.pos = 0;
+        self.len = 0;
+        self.sum = 0.0;
+        self.sq_sum = 0.0;
         self.push_count = 0;
     }
 }

@@ -17,10 +17,15 @@
 
 pub(super) struct PidController {
     // 用户配置的基准系数 (基于 60fps 场景调优)
-    pub(super) base_kp: f32, pub(super) base_ki: f32, pub(super) base_kd: f32,
+    pub(super) base_kp: f32,
+    pub(super) base_ki: f32,
+    pub(super) base_kd: f32,
     // 运行时实际使用的动态系数 (根据 target_fps 和场景自动缩放)
-    kp: f32, ki: f32, kd: f32,
-    integral: f32, prev_error: f32,
+    kp: f32,
+    ki: f32,
+    kd: f32,
+    integral: f32,
+    prev_error: f32,
     filtered_deriv: f32,
     integral_limit: f32,
     // 缓存当前适配的目标帧率，避免重复计算
@@ -30,10 +35,16 @@ pub(super) struct PidController {
 impl PidController {
     pub(super) fn new(kp: f32, ki: f32, kd: f32) -> Self {
         Self {
-            base_kp: kp, base_ki: ki, base_kd: kd,
-            kp, ki, kd,
-            integral: 0.0, prev_error: 0.0,
-            filtered_deriv: 0.0, integral_limit: 0.15,
+            base_kp: kp,
+            base_ki: ki,
+            base_kd: kd,
+            kp,
+            ki,
+            kd,
+            integral: 0.0,
+            prev_error: 0.0,
+            filtered_deriv: 0.0,
+            integral_limit: 0.15,
             adapted_fps: 60.0,
         }
     }
@@ -46,8 +57,14 @@ impl PidController {
     /// 因此 P/I/D 三个通道的增益都需要随 target_fps 缩放，
     /// 但缩放系数不同：P 最激进，D 最保守 (高刷噪声大)。
     pub(super) fn adapt_to_target_fps(&mut self, target_fps: f32) {
-        let target_fps = if target_fps.is_finite() && target_fps > 0.0 { target_fps } else { 60.0 };
-        if (target_fps - self.adapted_fps).abs() < 0.5 { return; }
+        let target_fps = if target_fps.is_finite() && target_fps > 0.0 {
+            target_fps
+        } else {
+            60.0
+        };
+        if (target_fps - self.adapted_fps).abs() < 0.5 {
+            return;
+        }
         self.adapted_fps = target_fps;
 
         let ratio = target_fps / 60.0;
@@ -61,7 +78,9 @@ impl PidController {
         // 积分限幅：高刷下缩小，防止积分器饱和导致频率虚高
         self.integral_limit = 0.15 * (60.0 / target_fps.max(1.0)).sqrt();
         // 不 reset 积分器（保持连续性），只做 clamp
-        self.integral = self.integral.clamp(-self.integral_limit, self.integral_limit);
+        self.integral = self
+            .integral
+            .clamp(-self.integral_limit, self.integral_limit);
     }
 
     /// 带利用率感知的 PID 计算
@@ -95,7 +114,7 @@ impl PidController {
         // fg_util ∈ [0.45, 1.0] → CPU bound，正常增益
         // fg_util 无数据 (≤ 0.01) → 刚启动还没采样到，不衰减
         let util_gain = if fg_util > 0.01 && fg_util < 0.45 {
-            0.3 + fg_util * 1.56  // 0.3 ~ 1.0
+            0.3 + fg_util * 1.56 // 0.3 ~ 1.0
         } else {
             1.0
         };
@@ -108,11 +127,15 @@ impl PidController {
     }
 
     pub(super) fn reset(&mut self) {
-        self.integral = 0.0; self.prev_error = 0.0; self.filtered_deriv = 0.0;
+        self.integral = 0.0;
+        self.prev_error = 0.0;
+        self.filtered_deriv = 0.0;
     }
 
     pub(super) fn update_coefficients(&mut self, kp: f32, ki: f32, kd: f32) {
-        self.base_kp = kp; self.base_ki = ki; self.base_kd = kd;
+        self.base_kp = kp;
+        self.base_ki = ki;
+        self.base_kd = kd;
         // 重新按当前 adapted_fps 缩放
         let fps = self.adapted_fps;
         self.adapted_fps = 0.0; // 强制刷新
@@ -153,7 +176,12 @@ mod tests {
         // P 线性、I 开方、D 0.3 次幂——幅度递减但都 > 基准
         let mut pid = make_pid();
         pid.adapt_to_target_fps(144.0); // ratio = 2.4
-        assert!(pid.kp > pid.base_kp, "kp 应随高刷放大: kp={} base={}", pid.kp, pid.base_kp);
+        assert!(
+            pid.kp > pid.base_kp,
+            "kp 应随高刷放大: kp={} base={}",
+            pid.kp,
+            pid.base_kp
+        );
         assert!(pid.ki > pid.base_ki, "ki 应随高刷放大");
         assert!(pid.kd > pid.base_kd, "kd 应随高刷放大");
         // P 增益最激进，D 最保守
@@ -198,10 +226,18 @@ mod tests {
             pid.compute(-1.0, 0.0, 1.0, 1.0); // fg_util=1.0 不触发 P 衰减
         }
         let limit = pid.integral_limit;
-        assert!(pid.integral >= -limit - 1e-6,
-            "integral {} 不应低于 -limit {}", pid.integral, -limit);
-        assert!(pid.integral <= limit + 1e-6,
-            "integral {} 不应超过 +limit {}", pid.integral, limit);
+        assert!(
+            pid.integral >= -limit - 1e-6,
+            "integral {} 不应低于 -limit {}",
+            pid.integral,
+            -limit
+        );
+        assert!(
+            pid.integral <= limit + 1e-6,
+            "integral {} 不应超过 +limit {}",
+            pid.integral,
+            limit
+        );
     }
 
     #[test]
@@ -215,11 +251,18 @@ mod tests {
         let mut pid_high = PidController::new(1.0, 0.0, 0.0);
         let out_high = pid_high.compute(0.1, 0.1, 1.0, 0.8); // util_gain = 1.0
 
-        assert!(out_low < out_high,
-            "低利用率下 P 项应被衰减: low={} high={}", out_low, out_high);
+        assert!(
+            out_low < out_high,
+            "低利用率下 P 项应被衰减: low={} high={}",
+            out_low,
+            out_high
+        );
         // 衰减比例应严格符合公式
-        assert!((out_low / out_high - 0.612).abs() < 1e-3,
-            "衰减比例应为 0.612，实际 {}", out_low / out_high);
+        assert!(
+            (out_low / out_high - 0.612).abs() < 1e-3,
+            "衰减比例应为 0.612，实际 {}",
+            out_low / out_high
+        );
     }
 
     #[test]
@@ -231,7 +274,10 @@ mod tests {
         let mut pid_normal = PidController::new(1.0, 0.0, 0.0);
         let out_normal = pid_normal.compute(0.1, 0.1, 1.0, 0.8);
 
-        assert!((out_zero - out_normal).abs() < 1e-6, "无利用率数据不应衰减 P 项");
+        assert!(
+            (out_zero - out_normal).abs() < 1e-6,
+            "无利用率数据不应衰减 P 项"
+        );
     }
 
     #[test]

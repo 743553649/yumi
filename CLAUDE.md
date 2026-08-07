@@ -1,15 +1,15 @@
 # yumi 项目 AI Agent 协作与开发规范
 
-> 本文档为 `yumi` (Android CPU 调度器与 App) 核心开发规范，Agent 在所有开发过程中必须严格遵守。
+> 本文档为 `yumi` (Android CPU 调度器) 核心开发规范，Agent 在所有开发过程中必须严格遵守。
 
 ---
 
 ## 1. 架构设计与工程演进原则
 - **不保留向后兼容**：过时的代码、废弃的 IPC 接口与配置字段直接删除，严禁兼容层、migration 或 fallback。
 - **极简实现与拒绝预防性抽象**：选择满足当前需求的最简实现，绝不搞推测性抽象与多余配置层。
-- **端到端先行与渐进演进**：先跑通 Rust 核心 ➔ TCP IPC ➔ App 最小端到端闭环，绝不为了未完成的复杂度拆掉可运行功能。
+- **端到端先行与渐进演进**：先跑通 Rust 核心端到端闭环，绝不为了未完成的复杂度拆掉可运行功能。
 - **模块化与关注点分离**：FAS 帧感知、CLG 调速器、CPUSet QoS、Idle Dive、TouchBoost 与 IPC 服务保持严格解耦与强类型约束。
-- **成熟库优先与深度挖掘**：优先使用成熟维系库；新增依赖或自研前先盘点 `Cargo.toml`/`build.gradle.kts` 已有依赖能力。
+- **成熟库优先与深度挖掘**：优先使用成熟维系库；新增依赖或自研前先盘点 `Cargo.toml` 已有依赖能力。
 - **长远架构决策**：不做“先这样以后再换”的临时方案，每次修改必须做可持续的终态架构决策。
 - **参考成熟模式**：借鉴 Linux 内核、Android 系统框架及成熟开源调度器的已验证模式，禁止盲目从零发明。
 
@@ -29,17 +29,17 @@
 - **目标驱动与 TDD 测试闭环**：修改业务前先写/改测试（观察红灯 Red），编写最小实现使测试通过（绿灯 Green），重构验证保持绿灯。连续 3 次尝试失败必须整理日志向用户求助。
 - **小白友好沟通**：用户是底层小白，对话与汇报必须使用**通俗大白话与生活比喻**，严禁堆砌专业黑话。回复统一使用中文；代码变量/方法名保持英文。
 - **Git Commit 规范**：遵循 Conventional Commits（例如：`feat(fas): add target fps scaling`）。
-- **Android 代码语言规范（Kotlin 优先）**：`android-app/` 新增代码强制使用 Kotlin；既有 Java 文件（`MainActivity`、自定义 View、`ipc`/`system`/`apps` 业务类）按文件渐进迁移，优先纯数据类与纯工具类。Java 与 Kotlin 混用期间，Kotlin 暴露给 Java 的静态方法用 `object` + `@JvmStatic`；需保留 Java 直接字段访问的过渡期用 `@JvmField`，待调用方 Kotlin 化后移除。
+
 
 ---
 
 ## 4. 项目架构与关键路径
-- **项目类型**: Android CPU 调度器 (Rust 核心守护进程 + Android 14 App) / 骁龙 8 Elite
+- **项目类型**: Android CPU 调度器 (Rust 核心守护进程) / 骁龙 8 Elite
 - **核心源码**:
   - FAS 帧感知: `src/scheduler/fas/` (`pid.rs`, `controller.rs`, `frame_pipeline.rs`, `gear_state.rs`)
   - CLG 调速器: `src/scheduler/cpu_load_governor.rs` | 状态机/Doze: `src/scheduler/mod.rs`
   - CPUSet: `src/cpuset_manager/` | Idle Dive: `src/idle_dive/` | TouchBoost: `src/touch_boost/`
-  - IPC 服务: `src/ipc_server.rs` (TCP 127.0.0.1:14567) | App: `android-app/`
+  
 - **配置文件**: `module/config/` (`config.yaml`, `cpuset.yaml`, `idle_dive.yaml`, `touch_boost.yaml`)
 
 ---
@@ -49,8 +49,7 @@
 ```powershell
 # 1. Rust 交叉编译检查: $env:YUMI_SKIP_EBPF=1; cargo check --target aarch64-linux-android
 # 2. xtask 全自动打包: cmd /c "set YUMI_SKIP_EBPF=1&& cargo run --package xtask -- b"
-# 3. App 编译: cd android-app; .\gradlew.bat assembleDebug
-# 4. 代码格式与 Clippy: cargo fmt --check; $env:YUMI_SKIP_EBPF=1; cargo clippy --target aarch64-linux-android
+# 3. 代码格式与 Clippy: cargo fmt --check; $env:YUMI_SKIP_EBPF=1; cargo clippy --target aarch64-linux-android
 ```
 
 - **打包硬性要求**：
