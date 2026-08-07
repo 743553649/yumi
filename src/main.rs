@@ -16,25 +16,26 @@
  */
 
 mod common;
+pub mod cpuset_manager;
+pub mod ebpf_monitor;
+pub mod fas_types;
+pub mod gpu_manager;
+pub mod i18n;
+pub mod idle_dive;
+pub mod ipc_server;
 mod logger;
 mod monitor;
 mod scheduler;
-pub mod i18n;
-pub mod utils;
-pub mod fas_types;
-pub mod cpuset_manager;
-pub mod idle_dive;
 pub mod touch_boost;
-pub mod ipc_server;
-pub mod ebpf_monitor;
-use std::sync::{Arc, Mutex};
+pub mod utils;
+use crate::i18n::{load_language, t, t_with_args};
+use crate::scheduler::config::Config;
+use anyhow::Result;
+use log::{error, info};
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::thread;
-use anyhow::Result;
-use log::{info, error};
-use crate::i18n::{t, t_with_args, load_language};
-use crate::scheduler::config::Config;
 
 fn main() -> Result<()> {
     // 1. 环境初始化
@@ -45,20 +46,27 @@ fn main() -> Result<()> {
     let root = common::get_module_root();
     let log_dir = root.join("logs");
     std::fs::create_dir_all(&log_dir)?;
-    
-    
+
     // 2. 提前读取配置
     let config_path: std::path::PathBuf = root.join("config/config.yaml");
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
     // 3. 立即加载语言（默认中文）
-    let lang = if config.meta.language.is_empty() { "zh" } else { &config.meta.language };
+    let lang = if config.meta.language.is_empty() {
+        "zh"
+    } else {
+        &config.meta.language
+    };
     load_language(lang);
 
     // 4. 初始化日志（默认 INFO 等级）
-    let log_level = if config.meta.loglevel.is_empty() { "INFO" } else { &config.meta.loglevel };
-    logger::init(log_level)?; 
-    
+    let log_level = if config.meta.loglevel.is_empty() {
+        "INFO"
+    } else {
+        &config.meta.loglevel
+    };
+    logger::init(log_level)?;
+
     info!("{}", t("yumi-module-starting"));
 
     // 5. 创建通信通道与共享配置
@@ -73,7 +81,13 @@ fn main() -> Result<()> {
 
     // 6. 启动 Scheduler
     if let Err(e) = scheduler::start_scheduler_thread(rx) {
-        error!("{}", t_with_args("scheduler-module-start-failed", &fluent_args!("error" => e.to_string())));
+        error!(
+            "{}",
+            t_with_args(
+                "scheduler-module-start-failed",
+                &fluent_args!("error" => e.to_string())
+            )
+        );
         return Err(e);
     }
     info!("{}", t("scheduler-module-started"));
@@ -88,7 +102,13 @@ fn main() -> Result<()> {
         thread::Builder::new()
             .name("ipc_server".to_string())
             .spawn(move || {
-                ipc_server::start(ipc_tx, ipc_root, ipc_port, ipc_config_arc, ipc_force_refresh_arc);
+                ipc_server::start(
+                    ipc_tx,
+                    ipc_root,
+                    ipc_port,
+                    ipc_config_arc,
+                    ipc_force_refresh_arc,
+                );
             })?;
         info!("IPC server starting on port {}", config.ipc.port);
     }
@@ -98,10 +118,16 @@ fn main() -> Result<()> {
         .name("monitor_core".to_string())
         .spawn(move || {
             if let Err(e) = monitor::start_monitor_with_shared(tx, config_arc, force_refresh_arc) {
-                error!("{}", t_with_args("monitor-module-crashed", &fluent_args!("error" => e.to_string())));
+                error!(
+                    "{}",
+                    t_with_args(
+                        "monitor-module-crashed",
+                        &fluent_args!("error" => e.to_string())
+                    )
+                );
             }
         })?;
-    
+
     info!("{}", t("monitor-module-started"));
 
     // 9. 挂起

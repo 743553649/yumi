@@ -149,3 +149,10 @@ touch-boost-config-reloaded = [TouchBoost] 配置已热重载
 log-level-updated = 日志级别已更新为: { $level }
 scheduler-ipc-panicked = [调度器] IPC 线程发生 panic: { $error }
 touch-boost-channel-disconnected = [TouchBoost] 触摸事件通道已断开，TouchBoost 功能失效
+
+# --- GPU Management ---
+gpu-init = [GPU] GPU 管理器初始化完成
+gpu-mode-switch = [GPU] 模式切换: →{ $mode } 延迟={ $ms }ms 频率={ $freq }Hz
+gpu-enter-doze = [GPU] 进入息屏 GPU 节能模式
+gpu-exit-doze = [GPU] 退出息屏 GPU 节能模式
+gpu-release = [GPU] 已释放 GPU 控制，恢复默认值

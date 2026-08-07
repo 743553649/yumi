@@ -150,3 +150,10 @@ touch-boost-config-reloaded = [TouchBoost] Config reloaded
 log-level-updated = Log level updated to: { $level }
 scheduler-ipc-panicked = [Scheduler] IPC thread panicked: { $error }
 touch-boost-channel-disconnected = [TouchBoost] Touch event channel disconnected, TouchBoost disabled
+
+# --- GPU Management ---
+gpu-init = [GPU] GPU manager initialized
+gpu-mode-switch = [GPU] Mode switch: →{ $mode } latency={ $ms }ms freq={ $freq }Hz
+gpu-enter-doze = [GPU] Entering screen-off GPU power-saving mode
+gpu-exit-doze = [GPU] Exiting screen-off GPU power-saving mode
+gpu-release = [GPU] Released GPU control, restored defaults
