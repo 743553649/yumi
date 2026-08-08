@@ -36,37 +36,3 @@ if echo "$CURRENT_LOCALE" | $GREP_CMD -qi "zh"; then
   MSG_WELCOME="欢迎使用 Yumi 调度！"
 fi
 
-# --- 备份现有用户配置 (rules.yaml & config.yaml) ---
-BAK_DIR="${TMPDIR:-$MODPATH}"
-
-if [ -f "/data/adb/modules/yumi/rules.yaml" ]; then
-    ui_print "- 检测到已存在用户配置，保留 rules.yaml..."
-    cp -f "/data/adb/modules/yumi/rules.yaml" "$BAK_DIR/user_rules.yaml.bak"
-fi
-
-if [ -f "/data/adb/modules/yumi/config/config.yaml" ]; then
-    ui_print "- 检测到已存在用户配置，保留 config.yaml..."
-    cp -f "/data/adb/modules/yumi/config/config.yaml" "$BAK_DIR/user_config.yaml.bak"
-elif [ -f "/data/adb/modules/yumi/config.yaml" ]; then
-    ui_print "- 检测到已存在用户配置，保留 config.yaml..."
-    cp -f "/data/adb/modules/yumi/config.yaml" "$BAK_DIR/user_config.yaml.bak"
-fi
-
-# --- 恢复用户配置 (rules.yaml & config.yaml) ---
-if [ -f "$BAK_DIR/user_rules.yaml.bak" ]; then
-    cp -f "$BAK_DIR/user_rules.yaml.bak" "$MODPATH/rules.yaml"
-    ui_print "- 用户应用规则配置 (rules.yaml) 已成功还原！"
-    rm -f "$BAK_DIR/user_rules.yaml.bak"
-fi
-
-if [ -f "$BAK_DIR/user_config.yaml.bak" ]; then
-    if [ -d "$MODPATH/config" ]; then
-        cp -f "$BAK_DIR/user_config.yaml.bak" "$MODPATH/config/config.yaml"
-    else
-        cp -f "$BAK_DIR/user_config.yaml.bak" "$MODPATH/config.yaml"
-    fi
-    ui_print "- 用户全局配置已成功还原！"
-    rm -f "$BAK_DIR/user_config.yaml.bak"
-fi
-
-# --- 结束 ---
