@@ -49,6 +49,47 @@ pub fn try_write_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Re
     Ok(())
 }
 
+/// 写入文件内容并回读确认。写入失败或回读不匹配均记录警告。
+/// 使用取巧比较：对于 scheduler 节点，回读可能是 "[none] mq-deadline" 格式，
+/// 检查 expected 是否出现在回读内容中。
+pub fn write_and_verify<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, expected: C) -> bool {
+    let path_ref = path.as_ref();
+    let expected_bytes = expected.as_ref();
+    let expected_str = String::from_utf8_lossy(expected_bytes).trim_end().to_string();
+
+    if let Err(e) = write_to_file(path_ref, expected_bytes) {
+        log::warn!(
+            "[IO] write failed to {}: {}",
+            path_ref.display(),
+            e
+        );
+        return false;
+    }
+
+    match read_file_content(path_ref.to_str().unwrap_or_default()) {
+        Ok(actual) => {
+            let actual_trimmed = actual.trim();
+            // scheduler 节点返回 "none" 或 "[none] mq-deadline"
+            // read_ahead_kb/nomerges/iostats 直接返回数值
+            if actual_trimmed.contains(&expected_str) || actual_trimmed == expected_str {
+                true
+            } else {
+                log::warn!(
+                    "[IO] {}: wrote '{}', read back '{}'",
+                    path_ref.display(),
+                    expected_str,
+                    actual_trimmed
+                );
+                false
+            }
+        }
+        Err(e) => {
+            log::warn!("[IO] {}: write OK but read-back failed: {}", path_ref.display(), e);
+            false
+        }
+    }
+}
+
 pub fn enable_perm<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     if path.exists() {
@@ -70,11 +111,15 @@ pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
 }
 
 /// 监听目录变更，返回变更的文件名
+/// 支持 IN_CREATE 以便捕获 sed -i（rename 策略）替换文件后的事件
 pub fn watch_path_for_file<P: AsRef<Path>>(path_to_watch: P) -> Result<String> {
     let mut inotify = Inotify::init()?;
     inotify
         .watches()
-        .add(&path_to_watch, WatchMask::CLOSE_WRITE | WatchMask::MODIFY)?;
+        .add(
+            &path_to_watch,
+            WatchMask::CLOSE_WRITE | WatchMask::MODIFY | WatchMask::CREATE,
+        )?;
 
     let mut buffer = [0u8; 1024];
     let events = inotify.read_events_blocking(&mut buffer)?;
@@ -276,43 +321,54 @@ impl FastWriter {
     }
 
     fn do_write_bytes(&mut self, bytes: &[u8], text_node: bool) -> bool {
-        if let Some(file) = &mut self.file {
-            let _ = file.seek(SeekFrom::Start(0));
-            match file.write_all(bytes) {
-                Ok(()) => true,
-                Err(e) => {
-                    // EINVAL(22): 对频率节点是热限频/范围收窄（预期瞬态，debug 即可）
-                    //            对文本节点（cpuset 掩码）则是永久性非法值，需要 warn
-                    // EBUSY(16): sysfs 节点短暂被占用
-                    match e.raw_os_error() {
-                        Some(libc::EINVAL) if text_node => {
-                            log::warn!(
-                                "{}",
-                                t_with_args(
-                                    "sysfs-write-text-failed",
-                                    &fluent_args!("value" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())
-                                )
-                            );
-                        }
-                        Some(libc::EINVAL) | Some(libc::EBUSY) => {
-                            log::debug!("write to {:?} skipped: {}", self.path, e);
-                        }
-                        _ => {
-                            log::warn!(
-                                "{}",
-                                t_with_args(
-                                    "sysfs-write-freq-failed",
-                                    &fluent_args!("freq" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())
-                                )
-                            );
-                        }
-                    }
-                    // 写入失败不更新 last_value，确保下次 tick 会重试
-                    false
-                }
+        // Take file temporarily — allows self.file = None in error path for permanent disable
+        let mut file = match self.file.take() {
+            Some(f) => f,
+            None => return false,
+        };
+        let _ = file.seek(SeekFrom::Start(0));
+        match file.write_all(bytes) {
+            Ok(()) => {
+                self.file = Some(file);
+                true
             }
-        } else {
-            false
+            Err(e) => {
+                match e.raw_os_error() {
+                    Some(libc::EINVAL) if text_node => {
+                        log::warn!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-write-text-failed",
+                                &fluent_args!("value" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())
+                            )
+                        );
+                        self.file = Some(file);
+                    }
+                    Some(libc::EINVAL) | Some(libc::EBUSY) => {
+                        log::debug!("write to {:?} skipped: {}", self.path, e);
+                        self.file = Some(file);
+                    }
+                    Some(libc::EOPNOTSUPP) => {
+                        log::warn!(
+                            "[FastWriter] node {:?} rejects writes with EOPNOTSUPP, permanently disabling writer",
+                            self.path
+                        );
+                        // file dropped here (fd closed), self.file stays None
+                        // → subsequent writes return false immediately, no retry loop
+                    }
+                    _ => {
+                        log::warn!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-write-freq-failed",
+                                &fluent_args!("freq" => String::from_utf8_lossy(bytes).trim_end().to_string(), "error" => e.to_string())
+                            )
+                        );
+                        self.file = Some(file);
+                    }
+                }
+                false
+            }
         }
     }
 

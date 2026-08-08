@@ -216,6 +216,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     // GPU 保活线程：定期重新写入当前模式的 GPU 配置，防止第三方覆盖
     let gpu_keepalive_config = shared_gpu_config.clone();
     let gpu_keepalive_mode = shared_mode_name.clone();
+    let gpu_keepalive_sysconfig = shared_config.clone(); // for checking function.gpu_control
     thread::Builder::new()
         .name("gpu_keepalive".to_string())
         .spawn(move || {
@@ -234,6 +235,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             );
             loop {
                 thread::sleep(interval);
+
+                // GPUControl 总开关：config.yaml function.GPUControl
+                let sys_config = gpu_keepalive_sysconfig.read().unwrap_or_else(|e| e.into_inner());
+                if !sys_config.function.gpu_control {
+                    continue;
+                }
+                drop(sys_config);
+
                 let mode = gpu_keepalive_mode
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -359,13 +368,22 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             }
 
             // GPU 控制器：Adreno GPU 频率与调速器管理
-            let gpu_config = shared_gpu_config_for_ipc.clone();
-            let mut gpu_manager = crate::gpu_manager::GpuManager::new(
-                &gpu_config.read().unwrap_or_else(|e| e.into_inner())
-            );
-            if let Err(e) = gpu_manager.init() {
-                log::error!("{}", t_with_args("gpu-init-failed", &fluent_args!("error" => e.to_string())));
-            }
+            // 受 config.yaml function.GPUControl 总闸门控制
+            let mut gpu_manager = {
+                let config_lock = config_clone.read().unwrap_or_else(|e| e.into_inner());
+                if !config_lock.function.gpu_control {
+                    log::info!("{}", t("gpu-control-disabled-by-config"));
+                    crate::gpu_manager::GpuManager::disabled()
+                } else {
+                    let gpu_config = shared_gpu_config_for_ipc.clone();
+                    let gpu_cfg = gpu_config.read().unwrap_or_else(|e| e.into_inner());
+                    let mut gm = crate::gpu_manager::GpuManager::new(&gpu_cfg);
+                    if let Err(e) = gm.init() {
+                        log::error!("{}", t_with_args("gpu-init-failed", &fluent_args!("error" => e.to_string())));
+                    }
+                    gm
+                }
+            };
 
             let rules_path = crate::monitor::config::get_rules_path();
             let mut current_rules = crate::utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path).unwrap_or_default();

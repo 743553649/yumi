@@ -103,6 +103,21 @@ impl GpuManager {
         }
     }
 
+    /// Create a fully disabled GpuManager (no-op all operations).
+    /// Used when config.yaml function.GPUControl is false.
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            mode_configs: GpuModeConfigs::default(),
+            compat: GpuCompatInfo::disabled(),
+            max_gpuclk_writer: None,
+            governor_writer: None,
+            force_no_nap_writer: None,
+            circuit_breaker: WriteCircuitBreaker::new(),
+            current_mode: None,
+        }
+    }
+
     /// Initialize GPU manager: if enabled and available, apply the "balance" mode.
     pub fn init(&mut self) -> anyhow::Result<()> {
         if !self.enabled || !self.compat.available {

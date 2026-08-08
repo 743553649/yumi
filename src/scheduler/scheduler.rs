@@ -84,25 +84,33 @@ impl CpuScheduler {
                 if !io.scheduler.is_empty() {
                     let p = queue_path.join("scheduler");
                     if p.exists() {
-                        let _ = utils::try_write_file(&p, &io.scheduler);
+                        if !utils::write_and_verify(&p, &io.scheduler) {
+                            log::warn!("[IO] scheduler write failed for {:?}", dev_path.file_name().unwrap_or_default());
+                        }
                     }
                 }
                 if !io.read_ahead_kb.is_empty() {
                     let p = queue_path.join("read_ahead_kb");
                     if p.exists() {
-                        let _ = utils::try_write_file(&p, &io.read_ahead_kb);
+                        if !utils::write_and_verify(&p, &io.read_ahead_kb) {
+                            log::warn!("[IO] read_ahead_kb write failed for {:?}", dev_path.file_name().unwrap_or_default());
+                        }
                     }
                 }
                 if !io.nomerges.is_empty() {
                     let p = queue_path.join("nomerges");
                     if p.exists() {
-                        let _ = utils::try_write_file(&p, &io.nomerges);
+                        if !utils::write_and_verify(&p, &io.nomerges) {
+                            log::warn!("[IO] nomerges write failed for {:?}", dev_path.file_name().unwrap_or_default());
+                        }
                     }
                 }
                 if !io.iostats.is_empty() {
                     let p = queue_path.join("iostats");
                     if p.exists() {
-                        let _ = utils::try_write_file(&p, &io.iostats);
+                        if !utils::write_and_verify(&p, &io.iostats) {
+                            log::warn!("[IO] iostats write failed for {:?}", dev_path.file_name().unwrap_or_default());
+                        }
                     }
                 }
                 log::debug!(

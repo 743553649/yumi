@@ -216,6 +216,8 @@ pub struct FunctionToggles {
     pub cpu_idle_scaling_governor: bool,
     #[serde(rename = "IOOptimization")]
     pub io_optimization: bool,
+    #[serde(rename = "GPUControl", default = "crate::utils::default_true")]
+    pub gpu_control: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -9,7 +9,7 @@ meta:
 function:
   CpuIdleScalingGovernor: false
   IOOptimization: true
-  GPUControl: false
+  # GPUControl: true      # 取消注释可显式控制；默认 true 时由 gpu.yaml 的 enabled 控制
 
 # IO 设置
 IO_Settings:

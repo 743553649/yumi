@@ -265,9 +265,9 @@ pub fn watch_config_file(
     if !rules_path.exists() {
         let _ = utils::try_write_file(&rules_path, "");
     }
-    inotify
+    let _wd = inotify
         .watches()
-        .add(&rules_path, WatchMask::MODIFY | WatchMask::CLOSE_WRITE)?;
+        .add(&rules_path, WatchMask::MODIFY | WatchMask::CLOSE_WRITE | WatchMask::DELETE_SELF | WatchMask::MOVE_SELF)?;
     info!(
         "{}",
         t_with_args(
@@ -278,37 +278,55 @@ pub fn watch_config_file(
     let mut buffer = [0u8; 1024];
     loop {
         let events = inotify.read_events_blocking(&mut buffer)?;
-        if events.peekable().peek().is_some() {
-            info!("{}", t("app-detect-change-detected"));
-            thread::sleep(Duration::from_millis(100));
-            while let Ok(events) = inotify.read_events(&mut buffer) {
-                if events.peekable().peek().is_none() {
-                    break;
+        // Check if the watch needs to be re-added (file was deleted/moved)
+        for event in events {
+            let mask_bits = event.mask.bits();
+            // IN_DELETE_SELF=0x00000400, IN_MOVE_SELF=0x00000800, IN_IGNORED=0x00008000
+            if (mask_bits & 0x00008c00) != 0 {
+                info!("{}", t("app-detect-config-watch-lost-rebinding"));
+                // Re-add the watch (file may have been replaced by sed -i or cp)
+                if rules_path.exists() {
+                    inotify.watches().add(
+                        &rules_path,
+                        WatchMask::MODIFY | WatchMask::CLOSE_WRITE | WatchMask::DELETE_SELF | WatchMask::MOVE_SELF,
+                    )?;
+                } else {
+                    // File was deleted, wait for it to reappear
+                    thread::sleep(Duration::from_millis(200));
+                    continue;
                 }
             }
-            info!("{}", t("app-detect-reloading"));
-
-            let new_config = crate::utils::read_config::<RulesConfig, _>(&rules_path)
-                .unwrap_or_else(|e| {
-                    warn!(
-                        "⚠️ {}",
-                        t_with_args(
-                            "app-detect-load-failed",
-                            &fluent_args!("error" => e.to_string())
-                        )
-                    );
-                    get_default_rules()
-                });
-
-            *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = new_config.clone();
-
-            if let Err(e) = tx.send(DaemonEvent::ConfigReload(new_config)) {
-                warn!("⚠️ [Config] Failed to send ConfigReload event: {}", e);
-            }
-
-            info!("{}", t("app-detect-reload-success"));
-            force_refresh_arc.store(true, Ordering::SeqCst);
         }
+        
+        info!("{}", t("app-detect-change-detected"));
+        thread::sleep(Duration::from_millis(100));
+        while let Ok(events) = inotify.read_events(&mut buffer) {
+            if events.peekable().peek().is_none() {
+                break;
+            }
+        }
+        info!("{}", t("app-detect-reloading"));
+
+        let new_config = crate::utils::read_config::<RulesConfig, _>(&rules_path)
+            .unwrap_or_else(|e| {
+                warn!(
+                    "⚠️ {}",
+                    t_with_args(
+                        "app-detect-load-failed",
+                        &fluent_args!("error" => e.to_string())
+                    )
+                );
+                get_default_rules()
+            });
+
+        *config_arc.lock().unwrap_or_else(|e| e.into_inner()) = new_config.clone();
+
+        if let Err(e) = tx.send(DaemonEvent::ConfigReload(new_config)) {
+            warn!("⚠️ [Config] Failed to send ConfigReload event: {}", e);
+        }
+
+        info!("{}", t("app-detect-reload-success"));
+        force_refresh_arc.store(true, Ordering::SeqCst);
     }
 }
 
