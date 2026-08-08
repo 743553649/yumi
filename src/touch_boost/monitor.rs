@@ -156,7 +156,7 @@ impl TouchListener {
 
             let base = entry.path();
             // 检查 ABS_MT_TRACKING_ID 能力位 (bit 57)
-            let abs_path = base.join("capabilities").join("abs");
+            let abs_path = base.join("device").join("capabilities").join("abs");
             if let Ok(abs_str) = fs::read_to_string(&abs_path) {
                 if let Some(hex_str) = abs_str.trim().split_whitespace().last() {
                     if let Ok(abs_mask) = u64::from_str_radix(hex_str, 16) {
