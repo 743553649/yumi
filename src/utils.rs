@@ -243,6 +243,9 @@ impl SysPathExist {
 // ════════════════════════════════════════════════════════════════
 
 pub struct FastWriter {
+    // fallback: some sysfs nodes reject persistent FD writes (EOPNOTSUPP),
+    // switch to fresh open+write+close via fs::write
+    use_fs_write: bool,
     file: Option<File>,
     // buf 容量 64 字节，为 cpuset 掩码极端格式留足冗余（str 写入路径按 self.buf.len() 动态限长）
     buf: [u8; 64],
@@ -261,6 +264,7 @@ impl FastWriter {
             file,
             buf: [0u8; 64],
             path: path_ref.to_path_buf(),
+            use_fs_write: false,
         }
     }
 
@@ -324,7 +328,12 @@ impl FastWriter {
         // Take file temporarily — allows self.file = None in error path for permanent disable
         let mut file = match self.file.take() {
             Some(f) => f,
-            None => return false,
+            None => {
+                if self.use_fs_write {
+                    return fs::write(&self.path, bytes).is_ok();
+                }
+                return false;
+            }
         };
         let _ = file.seek(SeekFrom::Start(0));
         match file.write_all(bytes) {
@@ -349,12 +358,20 @@ impl FastWriter {
                         self.file = Some(file);
                     }
                     Some(libc::EOPNOTSUPP) => {
-                        log::warn!(
-                            "[FastWriter] node {:?} rejects writes with EOPNOTSUPP, permanently disabling writer",
+                        log::debug!(
+                            "[FastWriter] node {:?} got EOPNOTSUPP with persistent FD, switching to fs::write fallback",
                             self.path
                         );
-                        // file dropped here (fd closed), self.file stays None
-                        // → subsequent writes return false immediately, no retry loop
+                        drop(file);
+                        // Retry with fs::write (open+write+close)
+                        if fs::write(&self.path, bytes).is_ok() {
+                            self.use_fs_write = true;
+                            return true;
+                        }
+                        log::warn!(
+                            "[FastWriter] node {:?} rejects writes even with fs::write, permanently disabling",
+                            self.path
+                        );
                     }
                     _ => {
                         log::warn!(
