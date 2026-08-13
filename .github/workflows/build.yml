@@ -51,13 +51,20 @@ jobs:
         with:
           ndk-version: r29
 
-      # 6. 配置 NDK 环境变量并安装 cargo-ndk
+      # 6. 安装 LLVM (bpf-linker 编译 eBPF 需要)
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-17-dev libclang-17-dev
+          echo "LLVM_PREFIX=/usr" >> $GITHUB_ENV
+
+      # 7. 配置 NDK 环境变量并安装 cargo-ndk
       - name: Setup cargo-ndk
         run: |
           echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
           cargo install cargo-ndk
 
-      # 7. 运行 xtask 构建脚本
+      # 8. 运行 xtask 构建脚本
       - name: Run xtask build
         run: cargo xtask build
 
