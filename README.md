@@ -101,6 +101,53 @@ yumi 提供五种性能模式：
 
 息屏时，系统自动进入 **Doze 模式**，CLG 被重新配置为极致省电参数（性能上限锁死 40%、升频极迟钝、瞬间降频），大幅降低待机功耗。
 
+### 🛌 CPU 静止下潜与空闲下潜
+
+yumi 内置三层智能省电联动架构，在用户不操作手机时自动压低 CPU 频率，省电但不影响流畅度：
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  三层省电联动架构                      │
+│                                                      │
+│  ┌──────────────────┐  亮屏静止 → 压频到 30%         │
+│  │ StillDive        │  (检测屏幕无操作 >1s)           │
+│  └────────┬─────────┘                                │
+│           ▼                                          │
+│  ┌──────────────────┐  CPU 空闲 → 降频/深度休眠       │
+│  │ IdleDive         │  (检测 CPU idle >12%)          │
+│  └────────┬─────────┘                                │
+│           ▼                                          │
+│  ┌──────────────────┐  用户触摸 → 立即恢复正常频率    │
+│  │ TouchBoost       │  (监听触摸事件)                 │
+│  └──────────────────┘                                │
+└─────────────────────────────────────────────────────┘
+```
+
+| 模块 | 触发条件 | 效果 | 配置文件 |
+| :--- | :--- | :--- | :--- |
+| **StillDive** | 亮屏、CPU 负载 <8% 持续 10 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
+| **IdleDive** | CPU idle >12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
+| **TouchBoost** | 用户触摸屏幕 | boost 频率拉满，100ms 后恢复，防止卡顿 | `module/config/touch_boost.yaml` |
+
+**关键配置参数：**
+
+StillDive 在 `config.yaml` 中配置：
+
+```yaml
+StillDive:
+  enabled: true
+  enter_threshold: 0.08    # 进入下潜的 CPU 利用率阈值
+  enter_ticks: 10          # 连续多少个 tick 满足条件才进入
+  exit_threshold: 0.20     # 退出下潜的 CPU 利用率阈值
+  exit_boost_ticks: 5      # 退出后 boost 持续 tick 数
+  perf_ceil: 0.30          # 下潜时的性能上限
+  smoothing_up: 0.05       # 升频平滑系数（越小越平滑）
+```
+
+IdleDive 在 `module/config/idle_dive.yaml` 中独立配置，TouchBoost 在 `module/config/touch_boost.yaml` 中独立配置。
+
+-----
+
 ## 🌐 WebUI 管理界面
 
 yumi 内置轻量级 WebUI，通过浏览器即可完成所有管理操作，无需安装额外 App。
@@ -136,6 +183,9 @@ yumi 的核心是由一个 Rust 守护进程 **yumi** 驱动的。它使用 eBPF
 | **CPU 频率控制** | FastWriter 高性能 sysfs 写入器，带去重、unmount 和频率校验，锁频写入各核心簇。 |
 | **自动容量权重** | 运行时探测各核心簇的 `cpu_capacity`，自动计算 capacity_weight，无需手动配置核心架构。 |
 | **智能息屏节电** | 息屏自动进入 Doze 模式，CLG 强制限制为极致省电配置；亮屏自动恢复。 |
+| **StillDive 静止下潜** | 亮屏静止时自动压低 CPU 频率上限（perf_ceil=30%），用户触摸后立即恢复，省电约 15~20%。 |
+| **IdleDive 空闲下潜** | CPU 空闲时自动切换到低功耗 idle governor，提升 C-state 延迟，配合深度休眠进一步省电。 |
+| **TouchBoost 触摸提频** | 监听触摸事件，用户操作时立即 boost 频率拉满，防止静止下潜恢复不及时导致的卡顿感。 |
 | **温度感知调控** | 实时监控 CPU 温度，超过阈值时限制 FAS 性能上限。 |
 | **I/O 调度优化** | 遍历所有块设备，可自定义 I/O 调度器、预读大小、合并策略及 iostats 等参数。 |
 | **屏幕状态检测** | 通过 Netlink uevent 监听 power/backlight 事件，零轮询检测屏幕亮灭。 |
@@ -300,12 +350,14 @@ meta:
 function:
   CpuIdleScalingGovernor: false
   IOOptimization: true
+  SchedulerTuning: true
 ```
 
 | 功能 | 描述 |
 | :--- | :--- |
 | `CpuIdleScalingGovernor`| 是否允许自定义 CPU Idle 调速器（见 `CpuIdle` 部分）。 |
 | `IOOptimization` | 启用 I/O 优化，遍历所有块设备应用调度器和参数设置（见 `IO_Settings` 部分）。 |
+| `SchedulerTuning` | 启用调度器调优模块，包含 StillDive 静止下潜、IdleDive 空闲下潜、TouchBoost 触摸提频等省电联动功能。 |
 
 #### 3️⃣ I/O 设置 (`IO_Settings`)
 
@@ -337,7 +389,34 @@ CpuIdle:
 
   * `current_governor`: 设置 CPU Idle 调速器。
 
-#### 5️⃣ 性能模式配置
+#### 5️⃣ StillDive 静止下潜配置
+
+需要 `function.SchedulerTuning` 为 `true`。亮屏静止时自动压低 CPU 频率上限。
+
+```yaml
+StillDive:
+  enabled: true
+  enter_threshold: 0.08
+  enter_ticks: 10
+  exit_threshold: 0.20
+  exit_boost_ticks: 5
+  perf_ceil: 0.30
+  smoothing_up: 0.05
+```
+
+| 参数 | 类型 | 默认值 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `enabled` | bool | true | 是否启用 StillDive。 |
+| `enter_threshold` | float | 0.08 | 进入下潜的 CPU 利用率阈值，低于此值视为静止。 |
+| `enter_ticks` | int | 10 | 连续多少个 tick 满足条件才进入下潜（防抖）。 |
+| `exit_threshold` | float | 0.20 | 退出下潜的 CPU 利用率阈值，高于此值立即退出。 |
+| `exit_boost_ticks` | int | 5 | 退出下潜后 boost 持续的 tick 数，防止恢复不及时。 |
+| `perf_ceil` | float | 0.30 | 下潜时的性能上限（0.0~1.0）。 |
+| `smoothing_up` | float | 0.05 | 升频平滑系数，越小升频越平滑。 |
+
+IdleDive 和 TouchBoost 使用独立配置文件，详见 `module/config/idle_dive.yaml` 和 `module/config/touch_boost.yaml`。
+
+#### 6️⃣ 性能模式配置
 
 每种性能模式可独立配置 CPU 负载调速器 (CLG) 的参数：
 
@@ -562,7 +641,7 @@ yumi 使用两个 eBPF 探针进行内核级数据采集：
 
 <div align="center">
 
-<sub>📅 文档更新时间：2026年3月11日</sub><br>
+<sub>📅 文档更新时间：2026年8月13日</sub><br>
 <sub>🚀 yumi - 让每一台 Android 设备都拥有最佳的性能体验</sub>
 
 </div>

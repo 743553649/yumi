@@ -101,6 +101,51 @@ In the four non-FAS modes, yumi uses the **CPU Load Governor (CLG)** to replace 
 
 When the screen is off, the system automatically enters **Doze mode**, where CLG is reconfigured with extreme power-saving parameters (performance ceiling locked to 40%, extremely sluggish frequency ramp-up, instant ramp-down), dramatically reducing standby power consumption.
 
+### 🛌 CPU Still Dive & Idle Dive
+
+yumi features a three-layer intelligent power-saving linkage architecture that automatically reduces CPU frequency when the user is not interacting with the phone, saving power without affecting smoothness:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              Three-Layer Power-Saving Linkage        │
+│                                                      │
+│  ┌──────────────────┐  Screen-on idle → Cap freq 30% │
+│  │ StillDive        │  (No interaction >1s)          │
+│  └────────┬─────────┘                                │
+│           ▼                                          │
+│  ┌──────────────────┐  CPU idle → Reduce freq/deep   │
+│  │ IdleDive         │  (CPU idle >12%)               │
+│  └────────┬─────────┘                                │
+│           ▼                                          │
+│  ┌──────────────────┐  Touch → Immediately restore    │
+│  │ TouchBoost       │  (Listen to touch events)      │
+│  └──────────────────┘                                │
+└─────────────────────────────────────────────────────┘
+```
+
+| Module | Trigger | Effect | Config File |
+| :--- | :--- | :--- | :--- |
+| **StillDive** | Screen on, CPU load <8% for 10 ticks | perf_ceil locked to 30%, saves ~15-20% power | `StillDive` section in `config.yaml` |
+| **IdleDive** | CPU idle >12% for 500ms | Switch to low-power idle governor, latency from 100μs to 800-1500μs | `module/config/idle_dive.yaml` |
+| **TouchBoost** | User touches screen | Boost frequency to max, recover after 100ms, prevents lag | `module/config/touch_boost.yaml` |
+
+StillDive is configured in `config.yaml`:
+
+```yaml
+StillDive:
+  enabled: true
+  enter_threshold: 0.08
+  enter_ticks: 10
+  exit_threshold: 0.20
+  exit_boost_ticks: 5
+  perf_ceil: 0.30
+  smoothing_up: 0.05
+```
+
+IdleDive and TouchBoost use separate config files: `module/config/idle_dive.yaml` and `module/config/touch_boost.yaml`.
+
+-----
+
 ## 🌐 WebUI Management Interface
 
 yumi includes a lightweight built-in WebUI. All management operations can be performed through a browser — no extra app installation needed.
@@ -136,6 +181,9 @@ The core of yumi is driven by a Rust daemon, **yumi**. It uses eBPF kernel probe
 | **CPU Frequency Control** | FastWriter high-performance sysfs writer with deduplication, unmount, and frequency verification; locked-frequency writes to each core cluster. |
 | **Auto Capacity Weight** | Runtime detection of each core cluster's `cpu_capacity` to automatically compute capacity_weight — no manual core architecture configuration needed. |
 | **Smart Screen-Off Power Saving** | Auto-enters Doze mode when screen is off with CLG forced into extreme power-saving configuration; auto-restores on screen on. |
+| **StillDive** | Screen-on idle state automatically caps CPU frequency ceiling (perf_ceil=30%); restores immediately on touch, saving ~15-20% power. |
+| **IdleDive** | CPU idle state automatically switches to low-power idle governor, increasing C-state latency for deeper power savings. |
+| **TouchBoost** | Listens for touch events; immediately boosts frequency to max on user interaction, preventing lag from dive recovery delay. |
 | **Temperature-Aware Throttling** | Real-time CPU temperature monitoring; limits FAS performance ceiling when threshold is exceeded. |
 | **I/O Scheduler Optimization** | Iterates over all block devices with customizable I/O schedulers, read-ahead size, merge policy, and iostats parameters. |
 | **Screen State Detection** | Monitors power/backlight events via Netlink uevent — zero-polling screen on/off detection. |
@@ -300,12 +348,14 @@ meta:
 function:
   CpuIdleScalingGovernor: false
   IOOptimization: true
+  SchedulerTuning: true
 ```
 
 | Function | Description |
 | :--- | :--- |
 | `CpuIdleScalingGovernor`| Whether to allow custom CPU Idle governors (see `CpuIdle` section). |
 | `IOOptimization` | Enables I/O optimization, iterating over all block devices to apply scheduler and parameter settings (see `IO_Settings` section). |
+| `SchedulerTuning` | Enables the scheduler tuning module, including StillDive, IdleDive, TouchBoost, and other power-saving linkage features. |
 
 #### 3️⃣ I/O Settings (`IO_Settings`)
 
@@ -337,7 +387,34 @@ CpuIdle:
 
   * `current_governor`: Sets the CPU Idle governor.
 
-#### 5️⃣ Performance Mode Configuration
+#### 5️⃣ StillDive Configuration
+
+Requires `function.SchedulerTuning` to be `true`. Automatically caps CPU frequency ceiling when screen is on and idle.
+
+```yaml
+StillDive:
+  enabled: true
+  enter_threshold: 0.08
+  enter_ticks: 10
+  exit_threshold: 0.20
+  exit_boost_ticks: 5
+  perf_ceil: 0.30
+  smoothing_up: 0.05
+```
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | bool | true | Enable/disable StillDive. |
+| `enter_threshold` | float | 0.08 | CPU utilization threshold to enter dive — below this is considered idle. |
+| `enter_ticks` | int | 10 | Consecutive ticks meeting the condition before entering dive (debounce). |
+| `exit_threshold` | float | 0.20 | CPU utilization threshold to exit dive — above this triggers immediate exit. |
+| `exit_boost_ticks` | int | 5 | Boost duration in ticks after exiting dive, prevents sluggish recovery. |
+| `perf_ceil` | float | 0.30 | Performance ceiling during dive (0.0–1.0). |
+| `smoothing_up` | float | 0.05 | Frequency ramp-up smoothing coefficient — smaller value means smoother ramp-up. |
+
+IdleDive and TouchBoost use separate config files: `module/config/idle_dive.yaml` and `module/config/touch_boost.yaml`.
+
+#### 6️⃣ Performance Mode Configuration
 
 Each performance mode can independently configure CPU Load Governor (CLG) parameters:
 
@@ -562,7 +639,7 @@ Attached to `libgui.so`'s `Surface::queueBuffer` function (uprobe), triggered on
 
 <div align="center">
 
-<sub>📅 Document Updated: March 11, 2026</sub><br>
+<sub>📅 Document Updated: August 13, 2026</sub><br>
 <sub>🚀 yumi — Giving every Android device the best performance experience</sub>
 
 </div>

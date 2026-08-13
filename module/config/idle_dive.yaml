@@ -1,0 +1,13 @@
+enabled: true
+dive_threshold: 0.12
+exit_threshold: 0.18
+dive_delay_ms: 500
+exit_delay_ms: 30
+governors:
+  normal: "menu"
+  diving: "menu"
+  doze: "menu"
+params:
+  normal_latency_us: 100
+  diving_latency_us: 800
+  doze_latency_us: 1500
