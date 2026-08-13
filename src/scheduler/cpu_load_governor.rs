@@ -268,6 +268,8 @@ impl CpuLoadGovernor {
 
     pub fn release(&mut self) {
         if self.active { info!("{}", t("clg-deactivated")); }
+        // 恢复系统原始状态，避免 release 后 CPU 悬停在 CLG 最后写入的值上。
+        // 恢复失败的条目保留，下次 release/init 时重试，避免静默漂移。
         self.restore.retain(|r| !Self::restore_policy(r));
         self.clusters.clear();
         self.active = false;
@@ -397,6 +399,9 @@ impl CpuLoadGovernor {
 
         for cluster in &mut self.clusters {
             let raw_util = cluster.max_util(core_utils);
+            // 尖峰抑制：单 tick 跳升超过阈值时衰减其增量，
+            // 孤立瞬时尖峰（如单核 0↔100%）不瞬间拉满 perf；
+            // 持续负载下一 tick jump 归零即全量生效，不拖慢真实升频
             let util = if raw_util > cluster.last_util + self.cfg.spike_jump_threshold {
                 cluster.last_util + (raw_util - cluster.last_util) * self.cfg.spike_decay
             } else {
@@ -404,6 +409,7 @@ impl CpuLoadGovernor {
             };
             cluster.last_util = raw_util;
 
+            // headroom 在 up_threshold 附近线性过渡，避免阶跃导致的振荡
             let ramp_start = self.cfg.up_threshold - self.cfg.headroom_ramp;
             let headroom = if util >= self.cfg.up_threshold {
                 self.cfg.headroom_factor
@@ -422,6 +428,7 @@ impl CpuLoadGovernor {
                 cluster.down_wait = 0;
                 cluster.up_wait += 1;
 
+                // 升频速率限制：必须连续 up_rate_limit_ticks 才执行
                 if cluster.up_wait < self.cfg.up_rate_limit_ticks {
                     continue;
                 }
@@ -432,6 +439,9 @@ impl CpuLoadGovernor {
                 if is_high_load || is_significant_jump {
                     cluster.current_perf += (target_perf - old_perf) * effective_smoothing_up;
                 } else {
+                    // 滞回带内升频：速率随 util 接近 up_threshold 线性提升——
+                    // 低 util 端用 slow_up_scale 防抖，高 util 端逼近全速，
+                    // 避免中等负载（如 73%）下 0.008/tick 的慢速爬升导致体验卡顿
                     let span = (self.cfg.up_threshold - self.cfg.down_threshold).max(1e-6);
                     let gap = ((util - self.cfg.down_threshold) / span).clamp(0.0, 1.0);
                     let speed = effective_smoothing_up
@@ -441,14 +451,20 @@ impl CpuLoadGovernor {
             } else {
                 cluster.up_wait = 0;
                 cluster.down_wait += 1;
+                // 极低负载立即快速降频（跳过 down_wait 确认期），
+                // 消除尖峰消失后 perf 长时间悬停高位的滞后
                 if cluster.down_wait >= self.cfg.down_rate_limit_ticks
                     || util < self.cfg.down_fast_threshold
                 {
+                    // 降频门控：只要目标低于当前即可降，避免滞回带内锁死高位
                     let active_smoothing_down = if util < self.cfg.down_fast_threshold {
+                        // 极低负载：快速回落
                         self.cfg.smoothing_down * self.cfg.down_fast_mult
                     } else if util < self.cfg.down_threshold {
+                        // 跌破降频阈值：正常速率降频
                         self.cfg.smoothing_down
                     } else {
+                        // 滞回带内（down_threshold..up_threshold）：慢速下探防抖
                         self.cfg.smoothing_down * self.cfg.slow_down_scale
                     };
                     cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;

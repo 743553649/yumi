@@ -261,7 +261,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             // 事件循环包在 catch_unwind 中：任何 panic 都被捕获并记录，
             // 避免调度线程静默死亡（进程存活但频率停在最后状态）
             let loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            for msg in rx {
+            loop {
+                // 先 drain touch 事件（non-blocking），确保触摸响应不被 daemon 事件阻塞
                 while let Ok(touch_event) = touch_rx.try_recv() {
                     match touch_event {
                         crate::touch_boost::TouchEvent::Start => {
@@ -274,6 +275,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     }
                 }
                 touch_boost.update();
+
+                // 带超时等待 daemon 事件，超时后回到循环顶部再次检查 touch 事件
+                let msg = match rx.recv_timeout(std::time::Duration::from_millis(5)) {
+                    Ok(msg) => msg,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                };
 
                 match msg {
                     // --- 1. 屏幕状态事件 (息屏深度睡眠) ---

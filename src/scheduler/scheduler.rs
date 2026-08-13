@@ -108,9 +108,14 @@ impl CpuScheduler {
         if !config.function.scheduler_tuning {
             return Ok(());
         }
-        let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", "15");
-        let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", "500000");
-        let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", "8");
+        // 默认调度器调优参数：降低唤醒粒度、增加迁移代价、减少批量迁移数，
+        // 减少不必要的 CPU 间迁移，改善大小核调度决策
+        const SCHED_WAKEUP_GRANULARITY_MS: &str = "15";
+        const SCHED_MIGRATION_COST_NS: &str = "500000";
+        const SCHED_NR_MIGRATE: &str = "8";
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", SCHED_WAKEUP_GRANULARITY_MS);
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", SCHED_MIGRATION_COST_NS);
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", SCHED_NR_MIGRATE);
         log::info!("{}", t("apply-scheduler-tuning"));
         Ok(())
     }

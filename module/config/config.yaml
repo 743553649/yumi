@@ -46,6 +46,17 @@ IdleDive:
     diving_latency_us: 800
     doze_latency_us: 1500
 
+TouchBoost:
+  enabled: true
+  boost_freqs:
+    - 2500000
+    - 0
+    - 2000000
+  release_delay_ms: 100
+  recover_decay: 0.15
+  min_boost_duration_ms: 50
+  input_device: ""
+
 # --- 性能模式 ---
 
 # 省电模式

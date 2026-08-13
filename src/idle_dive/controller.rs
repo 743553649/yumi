@@ -117,7 +117,8 @@ impl IdleDiveController {
         }
     }
 
-    pub fn reload_config(&mut self, config: IdleDiveConfig) {
+    pub fn reload_config(&mut self, mut config: IdleDiveConfig) {
+        config.normalize();
         self.config = config;
         info!("{}", t("idle-dive-config-reloaded"));
     }
