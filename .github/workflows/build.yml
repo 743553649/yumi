@@ -54,9 +54,12 @@ jobs:
       # 6. 安装 LLVM (bpf-linker 编译 eBPF 需要)
       - name: Install LLVM
         run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm-17-dev libclang-17-dev
-          echo "LLVM_PREFIX=/usr" >> $GITHUB_ENV
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          sudo apt-get install -y llvm-17-dev libclang-17-dev clang-17
+          echo "LLVM_PREFIX=/usr/lib/llvm-17" >> $GITHUB_ENV
+          echo "/usr/lib/llvm-17/bin" >> $GITHUB_PATH
 
       # 7. 配置 NDK 环境变量并安装 cargo-ndk
       - name: Setup cargo-ndk
