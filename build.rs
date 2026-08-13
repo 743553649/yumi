@@ -41,6 +41,9 @@ fn build_ebpf() -> Result<PathBuf, Box<dyn std::error::Error>> {
         .current_dir(&ebpf_dir)
         .env_remove("RUSTUP_TOOLCHAIN")
         .env("PATH", add_path(&tools_bin)?)
+        // LLVM 23 不再支持 -Oz（bpf-linker v0.11 使用 llvm-sys v231），
+        // 覆盖 workspace 级别的 opt-level = "z"，改用 O2
+        .env("CARGO_PROFILE_RELEASE_OPT_LEVEL", "2")
         .status()?;
 
     if !status.success() {
