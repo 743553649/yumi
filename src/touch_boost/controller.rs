@@ -89,6 +89,7 @@ impl TouchBoostController {
 
             let decay_factor = self.config.recover_decay;
             let mut all_recovered = true;
+            let mut freq_updates: Vec<(usize, u32)> = Vec::new();
 
             for (i, freq) in self.current_boost_freqs.iter_mut().enumerate() {
                 if i >= self.config.boost_freqs.len() { break; }
@@ -99,13 +100,17 @@ impl TouchBoostController {
                     let new_freq = (*freq as f32 * (1.0 - decay_factor)) as u32;
                     if new_freq <= 100000 {
                         *freq = 0;
-                        self.write_freq(i, 0);
+                        freq_updates.push((i, 0));
                     } else {
                         *freq = new_freq;
-                        self.write_freq(i, new_freq);
+                        freq_updates.push((i, new_freq));
                         all_recovered = false;
                     }
                 }
+            }
+
+            for (i, freq) in freq_updates {
+                self.write_freq(i, freq);
             }
 
             if all_recovered {
@@ -125,8 +130,12 @@ impl TouchBoostController {
     }
 
     fn apply_boost(&mut self) {
-        for (i, &target_freq) in self.config.boost_freqs.iter().enumerate() {
-            if target_freq == 0 { continue; }
+        let freqs: Vec<(usize, u32)> = self.config.boost_freqs.iter().enumerate()
+            .filter(|&(_, &freq)| freq != 0)
+            .map(|(i, &freq)| (i, freq))
+            .collect();
+
+        for (i, target_freq) in freqs {
             if i < self.cluster_writers.len() {
                 self.current_boost_freqs[i] = target_freq;
                 self.write_freq(i, target_freq);
