@@ -44,6 +44,7 @@ impl CpuScheduler {
     pub fn apply_system_tweaks(&self) -> Result<()> {
         self.apply_cpu_idle_governor()?;
         self.apply_io_settings()?;
+        self.apply_scheduler_tuning()?;
         Ok(())
     }
 
@@ -99,6 +100,18 @@ impl CpuScheduler {
         }
 
         log::info!("{}", t("apply-io-settings-start"));
+        Ok(())
+    }
+
+    fn apply_scheduler_tuning(&self) -> Result<()> {
+        let config = self.config.read().unwrap();
+        if !config.function.scheduler_tuning {
+            return Ok(());
+        }
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", "15");
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", "500000");
+        let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", "8");
+        log::info!("{}", t("apply-scheduler-tuning"));
         Ok(())
     }
 }
