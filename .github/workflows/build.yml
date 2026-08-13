@@ -56,10 +56,10 @@ jobs:
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
-          sudo ./llvm.sh 17
-          sudo apt-get install -y llvm-17-dev libclang-17-dev clang-17
-          echo "LLVM_PREFIX=/usr/lib/llvm-17" >> $GITHUB_ENV
-          echo "/usr/lib/llvm-17/bin" >> $GITHUB_PATH
+          sudo ./llvm.sh 18
+          sudo apt-get install -y llvm-18-dev libclang-18-dev clang-18
+          echo "LLVM_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
 
       # 7. 配置 NDK 环境变量并安装 cargo-ndk
       - name: Setup cargo-ndk
