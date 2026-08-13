@@ -129,6 +129,8 @@ idle-dive-exit = [IdleDive] Exited dive state
 idle-dive-enter-dozed = [IdleDive] Entered doze dive state
 idle-dive-exit-dozed = [IdleDive] Exited doze dive state
 idle-dive-config-reloaded = [IdleDive] Config hot-reloaded
+idle-dive-set-governor-failed = [IdleDive] Failed to set { $state } governor: { $error }
+idle-dive-set-latency-failed = [IdleDive] Failed to set { $state } latency: { $error }
 
 # --- TouchBoost ---
 touch-boost-init = [TouchBoost] Touch boost controller initialized

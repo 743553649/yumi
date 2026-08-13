@@ -1,0 +1,3832 @@
+diff --git a/AGENTS.md b/AGENTS.md
+new file mode 100644
+index 0000000..e15315e
+--- /dev/null
++++ b/AGENTS.md
+@@ -0,0 +1,36 @@
++# yumi 项目 AI Agent 协作与开发规范
++
++> 本文档为 `yumi` (Android CPU 调度器) 核心开发规范，Agent 在所有开发过程中必须严格遵守。
++
++---
++
++## 1. 架构设计与工程演进原则
++- **极简实现与拒绝预防性抽象**：选择满足当前需求的最简实现，绝不搞推测性抽象与多余配置层。
++- **端到端先行与渐进演进**：先跑通 Rust 核心端到端闭环，绝不为了未完成的复杂度拆掉可运行功能。
++- **模块化与关注点分离**：FAS 帧感知、CLG 调速器与 IPC 服务保持严格解耦与强类型约束。
++- **成熟库优先与深度挖掘**：优先使用成熟维系库；新增依赖或自研前先盘点 `Cargo.toml` 已有依赖能力。
++- **长远架构决策**：不做“先这样以后再换”的临时方案，每次修改必须做可持续的终态架构决策。
++- **参考成熟模式**：借鉴 Linux 内核、Android 系统框架及成熟开源调度器的已验证模式，禁止盲目从零发明。
++
++---
++
++## 2. 文档同步与维护规范
++- **强制同步检查**：变动（功能、逻辑、IPC 协议、配置结构、交互、模块职责）发生时，必须同步更新 README、开发规范及接口文档。
++- **收尾闭环与工作记录**：文档同步属于开发收尾必要条件，宣布“完成”、跑通测试或 commit 前强制检查。**修改代码后必须更新工作记录文档**（如 `docs/工作日志.md`）。内部细节调整未影响接口/交互可标注“无需更新文档”。
++- **清理与归档过期文档**：误导性旧文档必须更新或移入 `docs/` 归档，不得留在默认阅读路径。
++- **优先更新当前执行入口**：优先更新 `AGENTS.md`、`README.md` 及各子模块 README。
++- **正式说明书语气**：直接将正文改写为当前最新真实规则，**严禁补丁式语气**（如“修订说明”“当前改为”）。仅归档/Changelog 保留历史。
++- **功能计划文档保存到 docs/**：功能计划文档、设计方案、编码实现计划等文档统一保存到 `docs/` 目录，不得散落在项目根目录或其他位置。
++
++---
++
++## 3. 编码、测试与协作规范
++- **熔断机制与精确修改**：涉及跨模块公共文件或核心配置变动必须立刻停止并请示用户。修改仅限定于需求相关代码，清理自己产生的废弃变量与 import。
++- **小白友好沟通**：用户是底层小白，对话与汇报必须使用**通俗大白话与生活比喻**，严禁堆砌专业黑话。回复统一使用中文；代码变量/方法名保持英文。
++- **Git Commit 规范**：遵循 Conventional Commits（例如：`feat(fas): add target fps scaling`）。
++
++
++---
++
++
++
+diff --git a/README.en.md b/README.en.md
+index fbfe6d3..9a55bac 100644
+--- a/README.en.md
++++ b/README.en.md
+@@ -101,6 +101,51 @@ In the four non-FAS modes, yumi uses the **CPU Load Governor (CLG)** to replace
+ 
+ When the screen is off, the system automatically enters **Doze mode**, where CLG is reconfigured with extreme power-saving parameters (performance ceiling locked to 40%, extremely sluggish frequency ramp-up, instant ramp-down), dramatically reducing standby power consumption.
+ 
++### 🛌 CPU Still Dive & Idle Dive
++
++yumi features a three-layer intelligent power-saving linkage architecture that automatically reduces CPU frequency when the user is not interacting with the phone, saving power without affecting smoothness:
++
++```
++┌─────────────────────────────────────────────────────┐
++│              Three-Layer Power-Saving Linkage        │
++│                                                      │
++│  ┌──────────────────┐  Screen-on idle → Cap freq 30% │
++│  │ StillDive        │  (No interaction >1s)          │
++│  └────────┬─────────┘                                │
++│           ▼                                          │
++│  ┌──────────────────┐  CPU idle → Reduce freq/deep   │
++│  │ IdleDive         │  (CPU idle >12%)               │
++│  └────────┬─────────┘                                │
++│           ▼                                          │
++│  ┌──────────────────┐  Touch → Immediately restore    │
++│  │ TouchBoost       │  (Listen to touch events)      │
++│  └──────────────────┘                                │
++└─────────────────────────────────────────────────────┘
++```
++
++| Module | Trigger | Effect | Config File |
++| :--- | :--- | :--- | :--- |
++| **StillDive** | Screen on, CPU load <8% for 10 ticks | perf_ceil locked to 30%, saves ~15-20% power | `StillDive` section in `config.yaml` |
++| **IdleDive** | CPU idle >12% for 500ms | Switch to low-power idle governor, latency from 100μs to 800-1500μs | `module/config/idle_dive.yaml` |
++| **TouchBoost** | User touches screen | Boost frequency to max, recover after 100ms, prevents lag | `module/config/touch_boost.yaml` |
++
++StillDive is configured in `config.yaml`:
++
++```yaml
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++```
++
++IdleDive and TouchBoost use separate config files: `module/config/idle_dive.yaml` and `module/config/touch_boost.yaml`.
++
++-----
++
+ ## 🌐 WebUI Management Interface
+ 
+ yumi includes a lightweight built-in WebUI. All management operations can be performed through a browser — no extra app installation needed.
+@@ -136,6 +181,9 @@ The core of yumi is driven by a Rust daemon, **yumi**. It uses eBPF kernel probe
+ | **CPU Frequency Control** | FastWriter high-performance sysfs writer with deduplication, unmount, and frequency verification; locked-frequency writes to each core cluster. |
+ | **Auto Capacity Weight** | Runtime detection of each core cluster's `cpu_capacity` to automatically compute capacity_weight — no manual core architecture configuration needed. |
+ | **Smart Screen-Off Power Saving** | Auto-enters Doze mode when screen is off with CLG forced into extreme power-saving configuration; auto-restores on screen on. |
++| **StillDive** | Screen-on idle state automatically caps CPU frequency ceiling (perf_ceil=30%); restores immediately on touch, saving ~15-20% power. |
++| **IdleDive** | CPU idle state automatically switches to low-power idle governor, increasing C-state latency for deeper power savings. |
++| **TouchBoost** | Listens for touch events; immediately boosts frequency to max on user interaction, preventing lag from dive recovery delay. |
+ | **Temperature-Aware Throttling** | Real-time CPU temperature monitoring; limits FAS performance ceiling when threshold is exceeded. |
+ | **I/O Scheduler Optimization** | Iterates over all block devices with customizable I/O schedulers, read-ahead size, merge policy, and iostats parameters. |
+ | **Screen State Detection** | Monitors power/backlight events via Netlink uevent — zero-polling screen on/off detection. |
+@@ -300,12 +348,14 @@ meta:
+ function:
+   CpuIdleScalingGovernor: false
+   IOOptimization: true
++  SchedulerTuning: true
+ ```
+ 
+ | Function | Description |
+ | :--- | :--- |
+ | `CpuIdleScalingGovernor`| Whether to allow custom CPU Idle governors (see `CpuIdle` section). |
+ | `IOOptimization` | Enables I/O optimization, iterating over all block devices to apply scheduler and parameter settings (see `IO_Settings` section). |
++| `SchedulerTuning` | Enables the scheduler tuning module, including StillDive, IdleDive, TouchBoost, and other power-saving linkage features. |
+ 
+ #### 3️⃣ I/O Settings (`IO_Settings`)
+ 
+@@ -337,7 +387,34 @@ CpuIdle:
+ 
+   * `current_governor`: Sets the CPU Idle governor.
+ 
+-#### 5️⃣ Performance Mode Configuration
++#### 5️⃣ StillDive Configuration
++
++Requires `function.SchedulerTuning` to be `true`. Automatically caps CPU frequency ceiling when screen is on and idle.
++
++```yaml
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++```
++
++| Parameter | Type | Default | Description |
++| :--- | :--- | :--- | :--- |
++| `enabled` | bool | true | Enable/disable StillDive. |
++| `enter_threshold` | float | 0.08 | CPU utilization threshold to enter dive — below this is considered idle. |
++| `enter_ticks` | int | 10 | Consecutive ticks meeting the condition before entering dive (debounce). |
++| `exit_threshold` | float | 0.20 | CPU utilization threshold to exit dive — above this triggers immediate exit. |
++| `exit_boost_ticks` | int | 5 | Boost duration in ticks after exiting dive, prevents sluggish recovery. |
++| `perf_ceil` | float | 0.30 | Performance ceiling during dive (0.0–1.0). |
++| `smoothing_up` | float | 0.05 | Frequency ramp-up smoothing coefficient — smaller value means smoother ramp-up. |
++
++IdleDive and TouchBoost use separate config files: `module/config/idle_dive.yaml` and `module/config/touch_boost.yaml`.
++
++#### 6️⃣ Performance Mode Configuration
+ 
+ Each performance mode can independently configure CPU Load Governor (CLG) parameters:
+ 
+@@ -562,7 +639,7 @@ Attached to `libgui.so`'s `Surface::queueBuffer` function (uprobe), triggered on
+ 
+ <div align="center">
+ 
+-<sub>📅 Document Updated: March 11, 2026</sub><br>
++<sub>📅 Document Updated: August 13, 2026</sub><br>
+ <sub>🚀 yumi — Giving every Android device the best performance experience</sub>
+ 
+ </div>
+\ No newline at end of file
+diff --git a/README.md b/README.md
+index 02a895b..1008726 100644
+--- a/README.md
++++ b/README.md
+@@ -101,6 +101,53 @@ yumi 提供五种性能模式：
+ 
+ 息屏时，系统自动进入 **Doze 模式**，CLG 被重新配置为极致省电参数（性能上限锁死 40%、升频极迟钝、瞬间降频），大幅降低待机功耗。
+ 
++### 🛌 CPU 静止下潜与空闲下潜
++
++yumi 内置三层智能省电联动架构，在用户不操作手机时自动压低 CPU 频率，省电但不影响流畅度：
++
++```
++┌─────────────────────────────────────────────────────┐
++│                  三层省电联动架构                      │
++│                                                      │
++│  ┌──────────────────┐  亮屏静止 → 压频到 30%         │
++│  │ StillDive        │  (检测屏幕无操作 >1s)           │
++│  └────────┬─────────┘                                │
++│           ▼                                          │
++│  ┌──────────────────┐  CPU 空闲 → 降频/深度休眠       │
++│  │ IdleDive         │  (检测 CPU idle >12%)          │
++│  └────────┬─────────┘                                │
++│           ▼                                          │
++│  ┌──────────────────┐  用户触摸 → 立即恢复正常频率    │
++│  │ TouchBoost       │  (监听触摸事件)                 │
++│  └──────────────────┘                                │
++└─────────────────────────────────────────────────────┘
++```
++
++| 模块 | 触发条件 | 效果 | 配置文件 |
++| :--- | :--- | :--- | :--- |
++| **StillDive** | 亮屏、CPU 负载 <8% 持续 10 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
++| **IdleDive** | CPU idle >12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
++| **TouchBoost** | 用户触摸屏幕 | boost 频率拉满，100ms 后恢复，防止卡顿 | `module/config/touch_boost.yaml` |
++
++**关键配置参数：**
++
++StillDive 在 `config.yaml` 中配置：
++
++```yaml
++StillDive:
++  enabled: true
++  enter_threshold: 0.08    # 进入下潜的 CPU 利用率阈值
++  enter_ticks: 10          # 连续多少个 tick 满足条件才进入
++  exit_threshold: 0.20     # 退出下潜的 CPU 利用率阈值
++  exit_boost_ticks: 5      # 退出后 boost 持续 tick 数
++  perf_ceil: 0.30          # 下潜时的性能上限
++  smoothing_up: 0.05       # 升频平滑系数（越小越平滑）
++```
++
++IdleDive 在 `module/config/idle_dive.yaml` 中独立配置，TouchBoost 在 `module/config/touch_boost.yaml` 中独立配置。
++
++-----
++
+ ## 🌐 WebUI 管理界面
+ 
+ yumi 内置轻量级 WebUI，通过浏览器即可完成所有管理操作，无需安装额外 App。
+@@ -136,6 +183,9 @@ yumi 的核心是由一个 Rust 守护进程 **yumi** 驱动的。它使用 eBPF
+ | **CPU 频率控制** | FastWriter 高性能 sysfs 写入器，带去重、unmount 和频率校验，锁频写入各核心簇。 |
+ | **自动容量权重** | 运行时探测各核心簇的 `cpu_capacity`，自动计算 capacity_weight，无需手动配置核心架构。 |
+ | **智能息屏节电** | 息屏自动进入 Doze 模式，CLG 强制限制为极致省电配置；亮屏自动恢复。 |
++| **StillDive 静止下潜** | 亮屏静止时自动压低 CPU 频率上限（perf_ceil=30%），用户触摸后立即恢复，省电约 15~20%。 |
++| **IdleDive 空闲下潜** | CPU 空闲时自动切换到低功耗 idle governor，提升 C-state 延迟，配合深度休眠进一步省电。 |
++| **TouchBoost 触摸提频** | 监听触摸事件，用户操作时立即 boost 频率拉满，防止静止下潜恢复不及时导致的卡顿感。 |
+ | **温度感知调控** | 实时监控 CPU 温度，超过阈值时限制 FAS 性能上限。 |
+ | **I/O 调度优化** | 遍历所有块设备，可自定义 I/O 调度器、预读大小、合并策略及 iostats 等参数。 |
+ | **屏幕状态检测** | 通过 Netlink uevent 监听 power/backlight 事件，零轮询检测屏幕亮灭。 |
+@@ -300,12 +350,14 @@ meta:
+ function:
+   CpuIdleScalingGovernor: false
+   IOOptimization: true
++  SchedulerTuning: true
+ ```
+ 
+ | 功能 | 描述 |
+ | :--- | :--- |
+ | `CpuIdleScalingGovernor`| 是否允许自定义 CPU Idle 调速器（见 `CpuIdle` 部分）。 |
+ | `IOOptimization` | 启用 I/O 优化，遍历所有块设备应用调度器和参数设置（见 `IO_Settings` 部分）。 |
++| `SchedulerTuning` | 启用调度器调优模块，包含 StillDive 静止下潜、IdleDive 空闲下潜、TouchBoost 触摸提频等省电联动功能。 |
+ 
+ #### 3️⃣ I/O 设置 (`IO_Settings`)
+ 
+@@ -337,7 +389,34 @@ CpuIdle:
+ 
+   * `current_governor`: 设置 CPU Idle 调速器。
+ 
+-#### 5️⃣ 性能模式配置
++#### 5️⃣ StillDive 静止下潜配置
++
++需要 `function.SchedulerTuning` 为 `true`。亮屏静止时自动压低 CPU 频率上限。
++
++```yaml
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++```
++
++| 参数 | 类型 | 默认值 | 描述 |
++| :--- | :--- | :--- | :--- |
++| `enabled` | bool | true | 是否启用 StillDive。 |
++| `enter_threshold` | float | 0.08 | 进入下潜的 CPU 利用率阈值，低于此值视为静止。 |
++| `enter_ticks` | int | 10 | 连续多少个 tick 满足条件才进入下潜（防抖）。 |
++| `exit_threshold` | float | 0.20 | 退出下潜的 CPU 利用率阈值，高于此值立即退出。 |
++| `exit_boost_ticks` | int | 5 | 退出下潜后 boost 持续的 tick 数，防止恢复不及时。 |
++| `perf_ceil` | float | 0.30 | 下潜时的性能上限（0.0~1.0）。 |
++| `smoothing_up` | float | 0.05 | 升频平滑系数，越小升频越平滑。 |
++
++IdleDive 和 TouchBoost 使用独立配置文件，详见 `module/config/idle_dive.yaml` 和 `module/config/touch_boost.yaml`。
++
++#### 6️⃣ 性能模式配置
+ 
+ 每种性能模式可独立配置 CPU 负载调速器 (CLG) 的参数：
+ 
+@@ -562,7 +641,7 @@ yumi 使用两个 eBPF 探针进行内核级数据采集：
+ 
+ <div align="center">
+ 
+-<sub>📅 文档更新时间：2026年3月11日</sub><br>
++<sub>📅 文档更新时间：2026年8月13日</sub><br>
+ <sub>🚀 yumi - 让每一台 Android 设备都拥有最佳的性能体验</sub>
+ 
+ </div>
+\ No newline at end of file
+diff --git "a/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md" "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md"
+new file mode 100644
+index 0000000..37b3f46
+--- /dev/null
++++ "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md"
+@@ -0,0 +1,335 @@
++# CPU 静止下潜 — 一步到位综合实现方案
++
++> 结合复刻版 (743553649/yumi) 的 IdleDive + TouchBoost，融入自研 StillDive，再加专业优化，一次完成避免反复修改。
++
++---
++
++## 架构总览：三层省电体系
++
++```
++┌─────────────────────────────────────────────────────────────┐
++│                      TouchBoost                             │
++│                 触摸交互 → 快速退出省电                       │
++└────────────────────────┬────────────────────────────────────┘
++                         │ 触摸事件
++┌────────────────────────▼────────────────────────────────────┐
++│               StillDive (CLG 内部参数覆盖)                    │
++│  亮屏静止检测 → 压低 perf_ceil/smoothing_up → 频率级省电       │
++└────────────────────────┬────────────────────────────────────┘
++                         │ 同 util 输入
++┌────────────────────────▼────────────────────────────────────┐
++│              IdleDive (cpuidle C-state 管理)                  │
++│  平均负载检测 → 调深 idle state / 放宽 latency → 睡眠级省电    │
++└─────────────────────────────────────────────────────────────┘
++```
++
++**三层的关系**：StillDive 管"频率跑多高"，IdleDive 管"空闲睡多深"，TouchBoost 管"醒来多快"——覆盖 CPU 省电的完整链路。
++
++---
++
++## 需要创建/修改的文件清单
++
++### 新增模块（从复刻版移植）
++
++| # | 文件 | 来源 | 说明 |
++|---|------|------|------|
++| 1 | `src/idle_dive/mod.rs` | 移植 | IdleDive 模块入口，导出子模块 |
++| 2 | `src/idle_dive/config.rs` | 移植 | IdleDiveConfig 结构体 + 默认值 |
++| 3 | `src/idle_dive/controller.rs` | 移植 | 状态机 (Normal→Diving→DozeDiving) |
++| 4 | `src/idle_dive/latency.rs` | 移植 | PM-QoS + sysfs 双重写入器 |
++| 5 | `src/touch_boost/mod.rs` | 移植 | TouchBoost 模块入口 |
++| 6 | `src/touch_boost/config.rs` | 移植 | TouchBoostConfig |
++| 7 | `src/touch_boost/controller.rs` | 移植 | 触摸提频衰减控制器 |
++| 8 | `src/touch_boost/monitor.rs` | 移植 | epoll 触摸事件监听器 |
++| 9 | `module/config/idle_dive.yaml` | 新配置 | IdleDive 配置文件 |
++| 10 | `module/config/touch_boost.yaml` | 新配置 | TouchBoost 配置文件 |
++
++### 修改现有文件
++
++| # | 文件 | 说明 |
++|---|------|------|
++| 11 | `src/scheduler/config.rs` | 新增 StillDiveConfig 结构体，添加到 Config |
++| 12 | `src/scheduler/cpu_load_governor.rs` | 核心：StillDive 检测 + 参数覆盖 + 退出恢复 |
++| 13 | `src/scheduler/mod.rs` | IPC 线程中创建 IdleDive/TouchBoost 并联动 |
++| 14 | `src/scheduler/scheduler.rs` | 扩展系统调优：sched 参数调优 |
++| 15 | `src/main.rs` | 注册 idle_dive/touch_boost 模块 |
++| 16 | `module/config/config.yaml` | 新增 StillDive + SchedulerTuning 配置块 |
++| 17 | `module/config/i18n/zh.ftl` | 新增翻译键 |
++| 18 | `module/config/i18n/en.ftl` | 新增翻译键 |
++| 19 | `AGENTS.md` | 新增「功能计划文档保存到 docs/」规则 |
++| 20 | `README.md` | 文档化新功能 |
++
++---
++
++## 详细设计
++
++### 1. StillDiveConfig (`src/scheduler/config.rs`)
++
++```rust
++#[derive(Debug, Deserialize, Clone)]
++pub struct StillDiveConfig {
++    #[serde(default = "default_true")]  pub enabled: bool,
++    #[serde(default = "sd_enter_thresh")]  pub enter_threshold: f32,
++    #[serde(default = "sd_enter_ticks")]   pub enter_ticks: u32,
++    #[serde(default = "sd_exit_thresh")]   pub exit_threshold: f32,
++    #[serde(default = "sd_exit_boost")]    pub exit_boost_ticks: u32,
++    #[serde(default = "sd_perf_ceil")]     pub perf_ceil: f32,
++    #[serde(default = "sd_smoothing_up")]  pub smoothing_up: f32,
++}
++```
++
++默认值函数：
++- `sd_enter_thresh() -> 0.08` — 所有核心 max util < 8%
++- `sd_enter_ticks() -> 10` — 持续 10 tick (2s)
++- `sd_exit_thresh() -> 0.20` — 任意核心 util > 20% 退出
++- `sd_exit_boost() -> 5` — 退出后 5 tick (1s) 升频助力
++- `sd_perf_ceil() -> 0.30` — 下潜时 perf 上限 30%
++- `sd_smoothing_up() -> 0.05` — 下潜时升频极慢
++
++添加到 Config：
++```rust
++#[serde(default, rename = "StillDive")]
++pub still_dive: StillDiveConfig,
++```
++
++实现 `Into<Option<StillDiveConfig>>`（enabled=false 时返回 None）。
++
++### 2. CLG 核心改动 (`cpu_load_governor.rs`)
++
++**新增字段**：
++```rust
++pub struct CpuLoadGovernor {
++    // ... 现有字段 ...
++    still_dive: Option<StillDiveConfig>,
++    still_mode: bool,
++    still_low_ticks: u32,
++    still_exit_boost: u32,
++}
++```
++
++**`on_load_update()`** — 在 per-cluster 循环前插入：
++
++```
++1. 如果 still_dive 存在且 enabled:
++   a. 计算 core_utils 最大 util
++   b. 未下潜:
++      - max ≤ enter_threshold → still_low_ticks++
++      - max > enter_threshold → still_low_ticks = 0
++      - still_low_ticks ≥ enter_ticks → 进入下潜，日志输出
++   c. 已下潜:
++      - max > exit_threshold → 退出，设 still_exit_boost = exit_boost_ticks
++      - still_exit_boost > 0 → 递减
++```
++
++per-cluster 循环内替换 clamp 和 smoothing：
++```
++effective_perf_ceil  = still_mode ? sd.perf_ceil   : cfg.perf_ceil
++effective_perf_floor = still_mode ? 0.0             : cfg.perf_floor
++effective_smoothing_up =
++    still_mode           → sd.smoothing_up    (极慢)
++    still_exit_boost > 0 → 1.0                (快速恢复)
++    正常                 → cfg.smoothing_up
++```
++
++**API 签名变更**：
++```rust
++pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>)
++pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>)
++```
++
++`release()` 不变但重置 still 相关字段。
++
++### 3. IdleDive（从复刻版移植）
++
++3 个文件直接复刻，内容已在前面完整展示，关键点：
++
++- **`config.rs`** — `IdleDiveConfig { enabled, dive_threshold, exit_threshold, dive_delay_ms, exit_delay_ms, governors, params }`
++- **`controller.rs`** — `IdleDiveController` 状态机，方法：`init()`, `update(avg_util)`, `enter_dive()`, `exit_dive()`, `enter_doze()`, `exit_doze()`, `on_touch_fast_exit()`
++- **`latency.rs`** — `LatencyWriter`，sysfs + PM-QoS 双通道写入
++
++适配注意：
++- `FastWriter::write_value_force_str()` 在复刻版有，可能需要移植到 `utils.rs`
++- 如现有 `FastWriter` 不支持写字符串，可改用 `try_write_file`
++
++### 4. TouchBoost（从复刻版移植）
++
++3 个文件直接复刻，关键点：
++
++- **`config.rs`** — `TouchBoostConfig { enabled, boost_freqs, release_delay_ms, recover_decay, min_boost_duration_ms, input_device }`
++- **`controller.rs`** — Boost 状态机，写 `scaling_min_freq` 提频 + 衰减恢复
++- **`monitor.rs`** — epoll 监听 `/dev/input/event*` 触摸事件
++
++### 5. 调度器线程协调 (`scheduler/mod.rs`)
++
++```
++SystemLoadUpdate 事件 → 传给 CLG + IdleDive:
++  cpu_governor.on_load_update(&core_utils);           // CLG 含 StillDive
++  if !core_utils.is_empty() {
++      let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;
++      idle_dive.update(avg);                            // IdleDive
++  }
++
++ScreenStateChange → IdleDive:
++  screen_off → idle_dive.enter_doze()
++  screen_on  → idle_dive.exit_doze()
++
++TouchBoost touch_event → IdleDive on_touch_fast_exit():
++  - TouchBoost 收到触摸事件时，通过 channel 通知 scheduler
++  - scheduler 收到后调用 idle_dive.on_touch_fast_exit()
++```
++
++### 6. 调度器参数调优 (`scheduler.rs`)
++
++在 `FunctionToggles` 中新增：
++```rust
++#[serde(rename = "SchedulerTuning")] pub scheduler_tuning: bool,
++```
++
++在 `apply_system_tweaks()` 中新增：
++```rust
++fn apply_scheduler_tuning(&self) -> Result<()> {
++    let config = self.config.read().unwrap();
++    if !config.function.scheduler_tuning { return Ok(()); }
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", "15");
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", "500000");
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", "8");
++    log::info!("{}", t("apply-scheduler-tuning"));
++    Ok(())
++}
++```
++
++### 7. 默认配置变更
++
++**`config.yaml`** 新增：
++```yaml
++function:
++  SchedulerTuning: true
++  # ... 原有 ...
++
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++```
++
++**`idle_dive.yaml`**（新建）：
++```yaml
++enabled: true
++dive_threshold: 0.12
++exit_threshold: 0.18
++dive_delay_ms: 500
++exit_delay_ms: 30
++governors:
++  normal: "menu"
++  diving: "menu"
++  doze: "menu"
++params:
++  normal_latency_us: 100
++  diving_latency_us: 800
++  doze_latency_us: 1500
++```
++
++**`touch_boost.yaml`**（新建）：
++```yaml
++enabled: true
++boost_freqs:
++  - 2500000
++  - 0
++  - 2000000
++release_delay_ms: 100
++recover_decay: 0.15
++min_boost_duration_ms: 50
++input_device: ""
++```
++
++### 8. i18n 新增键
++
++**zh.ftl**：
++```ftl
++# --- StillDive ---
++clg-still-enter = [CLG] 亮屏静止下潜: 已进入深度省电模式 (perf ≤ { $ceil })
++clg-still-exit = [CLG] 亮屏静止下潜: 检测到活动，已退出 (升频助力 { $boost } ticks)
++
++# --- IdleDive ---
++idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成
++idle-dive-init-failed = [IdleDive] 初始化失败: { $error }
++idle-dive-unavailable = [IdleDive] cpuidle 节点不可用，CPU 静止下潜已禁用
++idle-dive-enter = [IdleDive] 进入下潜状态
++idle-dive-exit = [IdleDive] 退出下潜状态
++idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
++idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
++idle-dive-config-reloaded = [IdleDive] 配置已热重载
++
++# --- TouchBoost ---
++touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成
++touch-boost-init-failed = [TouchBoost] 初始化失败: { $error }
++touch-boost-no-device = [TouchBoost] 未找到触摸设备，TouchBoost 已禁用
++touch-boost-listener-started = [TouchBoost] 监听器已启动，监听 { $count } 个设备
++touch-boost-thread-started = [TouchBoost] 线程已启动
++touch-boost-start = [TouchBoost] 触摸开始，应用 boost
++touch-boost-release = [TouchBoost] 松手，开始衰减恢复
++touch-boost-recovered = [TouchBoost] 恢复完成
++touch-boost-config-reloaded = [TouchBoost] 配置已热重载
++
++# --- Scheduler Tuning ---
++apply-scheduler-tuning = 内核调度器节能参数已应用
++```
++
++**en.ftl** 对应英文翻译（从复刻版提取）。
++
++### 9. 模块注册与依赖
++
++`src/main.rs` 添加：
++```rust
++pub mod idle_dive;
++pub mod touch_boost;
++```
++
++`Cargo.toml`：无需新增依赖（使用现有 `nix`, `libc`, `log`）
++
++---
++
++## 验证方案
++
++### 编译验证
++```bash
++cargo build   # 确认无编译错误
++```
++
++### 功能验证（观察日志）
++
++| 操作 | 预期日志 |
++|------|----------|
++| 亮屏 + 静止 3s | `[CLG] 亮屏静止下潜: 已进入` |
++| | `[IdleDive] 进入下潜状态` |
++| 触摸屏幕 | `[TouchBoost] 触摸开始` |
++| | `[IdleDive] 快速退出下潜` |
++| | `[CLG] 亮屏静止下潜: 检测到活动，已退出` |
++| 打开游戏 (FAS) | 无 StillDive/IdleDive/TouchBoost 干扰日志 |
++| 息屏 | `[IdleDive] 进入息屏下潜状态` |
++| | `[Scheduler] 息屏: 启用极致深度睡眠模式` |
++| 亮屏 | `[IdleDive] 退出息屏下潜状态` |
++| | `[Scheduler] 亮屏: 恢复之前的性能限制` |
++
++### 回归保证
++- `enabled: false` 时行为与修改前完全一致
++- FAS 游戏模式不触发任何省电模块干扰（CLG 已 release，IdleDive 维持 normal）
++- 息屏 Doze 优先于 StillDive（Doze 时不传 still_dive config）
++- 配置热重载：修改 yaml 文件后自动生效
++
++---
++
++## 与复刻版的关键差异
++
++| 维度 | 复刻版 | 本方案 |
++|------|--------|--------|
++| StillDive | ❌ 不存在 | ✅ CLG 内部 max util 检测 + perf 覆盖 |
++| IdleDive 检测 | 仅平均 util | 平均 util（移植） |
++| TouchBoost | 独立运行 | ✅ 联动 IdleDive.on_touch_fast_exit() |
++| 调度器调优 | ❌ 不存在 | ✅ sched_wakeup_granularity + migration + nr_migrate |
++| 三层联动 | ❌ 各管各的 | ✅ StillDive ↔ IdleDive ↔ TouchBoost 协调 |
++| 配置热重载 | 部分支持 | ✅ 全部支持 |
+\ No newline at end of file
+diff --git "a/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\347\274\226\347\240\201\345\256\236\347\216\260\350\256\241\345\210\222.md" "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\347\274\226\347\240\201\345\256\236\347\216\260\350\256\241\345\210\222.md"
+new file mode 100644
+index 0000000..e32c5c4
+--- /dev/null
++++ "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\347\274\226\347\240\201\345\256\236\347\216\260\350\256\241\345\210\222.md"
+@@ -0,0 +1,652 @@
++# CPU 静止下潜 — 编码实现计划
++
++## 总体策略
++
++按模块依赖顺序实现：**配置先行 → StillDive → IdleDive → TouchBoost → 联动集成 → 文档更新**
++
++每个阶段完成后执行 `cargo build` 验证编译。
++
++---
++
++## 阶段 1：配置基础 (1h)
++
++### 目标
++添加所有新功能的配置结构体，确保 YAML 能正确解析。
++
++### 文件修改清单
++
++| 文件 | 修改内容 |
++|------|----------|
++| `src/scheduler/config.rs` | 添加 `StillDiveConfig` 结构体，添加到 `Config` |
++| `module/config/config.yaml` | 添加 `StillDive` 和 `SchedulerTuning` 配置块 |
++| `module/config/i18n/zh.ftl` | 添加 StillDive/IdleDive/TouchBoost 翻译键 |
++| `module/config/i18n/en.ftl` | 添加英文翻译键 |
++
++### 实现细节
++
++**1.1 StillDiveConfig (config.rs)**
++```rust
++#[derive(Debug, Deserialize, Clone)]
++pub struct StillDiveConfig {
++    #[serde(default = "crate::utils::default_true")]
++    pub enabled: bool,
++    #[serde(default = "sd_enter_thresh")]
++    pub enter_threshold: f32,
++    #[serde(default = "sd_enter_ticks")]
++    pub enter_ticks: u32,
++    #[serde(default = "sd_exit_thresh")]
++    pub exit_threshold: f32,
++    #[serde(default = "sd_exit_boost")]
++    pub exit_boost_ticks: u32,
++    #[serde(default = "sd_perf_ceil")]
++    pub perf_ceil: f32,
++    #[serde(default = "sd_smoothing_up")]
++    pub smoothing_up: f32,
++}
++
++fn sd_enter_thresh() -> f32 { 0.08 }
++fn sd_enter_ticks() -> u32 { 10 }
++fn sd_exit_thresh() -> f32 { 0.20 }
++fn sd_exit_boost() -> u32 { 5 }
++fn sd_perf_ceil() -> f32 { 0.30 }
++fn sd_smoothing_up() -> f32 { 0.05 }
++
++impl Default for StillDiveConfig { ... }
++impl StillDiveConfig { pub fn normalize(&mut self) { ... } }
++```
++
++**1.2 Config 扩展**
++```rust
++pub struct Config {
++    // ... 现有字段 ...
++    #[serde(default, rename = "StillDive")]
++    pub still_dive: StillDiveConfig,
++}
++```
++
++**1.3 FunctionToggles 扩展**
++```rust
++pub struct FunctionToggles {
++    // ... 现有字段 ...
++    #[serde(default, rename = "SchedulerTuning")]
++    pub scheduler_tuning: bool,
++}
++```
++
++### 验证点
++- `cargo build` 通过
++- `config.yaml` 能正确解析 StillDive 配置块
++
++---
++
++## 阶段 2：StillDive 实现 (2h)
++
++### 目标
++在 CLG 中实现亮屏静止下潜功能。
++
++### 文件修改清单
++
++| 文件 | 修改内容 |
++|------|----------|
++| `src/scheduler/cpu_load_governor.rs` | 添加 StillDive 状态字段和检测逻辑 |
++| `src/scheduler/mod.rs` | 传递 still_dive 配置到 CLG |
++
++### 实现细节
++
++**2.1 CpuLoadGovernor 新增字段**
++```rust
++pub struct CpuLoadGovernor {
++    // ... 现有字段 ...
++    still_dive: Option<StillDiveConfig>,
++    still_mode: bool,
++    still_low_ticks: u32,
++    still_exit_boost: u32,
++}
++```
++
++**2.2 init_policies() 签名变更**
++```rust
++pub fn init_policies(
++    &mut self,
++    gov_cfg: &CpuLoadGovernorConfig,
++    still_dive: Option<StillDiveConfig>
++)
++```
++
++**2.3 on_load_update() 逻辑扩展**
++```rust
++pub fn on_load_update(&mut self, core_utils: &[f32]) {
++    // 1. StillDive 检测（在 per-cluster 循环前）
++    if let Some(ref sd) = self.still_dive {
++        let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
++        
++        if !self.still_mode {
++            // 未下潜状态
++            if max_util <= sd.enter_threshold {
++                self.still_low_ticks += 1;
++            } else {
++                self.still_low_ticks = 0;
++            }
++            if self.still_low_ticks >= sd.enter_ticks {
++                self.still_mode = true;
++                log::info!("{}", t_with_args("clg-still-enter", ...));
++            }
++        } else {
++            // 已下潜状态
++            if max_util > sd.exit_threshold {
++                self.still_mode = false;
++                self.still_exit_boost = sd.exit_boost_ticks;
++                log::info!("{}", t_with_args("clg-still-exit", ...));
++            }
++        }
++        
++        // 退出助力递减
++        if self.still_exit_boost > 0 {
++            self.still_exit_boost -= 1;
++        }
++    }
++    
++    // 2. per-cluster 循环（修改 clamp 和 smoothing）
++    for (i, cluster) in self.clusters.iter_mut().enumerate() {
++        let util = core_utils[i];
++        
++        let (perf_ceil, smoothing_up) = if self.still_mode {
++            // 下潜模式：低上限 + 极慢升频
++            (self.still_dive.as_ref().unwrap().perf_ceil, 
++             self.still_dive.as_ref().unwrap().smoothing_up)
++        } else if self.still_exit_boost > 0 {
++            // 退出助力：快速恢复
++            (self.cfg.perf_ceil, 1.0)
++        } else {
++            // 正常模式
++            (self.cfg.perf_ceil, self.cfg.smoothing_up)
++        };
++        
++        // ... 现有逻辑，使用 effective_perf_ceil 和 effective_smoothing_up ...
++    }
++}
++```
++
++**2.4 reload_config() 和 release() 扩展**
++```rust
++pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
++    // ... 现有逻辑 ...
++    self.still_dive = still_dive;
++}
++
++pub fn release(&mut self) {
++    // ... 现有逻辑 ...
++    self.still_mode = false;
++    self.still_low_ticks = 0;
++    self.still_exit_boost = 0;
++}
++```
++
++**2.5 scheduler/mod.rs 调用点**
++```rust
++// 在 ConfigReload 事件处理中
++DaemonEvent::ConfigReload(rules_config) => {
++    let config = self.config.read().unwrap();
++    let still_dive = if config.still_dive.enabled {
++        Some(config.still_dive.clone())
++    } else {
++        None
++    };
++    cpu_governor.reload_config(&mode.cpu_load_governor, still_dive);
++}
++```
++
++### 验证点
++- `cargo build` 通过
++- 日志输出 `[CLG] 亮屏静止下潜: 已进入深度省电模式`
++- 日志输出 `[CLG] 亮屏静止下潜: 检测到活动，已退出`
++
++---
++
++## 阶段 3：IdleDive 实现 (3h)
++
++### 目标
++从复刻版移植 IdleDive 模块，实现 CPU 空闲下潜。
++
++### 文件创建清单
++
++| 文件 | 说明 |
++|------|------|
++| `src/idle_dive/mod.rs` | 模块入口，导出 IdleDiveController |
++| `src/idle_dive/config.rs` | IdleDiveConfig 结构体 |
++| `src/idle_dive/controller.rs` | 状态机实现 |
++| `src/idle_dive/latency.rs` | PM-QoS + sysfs 写入器 |
++| `module/config/idle_dive.yaml` | 配置文件 |
++
++### 实现细节
++
++**3.1 config.rs**
++```rust
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveConfig {
++    #[serde(default = "crate::utils::default_true")]
++    pub enabled: bool,
++    #[serde(default = "d_dive_threshold")]
++    pub dive_threshold: f32,
++    #[serde(default = "d_exit_threshold")]
++    pub exit_threshold: f32,
++    #[serde(default = "d_dive_delay_ms")]
++    pub dive_delay_ms: u64,
++    #[serde(default = "d_exit_delay_ms")]
++    pub exit_delay_ms: u64,
++    #[serde(default)]
++    pub governors: IdleDiveGovernors,
++    #[serde(default)]
++    pub params: IdleDiveParams,
++}
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveGovernors {
++    pub normal: String,
++    pub diving: String,
++    pub doze: String,
++}
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveParams {
++    pub normal_latency_us: i32,
++    pub diving_latency_us: i32,
++    pub doze_latency_us: i32,
++}
++```
++
++**3.2 controller.rs - 状态机**
++```rust
++pub enum IdleDiveState {
++    Normal,
++    Diving,
++    DozeDiving,
++}
++
++pub struct IdleDiveController {
++    config: IdleDiveConfig,
++    state: IdleDiveState,
++    latency_writer: LatencyWriter,
++    dive_timer: Instant,
++    exit_timer: Instant,
++    low_util_ticks: u32,
++    high_util_ticks: u32,
++}
++
++impl IdleDiveController {
++    pub fn new(config: IdleDiveConfig) -> Result<Self> { ... }
++    pub fn update(&mut self, avg_util: f32) { ... }
++    pub fn enter_doze(&mut self) { ... }
++    pub fn exit_doze(&mut self) { ... }
++    pub fn on_touch_fast_exit(&mut self) { ... }
++    pub fn reload_config(&mut self, config: IdleDiveConfig) { ... }
++}
++```
++
++**3.3 latency.rs - 写入器**
++```rust
++pub struct LatencyWriter {
++    pm_qos_fd: Option<RawFd>,
++    governor_paths: Vec<String>,
++    latency_paths: Vec<String>,
++}
++
++impl LatencyWriter {
++    pub fn new() -> Result<Self> { ... }
++    pub fn set_governor(&self, governor: &str) -> Result<()> { ... }
++    pub fn set_latency(&self, latency_us: i32) -> Result<()> { ... }
++}
++```
++
++**3.4 mod.rs - 模块入口**
++```rust
++mod config;
++mod controller;
++mod latency;
++
++pub use config::IdleDiveConfig;
++pub use controller::IdleDiveController;
++```
++
++**3.5 main.rs 注册**
++```rust
++mod idle_dive;
++```
++
++**3.6 scheduler/mod.rs 集成**
++```rust
++// 初始化
++let idle_dive = if config.idle_dive.enabled {
++    IdleDiveController::new(config.idle_dive.clone())?
++} else {
++    // 创建一个空的控制器，什么都不做
++    IdleDiveController::disabled()
++};
++
++// SystemLoadUpdate 事件处理
++DaemonEvent::SystemLoadUpdate { core_utils, .. } => {
++    cpu_governor.on_load_update(&core_utils);
++    if !core_utils.is_empty() {
++        let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;
++        idle_dive.update(avg);
++    }
++}
++
++// ScreenStateChange 事件处理
++DaemonEvent::ScreenStateChange(screen_on) => {
++    if screen_on {
++        idle_dive.exit_doze();
++    } else {
++        idle_dive.enter_doze();
++    }
++}
++```
++
++### 验证点
++- `cargo build` 通过
++- 日志输出 `[IdleDive] CPU 静止下潜控制器初始化完成`
++- 日志输出 `[IdleDive] 进入下潜状态` / `[IdleDive] 退出下潜状态`
++- 息屏时输出 `[IdleDive] 进入息屏下潜状态`
++
++---
++
++## 阶段 4：TouchBoost 实现 (3h)
++
++### 目标
++从复刻版移植 TouchBoost 模块，实现触摸提频。
++
++### 文件创建清单
++
++| 文件 | 说明 |
++|------|------|
++| `src/touch_boost/mod.rs` | 模块入口 |
++| `src/touch_boost/config.rs` | TouchBoostConfig 结构体 |
++| `src/touch_boost/controller.rs` | Boost 状态机 |
++| `src/touch_boost/monitor.rs` | epoll 触摸事件监听器 |
++| `module/config/touch_boost.yaml` | 配置文件 |
++
++### 实现细节
++
++**4.1 config.rs**
++```rust
++#[derive(Debug, Deserialize, Clone)]
++pub struct TouchBoostConfig {
++    #[serde(default = "crate::utils::default_true")]
++    pub enabled: bool,
++    #[serde(default = "d_boost_freqs")]
++    pub boost_freqs: Vec<u32>,
++    #[serde(default = "d_release_delay_ms")]
++    pub release_delay_ms: u64,
++    #[serde(default = "d_recover_decay")]
++    pub recover_decay: f32,
++    #[serde(default = "d_min_boost_duration_ms")]
++    pub min_boost_duration_ms: u64,
++    #[serde(default)]
++    pub input_device: String,
++}
++```
++
++**4.2 monitor.rs - epoll 监听器**
++```rust
++pub struct TouchMonitor {
++    epoll_fd: RawFd,
++    input_fds: Vec<RawFd>,
++    config: TouchBoostConfig,
++}
++
++impl TouchMonitor {
++    pub fn new(config: TouchBoostConfig) -> Result<Self> { ... }
++    pub fn run(&self, tx: Sender<TouchEvent>) -> Result<()> { ... }
++}
++```
++
++**4.3 controller.rs - Boost 控制器**
++```rust
++pub struct TouchBoostController {
++    config: TouchBoostConfig,
++    cluster_writers: Vec<FastWriter>,
++    boost_until: Instant,
++    is_boosting: bool,
++}
++
++impl TouchBoostController {
++    pub fn new(config: TouchBoostConfig) -> Result<Self> { ... }
++    pub fn on_touch_start(&mut self) { ... }
++    pub fn on_touch_end(&mut self) { ... }
++    pub fn update(&mut self) { ... }  // 衰减恢复
++    pub fn reload_config(&mut self, config: TouchBoostConfig) { ... }
++}
++```
++
++**4.4 mod.rs - 模块入口**
++```rust
++mod config;
++mod controller;
++mod monitor;
++
++pub use config::TouchBoostConfig;
++pub use controller::TouchBoostController;
++pub use monitor::TouchMonitor;
++```
++
++**4.5 main.rs 注册**
++```rust
++mod touch_boost;
++```
++
++**4.6 scheduler/mod.rs 集成**
++```rust
++// 初始化
++let (touch_tx, touch_rx) = mpsc::channel::<TouchEvent>();
++let touch_boost = if config.touch_boost.enabled {
++    let monitor = TouchMonitor::new(config.touch_boost.clone())?;
++    std::thread::spawn(move || monitor.run(touch_tx));
++    TouchBoostController::new(config.touch_boost.clone())?
++} else {
++    TouchBoostController::disabled()
++};
++
++// 触摸事件处理
++if let Ok(event) = touch_rx.try_recv() {
++    match event {
++        TouchEvent::Start => {
++            touch_boost.on_touch_start();
++            idle_dive.on_touch_fast_exit();
++        }
++        TouchEvent::End => touch_boost.on_touch_end(),
++    }
++}
++
++// 定期更新（衰减恢复）
++touch_boost.update();
++```
++
++### 验证点
++- `cargo build` 通过
++- 日志输出 `[TouchBoost] 触摸提频控制器初始化完成`
++- 日志输出 `[TouchBoost] 触摸开始，应用 boost`
++- 日志输出 `[TouchBoost] 松手，开始衰减恢复`
++
++---
++
++## 阶段 5：联动集成与调优 (1h)
++
++### 目标
++完成三层联动，添加调度器参数调优。
++
++### 文件修改清单
++
++| 文件 | 修改内容 |
++|------|----------|
++| `src/scheduler/scheduler.rs` | 添加 `apply_scheduler_tuning()` |
++| `src/scheduler/mod.rs` | 完整事件循环整合 |
++
++### 实现细节
++
++**5.1 scheduler.rs - 调度器参数调优**
++```rust
++fn apply_scheduler_tuning(&self) -> Result<()> {
++    let config = self.config.read().unwrap();
++    if !config.function.scheduler_tuning {
++        return Ok(());
++    }
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", "15");
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", "500000");
++    let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", "8");
++    log::info!("{}", t("apply-scheduler-tuning"));
++    Ok(())
++}
++```
++
++**5.2 完整事件循环**
++```rust
++loop {
++    match rx.recv() {
++        Ok(event) => match event {
++            DaemonEvent::SystemLoadUpdate { core_utils, .. } => {
++                cpu_governor.on_load_update(&core_utils);
++                if !core_utils.is_empty() {
++                    let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;
++                    idle_dive.update(avg);
++                }
++                touch_boost.update();  // 衰减恢复
++            }
++            DaemonEvent::ScreenStateChange(screen_on) => {
++                if screen_on {
++                    idle_dive.exit_doze();
++                } else {
++                    idle_dive.enter_doze();
++                }
++            }
++            DaemonEvent::ConfigReload(rules_config) => {
++                // 热重载所有模块配置
++                let config = self.config.read().unwrap();
++                let still_dive = if config.still_dive.enabled {
++                    Some(config.still_dive.clone())
++                } else {
++                    None
++                };
++                cpu_governor.reload_config(&mode.cpu_load_governor, still_dive);
++                idle_dive.reload_config(config.idle_dive.clone());
++                touch_boost.reload_config(config.touch_boost.clone());
++            }
++            _ => {}
++        }
++        Err(_) => {}
++    }
++    
++    // 处理触摸事件（非阻塞）
++    if let Ok(event) = touch_rx.try_recv() {
++        match event {
++            TouchEvent::Start => {
++                touch_boost.on_touch_start();
++                idle_dive.on_touch_fast_exit();
++            }
++            TouchEvent::End => touch_boost.on_touch_end(),
++        }
++    }
++}
++```
++
++### 验证点
++- `cargo build` 通过
++- 日志输出 `内核调度器节能参数已应用`
++- 三层联动正常：触摸 → TouchBoost + IdleDive 快速退出
++
++---
++
++## 阶阶段 6：配置文件与文档 (30min)
++
++### 目标
++完善配置文件，更新文档。
++
++### 文件修改清单
++
++| 文件 | 修改内容 |
++|------|----------|
++| `module/config/idle_dive.yaml` | 创建配置文件 |
++| `module/config/touch_boost.yaml` | 创建配置文件 |
++| `module/config/config.yaml` | 添加完整配置示例 |
++| `README.md` | 文档化新功能 |
++| `docs/工作日志.md` | 记录实现过程 |
++
++### 配置文件内容
++
++**idle_dive.yaml**
++```yaml
++enabled: true
++dive_threshold: 0.12
++exit_threshold: 0.18
++dive_delay_ms: 500
++exit_delay_ms: 30
++governors:
++  normal: "menu"
++  diving: "menu"
++  doze: "menu"
++params:
++  normal_latency_us: 100
++  diving_latency_us: 800
++  doze_latency_us: 1500
++```
++
++**touch_boost.yaml**
++```yaml
++enabled: true
++boost_freqs:
++  - 2500000
++  - 0
++  - 2000000
++release_delay_ms: 100
++recover_decay: 0.15
++min_boost_duration_ms: 50
++input_device: ""
++```
++
++---
++
++## 验证方案
++
++### 编译验证
++```bash
++cargo build
++```
++
++### 功能验证（观察日志）
++
++| 操作 | 预期日志 |
++|------|----------|
++| 亮屏 + 静止 3s | `[CLG] 亮屏静止下潜: 已进入深度省电模式` |
++| | `[IdleDive] 进入下潜状态` |
++| 触摸屏幕 | `[TouchBoost] 触摸开始，应用 boost` |
++| | `[IdleDive] 快速退出下潜` |
++| | `[CLG] 亮屏静止下潜: 检测到活动，已退出` |
++| 息屏 | `[IdleDive] 进入息屏下潜状态` |
++| 亮屏 | `[IdleDive] 退出息屏下潜状态` |
++
++### 回归保证
++- `enabled: false` 时行为与修改前完全一致
++- FAS 游戏模式不触发任何省电模块干扰
++- 配置热重载正常工作
++
++---
++
++## 风险与注意事项
++
++1. **FastWriter 兼容性** — 复刻版的 `FastWriter::write_value_force_str()` 可能需要适配
++2. **epoll 权限** — 监听 `/dev/input/event*` 可能需要 root 权限
++3. **PM-QoS 接口** — 不同内核版本接口可能不同，需要兼容处理
++4. **配置热重载** — 确保所有模块都支持运行时配置更新
++
++---
++
++## 预计总工时
++
++| 阶段 | 预计时间 |
++|------|----------|
++| 阶段 1：配置基础 | 1h |
++| 阶段 2：StillDive | 2h |
++| 阶段 3：IdleDive | 3h |
++| 阶段 4：TouchBoost | 3h |
++| 阶段 5：联动集成 | 1h |
++| 阶段 6：配置文档 | 30min |
++| **总计** | **~10.5h** |
+diff --git a/docs/architecture.md b/docs/architecture.md
+new file mode 100644
+index 0000000..4083eaf
+--- /dev/null
++++ b/docs/architecture.md
+@@ -0,0 +1,911 @@
++# Yumi 项目架构地图
++
++> 生成日期: 2026-08-13  
++> 项目版本: v2.0.2  
++> 仓库: https://github.com/imacte/yumi  
++文档版本: 2.0 (全面更新)
++
++---
++
++## 1. 项目概览
++
++**Yumi** 是一个面向 Android 平台的 CPU 调度守护进程，使用 Rust 编写，通过 eBPF 内核探针实现零开销的帧率与 CPU 负载监控，结合 PID 控制的 FAS（帧感知调度）引擎与 CLG（CPU 负载调速器），为游戏场景和日常使用提供自适应频率调节。
++
++### 1.1 核心特性
++
++- **eBPF 内核探针**: 零开销监控 `Surface::queueBuffer` 帧提交事件与 `sched_switch` CPU 调度事件
++- **FAS 帧感知调度**: 基于 PID 控制的帧率感知 CPU 频率调节，支持动态帧率档位匹配
++- **CLG CPU 负载调速器**: 日常场景下基于 CPU 利用率的自适应频率调节
++- **应用感知**: 通过 Cgroup 检测前台应用，自动切换调度策略
++- **温度感知**: 实时温度监控与降频保护
++- **WebUI 配置**: 基于 Vue3 的 KernelSU/Magisk 管理器内嵌配置界面
++- **国际化**: 基于 Fluent 的多语言支持
++
++### 1.2 目标平台
++
++- **系统**: Android 8.0+ (API 26+)
++- **架构**: ARM64 (AArch64)
++- **要求**: Root 权限 (Magisk / KernelSU)
++- **内核要求**: eBPF 支持 (`CONFIG_BPF`, `CONFIG_BPF_SYSCALL`)
++
++---
++
++## 2. 仓库结构
++
++```
++yumi/
++├── Cargo.toml                  # 工作区根配置 (workspace: xtask + yumi-ebpf)
++├── Cargo.lock                  # 依赖锁文件
++├── build.rs                    # eBPF 编译脚本 (安装 bpf-linker, 编译 yumi-ebpf)
++├── CLAUDE.md                   # AI Agent 协作与开发规范 (给 AI 的指令)
++├── AGENTS.md                   # 同上, 别名文件
++├── .cargo/
++│   └── config.toml             # cargo 配置 (Android NDK 链接器设置)
++├── .gitignore
++│
++├── src/                        # ★ Rust 守护进程源码 (核心)
++│   ├── main.rs                 # 入口: 初始化日志/i18n, 启动 Monitor + Scheduler
++│   ├── common.rs               # 公共类型 (DaemonEvent 总线枚举), 模块根路径计算
++│   ├── utils.rs                # 工具函数: FastWriter, SysPathExist, 文件/温度读写
++│   ├── logger.rs               # 日志系统: log4rs 滚动文件, 5MB×3 轮转, 动态级别
++│   ├── i18n.rs                 # 国际化: Fluent FTL 加载, 运行时切换语言
++│   ├── fas_types.rs            # FAS 配置类型: PID 系数, ClusterProfile, FasRulesConfig
++│   │
++│   ├── monitor/                # 监控子系统 (数据采集)
++│   │   ├── mod.rs              # 线程编排: 启动 4 个工作线程 + 1 主循环
++│   │   ├── app_detect.rs       # Cgroup 前台应用检测 + 500ms 防抖
++│   │   ├── fps_monitor.rs      # eBPF uprobe → libgui::queueBuffer, mio 轮询 RingBuf
++│   │   ├── cpu_monitor.rs      # eBPF tracepoint → sched_switch, TGID/线程双路径
++│   │   ├── screen_detect.rs    # Netlink uevent 监听屏幕亮灭
++│   │   └── config.rs           # RulesConfig 结构 + get_rules_path()
++│   │
++│   └── scheduler/              # 调度子系统 (决策与执行)
++│       ├── mod.rs              # IPC 事件循环, 状态机, 线程编排
++│       ├── scheduler.rs        # 一次性系统调优: CPU idle governor, IO 设置
++│       ├── config.rs           # 主配置结构: Meta, Mode, CpuLoadGovernorConfig, IOSettings
++│       ├── cpu_load_governor.rs# ★ CLG: CPU 负载调速器 (sysfs 快照/恢复, 调频算法)
++│       └── fas/                # ★ FAS: 帧感知调度器
++│           ├── mod.rs          # 子模块公开
++│           ├── controller.rs   # FasController 主结构 + 生命周期管理 + CPU 负载接口
++│           ├── frame_pipeline.rs# 帧流水线: Phase 1~2 (冷启动, 加载检测)
++│           ├── gear_state.rs   # Phase 3: 齿轮决策 (升/降档, 阻尼, 原生档位探测)
++│           ├── pid.rs          # PID 控制器 (动态系数缩放, util-gain 调制)
++│           ├── pid_jank.rs     # Phase 4: Jank 检测 + PID 计算 + 紧急跳频 + 恢复保护
++│           ├── fps_window.rs   # 120 帧滑动窗口 (均值/标准差/近期均值)
++│           ├── policy_controller.rs # Phase 5: 单 Policy 频率写入 + 1.5s 验证
++│           └── policy_mgmt.rs  # Policy 初始化/热重载/频率分配 (capacity_weight)
++│
++├── yumi-ebpf/                  # ★ eBPF 内核探针程序 (no_std)
++│   ├── Cargo.toml              # 依赖: aya-ebpf
++│   └── src/main.rs             # handle_frame(uprobe) + handle_sched_switch(tracepoint)
++│
++├── webui/                      # Vue3 WebUI 配置界面
++│   ├── package.json
++│   ├── vite.config.ts
++│   ├── index.html
++│   ├── src/
++│   │   ├── main.ts             # 入口: 挂载 Pinia/Router/Vant/i18n
++│   │   ├── App.vue             # Root: Vant ConfigProvider + RouterView
++│   │   ├── i18n/               # vue-i18n 翻译
++│   │   ├── router/index.ts     # 4 路由: Home / Apps / Config / Log
++│   │   ├── stores/
++│   │   │   ├── scheduler.ts    # Pinia: currentMode, appRules, isDaemonRunning
++│   │   │   └── counter.ts      # 示例 (开发用)
++│   │   ├── utils/
++│   │   │   ├── bridge.ts       # KernelSU Magisk 桥接 (读写配置, exec, listPackages)
++│   │   │   └── mock.ts         # 开发模式 Mock 桥接
++│   │   └── views/
++│   │       ├── HomeView.vue    # 主页: 模式切换, 守护进程状态, QQ 群链接
++│   │       ├── AppRulesView.vue# 应用规则: 为每个应用绑定调度模式
++│   │       ├── ConfigEditorView.vue # 核心配置编辑 (原 CoreConfigView)
++│   │       └── LogViewerView.vue    # 日志查看器
++│   └── ...
++│
++├── xtask/                      # 构建编排工具
++│   ├── Cargo.toml              # 依赖: clap, xshell, zip, fs_extra, toml, chrono
++│   └── src/
++│       ├── main.rs             # cargo xtask build: 编译 WebUI → Rust → 打包 zip
++│       └── zip_ext.rs          # 目录递归压缩工具
++│
++├── module/                     # Magisk/KernelSU 模块打包
++│   ├── module.prop             # 模块元数据 (id, name, version, author)
++│   ├── customize.sh            # 安装脚本: 欢迎信息, 自动检测语言
++│   ├── service.sh              # 开机启动: 等待系统启动, kill 旧进程, nohup 启动
++│   ├── uninstall.sh            # 卸载脚本
++│   ├── META-INF/               # Magisk 签名/兼容
++│   ├── config/
++│   │   ├── config.yaml         # 主配置文件
++│   │   └── i18n/               # Fluent 翻译文件
++│   │       ├── en.ftl
++│   │       └── zh.ftl
++│   ├── rules.yaml              # 应用规则 (WebUI 配置入口)
++│   ├── scripts/                # 辅助脚本 (预留)
++│   └── .gitignore
++│
++├── updateInformation/          # OTA 更新
++│   ├── changelog.md            # 版本更新日志
++│   └── update.json             # 更新元数据 (供 Manager 检测)
++│
++├── docs/
++│   └── architecture.md         # 此文: 项目架构地图
++│
++└── .github/
++    ├── dependabot.yml          # 依赖自动更新
++    └── workflows/build.yml     # CI/CD: 每次推送自动构建发布包
++```
++
++---
++
++## 3. 运行时架构
++
++### 3.1 进程模型
++
++```
++┌─────────────────────────────────────────────────────────────┐
++│                        yumi 守护进程                          │
++│                                                              │
++│  ┌─────────────┐         mpsc channel         ┌───────────┐  │
++│  │  Monitor    │  ───── DaemonEvent ──────▶  │ Scheduler │  │
++│  │  Thread     │                              │  Thread   │  │
++│  └──────┬──────┘                              └─────┬─────┘  │
++│         │                                           │        │
++│  ┌──────┴──────┐                            ┌──────┴──────┐  │
++│  │ screen_watcher│                          │ config_watcher│ │
++│  │ config_watcher│                          │   scheduler   │  │
++│  │ fps_monitor_ebpf│                        │     IPC       │  │
++│  │ cpu_monitor_ebpf│                        └───────────────┘  │
++│  │ app_detection   │                                          │
++│  │   (blocking)    │                                          │
++│  └─────────────────┘                                          │
++└─────────────────────────────────────────────────────────────┘
++```
++
++### 3.2 线程职责
++
++| 线程名 | 来源 | 职责 |
++|--------|------|------|
++| `main` | `src/main.rs` | 初始化日志、i18n、chdir，启动 Monitor 和 Scheduler 线程 |
++| `screen_watcher` | `monitor/mod.rs` | 监听 Netlink uevent，检测屏幕亮/灭状态 |
++| `config_watcher` | `monitor/mod.rs` | 使用 inotify 监听 `rules.yaml` 变更 |
++| `fps_monitor_ebpf` | `monitor/mod.rs` | Tokio 运行时，管理 eBPF uprobe FPS 探针 |
++| `cpu_monitor_ebpf` | `monitor/mod.rs` | Tokio 运行时，管理 eBPF tracepoint CPU 探针 |
++| `app_detection` | `monitor/mod.rs` | 主循环，从 Cgroup 读取前台应用，500ms 防抖 |
++| `config_watcher` | `scheduler/mod.rs` | 监听 `config/` 目录变更，热重载配置 |
++| `scheduler_ipc` | `scheduler/mod.rs` | 事件循环，驱动 FAS/CLG，写入 sysfs |
++
++---
++
++## 4. 事件总线 (DaemonEvent)
++
++```rust
++pub enum DaemonEvent {
++    // 低频事件: 前台应用切换或环境温度变化
++    ModeChange { package_name: String, pid: i32, mode: String, temperature: f64 },
++    // 高频事件: eBPF 捕获的帧间隔 (纳秒)
++    FrameUpdate { frame_delta_ns: u64 },
++    // 中频事件: eBPF 系统负载更新
++    SystemLoadUpdate { core_utils: Vec<f32>, foreground_max_util: f32 },
++    // 配置热重载
++    ConfigReload(RulesConfig),
++    // 屏幕状态变化
++    ScreenStateChange(bool),
++}
++```
++
++### 4.1 事件流向
++
++```
++Monitor 子系统                              Scheduler 子系统
++┌─────────────────┐                        ┌─────────────────┐
++│ app_detect.rs   │──ModeChange──────────▶│                 │
++│ fps_monitor.rs  │──FrameUpdate─────────▶│   scheduler/    │──▶ sysfs (scaling_max/min_freq)
++│ cpu_monitor.rs  │──SystemLoadUpdate────▶│   mod.rs 事件循环│
++│ screen_detect.rs│──ScreenStateChange───▶│                 │
++│ config.rs       │──ConfigReload────────▶│                 │
++└─────────────────┘                        └─────────────────┘
++```
++
++---
++
++## 5. 监控子系统 (Monitor)
++
++### 5.1 前台应用检测 (`app_detect.rs`)
++
++**机制**: 读取 Cgroup 的 `top-app` 组中的进程列表，通过 `/proc/<pid>/cmdline` 获取包名。
++
++**搜索路径** (按优先级):
++1. `/dev/cpuset/top-app/cgroup.procs`
++2. `/sys/fs/cgroup/cpuset/top-app/cgroup.procs`
++3. `/dev/stune/top-app/cgroup.procs`
++
++**过滤规则**:
++- 排除系统应用 (systemui, system_server, surfaceflinger 等)
++- 排除输入法 (自动检测系统输入法列表，含备用硬编码)
++- 排除用户配置的 `ignored_apps`
++- 500ms 无阻塞防抖，避免快速切换导致频繁模式变更
++
++**全局变量**:
++- `CURRENT_PID`: 当前前台应用 PID (AtomicI32)
++- `CURRENT_PACKAGE`: 当前前台包名 (Arc<Mutex<String>>)
++
++### 5.2 FPS 监控 (`fps_monitor.rs`)
++
++**机制**: eBPF uprobe 附加到 `libgui.so` 的 `Surface::queueBuffer` 符号。
++
++**架构**:
++- `FpsManager`: 单 eBPF 实例，支持多 PID 动态 attach/detach
++- `ProbeState`: 单 PID 的帧统计，使用 144 帧滑动窗口
++- 使用 `mio` 轮询 RingBuf fd，避免忙等待
++- PID 变化通过 `tokio::sync::watch` 通道通知
++
++**符号匹配** (fallback):
++- 主: `_ZN7android7Surface11queueBufferEP19ANativeWindowBufferi`
++- 备: `_ZN7android7Surface11queueBufferEP19ANativeWindowBufferiPNS_24SurfaceQueueBufferOutputE`
++
++### 5.3 CPU 监控 (`cpu_monitor.rs`)
++
++**机制**: eBPF tracepoint 附加到 `sched/sched_switch`。
++
++**双路径利用率计算**:
++1. **主路径 (TGID 聚合)**: 通过 `TGID_RUN_TIME` map 查询前台进程的总运行时间
++   - 只需查询 1 个 key
++   - 1024 条目，无 HASH 驱逐问题
++   - 包含 pending delta 补偿
++
++2. **降级路径 (线程级)**: 遍历 `/proc/<pid>/task/` 下的所有 TID，查询 `THREAD_RUN_TIME`
++   - 防驱逐保护: 如果新值 < 旧值，跳过该 TID
++
++**全局利用率**: 每核 idle/busy 时间累计，含实时 pending delta 补偿。
++
++### 5.4 屏幕检测 (`screen_detect.rs`)
++
++**机制**: Netlink `NETLINK_KOBJECT_UEVENT` socket 监听内核 uevent。
++
++**事件来源**:
++- `power` subsystem: `early_suspend` / `late_resume`
++- `backlight` subsystem: 读取 `bl_power` 或 `actual_brightness` 确认状态
++
++---
++
++## 6. 调度子系统 (Scheduler)
++
++### 6.1 事件循环状态机 (`scheduler/mod.rs`)
++
++Scheduler IPC 线程从 mpsc 接收器消费 `DaemonEvent`，维护以下状态:
++
++- `current_mode`: 当前性能模式 (powersave/balance/performance/fast/fas)
++- `is_screen_on`: 屏幕状态标记
++- `fas_suspended_at`: FAS 挂起时间戳 (5 秒 grace period)
++- `fas_suspended_package`: 挂起时的包名
++
++**状态转换**:
++```
++亮屏 + 非游戏 ──▶ CLG 接管 (balance/performance/powersave/fast)
++亮屏 + 游戏    ──▶ FAS 接管
++息屏          ──▶ Doze 模式 (强制 CLG powersave, perf_ceil ≤ 0.40)
++```
++
++### 6.2 CLG - CPU 负载调速器 (`cpu_load_governor.rs`)
++
++**接管流程**:
++1. 对每个 CPU Policy 快照原始状态 (`PolicyRestore`): governor, min_freq, max_freq, hw_max
++2. 设置 governor 为 `performance`
++3. 通过 `FastWriter` 直接写入 `scaling_max_freq` / `scaling_min_freq`
++
++**释放流程** (安全恢复):
++1. 恢复 governor
++2. 先放宽 max 到 hw_max (恒 >= 当前 min)
++3. 恢复 min_freq
++4. 恢复 max_freq
++
++**调频算法**:
++- 每 tick 计算每 cluster 的 `max_util`
++- 尖峰抑制: 单 tick util 跳升超过阈值时，增量按 `spike_decay` 衰减
++- Headroom 因子: 在 `up_threshold` 附近线性过渡，避免阶跃振荡
++- 升频: 需连续 `up_rate_limit_ticks` 才执行，分高速/中速/滞回带慢速三档
++- 降频: 极低负载立即快速降频，正常负载需 `down_rate_limit_ticks` 确认
++
++**配置参数** (关键值):
++```
++up_threshold: 0.80         # 升频阈值
++down_threshold: 0.50       # 降频阈值
++smoothing_up: 0.60         # 升频平滑系数
++smoothing_down: 0.30       # 降频平滑系数
++perf_floor: 0.15           # 性能下限
++perf_ceil: 1.0             # 性能上限
++spike_jump_threshold: 0.35 # 尖峰检测阈值
++```
++
++### 6.3 FAS - 帧感知调度 (fas/)
++
++#### 6.3.1 整体架构
++
++```
++FasController
++├── cfg: FasRulesConfig         # 完整配置 (含 normalize 校验)
++├── FpsWindow                   # 120 帧滑动窗口 (均值/标准差/近期均值)
++├── PidController               # 动态 PID (系数按 target_fps 缩放)
++├── PolicyController[]          # 每 CPU Policy 一个，管理 FastWriter + 频率验证
++├── fps_gears: Vec<f32>         # 当前有效帧率档位 [30,60,90,120,144]
++├── current_target_fps: f32     # 当前目标档位 (如 60/90/120)
++├── perf_index: f32             # 当前性能指数 (0.0~1.0)
++├── ema_actual_ms: f32          # 实际帧时间 EMA
++├── fps_margin: f32             # 帧率余量 (默认 3.0fps)
++│
++├── 加载检测状态
++│   ├── is_loading: bool
++│   ├── loading_frames / loading_cumulative_ms
++│   └── post_loading_ignore / post_loading_downgrade_guard
++│
++├── 齿轮档位状态
++│   ├── upgrade_confirm_frames / downgrade_confirm_frames
++│   ├── gear_dampen_frames      # 齿轮切换阻尼期
++│   ├── consecutive_downgrade_count / stable_gear_frames
++│   └── downgrade_boost_active  # 降档时临时抬频防卡顿
++│
++├── Jank 保护状态 (v2.0.2 新增)
++│   ├── jank_cooldown / jank_streak
++│   ├── post_jank_perf_floor    # crit/heavy 后的 perf 最低保护
++│   ├── post_jank_guard_frames  # 保护期剩余帧数 (线性衰减)
++│   └── floor_stuck_frames      # perf 地板死锁检测
++│
++├── CPU 负载集成 (v2.0.2 新增)
++│   ├── foreground_max_util     # 前台最重线程利用率 (raw)
++│   ├── ema_fg_util             # EMA 平滑后 (升 0.40 / 降 0.15)
++│   ├── core_utils: Vec<f32>    # 各核心利用率快照
++│   ├── target_fps_offset       # 基于 util 的 target_fps 偏移 [-3.0, 0.0]
++│   └── util_sample_timer       # 每秒采样一次
++│
++├── 温度感知
++│   ├── current_temperature     # 当前 CPU 温度 (℃)
++│   └── temp_threshold          # 降频阈值
++│
++└── 其他
++    ├── current_package: String  # 当前游戏包名
++    ├── active_profile: Option<PerAppProfile>
++    ├── freq_force_counter       # 强制重写间隔
++    └── init_time: Instant       # 冷启动计时
++```
++
++#### 6.3.2 帧处理流水线 (6 阶段)
++
++**Phase 1: 冷启动 & 应用切换**
++- 启动后 `cold_boot_ms` (默认 3500ms) 内锁定 `perf_cold_boot` (0.85)
++- 检测到应用切换 (帧间隔 > `app_switch_gap_ms`) 时重置状态
++
++**Phase 2: 加载检测**
++- 重帧 (> `heavy_frame_threshold_ms`) 累计超过 `loading_cumulative_ms` 判定为加载中
++- 加载期间 perf 锁定在 `loading_perf_floor` ~ `loading_perf_ceiling`
++- 加载结束后进入 `post_loading_perf` 保护期
++
++**Phase 3: 齿轮决策 (`gear_state.rs`)**
++- 检测游戏原生帧率档位 (30/60/90/120/144)
++- 升档/降档需连续确认帧数 (`upgrade_confirm_frames` / `downgrade_confirm_frames`)
++- 齿轮切换后进入 `gear_dampen_frames` 阻尼期，PID 重置
++- 降档触发 `downgrade_boost`: 临时提升 perf 防止卡顿
++
++**Phase 4: PID 计算 (`pid.rs` + `pid_jank.rs`)**
++- 动态 PID 系数: `kp` 线性缩放, `ki` sqrt 缩放, `kd` pow(0.3) 缩放
++- Util-gain 调制: 前台利用率低时衰减 P 项，避免 GPU-bound 场景无效拉频
++- Jank 检测: 帧时间超过 crit_ms 时触发紧急升频，重置 util 偏移
++
++**Phase 5: 频率应用 (`policy_mgmt.rs`)**
++- perf_index 按 cluster capacity_weight 分配到各 Policy
++- 通过 `FastWriter` 写入 sysfs
++- 每 1.5s 验证 `scaling_cur_freq`，如被内核覆盖则重写
++
++**Phase 6: 温度保护**
++- 每 3 秒读取 CPU 温度
++- 超过 `core_temp_threshold` 时强制限制 perf 到 `core_temp_throttle_perf`
++
++---
++
++## 7. eBPF 程序 (`yumi-ebpf/src/main.rs`)
++
++### 7.1 FPS 探针 (uprobe)
++
++```c
++// 附加到 libgui.so::Surface::queueBuffer
++handle_frame() {
++    pid = current_pid_tgid >> 32;
++    ktime_ns = bpf_ktime_get_ns();
++    RING_BUF.reserve({pid, ktime_ns});
++}
++```
++
++### 7.2 CPU 探针 (tracepoint)
++
++```c
++// 附加到 sched/sched_switch
++handle_sched_switch(prev_pid, next_pid) {
++    now = bpf_ktime_get_ns();
++    delta = now - last_switch_time;
++    
++    if (prev_pid == 0) {
++        CORE_IDLE_TIME += delta;
++    } else {
++        CORE_BUSY_TIME += delta;
++        THREAD_RUN_TIME[prev_tid] += delta;
++        TGID_RUN_TIME[prev_tgid] += delta;
++    }
++    
++    CORE_LAST_TIME = now;
++    CORE_CURRENT_TID = next_pid;
++    CORE_CURRENT_TGID = next_tgid;
++}
++```
++
++**eBPF Maps**:
++| Map | 类型 | 用途 |
++|-----|------|------|
++| `RING_BUF` | RingBuf | FPS 事件输出到用户态 |
++| `CORE_IDLE_TIME` | PerCpuArray | 每核累计 Idle 时间 |
++| `CORE_BUSY_TIME` | PerCpuArray | 每核累计 Busy 时间 |
++| `CORE_LAST_TIME` | PerCpuArray | 每核上次切换时间戳 |
++| `CORE_CURRENT_TID` | PerCpuArray | 每核当前 TID |
++| `CORE_CURRENT_TGID` | PerCpuArray | 每核当前 TGID |
++| `THREAD_RUN_TIME` | HashMap | 线程级运行时间 (32768 条目) |
++| `TGID_RUN_TIME` | HashMap | TGID 级聚合运行时间 (1024 条目) |
++
++---
++
++## 8. WebUI 架构
++
++### 8.1 技术栈
++
++- **框架**: Vue 3 + Vite
++- **UI 组件**: Vant 4
++- **状态管理**: Pinia
++- **路由**: Vue Router (hash 模式)
++- **国际化**: vue-i18n
++- **构建输出**: 静态文件嵌入模块 `webroot/` 目录
++
++### 8.2 桥接层 (`bridge.ts`)
++
++WebUI 通过 KernelSU/Magisk 提供的 `window.ksu` API 执行 shell 命令与系统交互:
++
++```typescript
++// 核心操作
++exec("cat /data/adb/modules/yumi/rules.yaml")      // 读取配置
++exec("echo ... > /data/adb/modules/yumi/rules.yaml") // 写入配置
++exec("pidof yumi")                                  // 检测守护进程
++listPackages('user')                                // 获取已安装应用
++```
++
++**开发模式**: `window.ksu` 未定义时自动降级到 `MockBridge`。
++
++### 8.3 视图
++
++| 视图 | 文件 | 功能 |
++|------|------|------|
++| 主页 | `HomeView.vue` | 模式切换 (powersave/balance/performance/fast)、守护进程状态、QQ群 |
++| 应用规则 | `AppRulesView.vue` | 为每个应用绑定调度模式，自动初始化 FAS 配置 |
++| 核心配置 | `ConfigEditorView.vue` | FAS 参数、CLG 参数、IO 设置、Cpuidle Governor |
++| 日志查看 | `LogViewerView.vue` | 查看 `logs/daemon.log` 运行日志 |
++
++---
++
++## 9. 模块架构
++
++### 9.1 模块结构 (安装后)
++
++```
++/data/adb/modules/yumi/
++├── module.prop           # 模块元数据
++├── service.sh            # 开机启动脚本
++├── customize.sh          # 安装脚本
++├── core/
++│   └── bin/
++│       └── yumi          # Rust 守护进程二进制
++├── config/
++│   ├── config.yaml       # 主配置
++│   └── i18n/             # 翻译文件
++├── logs/
++│   └── daemon.log        # 运行日志 (5MB × 3 轮转)
++├── current_mode.txt      # 当前模式标记
++├── rules.yaml            # 应用规则
++└── webroot/              # WebUI 静态文件
++    ├── index.html
++    └── assets/
++```
++
++### 9.2 启动流程
++
++1. **系统启动完成**: `service.sh` 等待 `sys.boot_completed=1`
++2. **清理旧进程**: `killall -9 yumi`
++3. **设置权限**: `chmod 755 $MODDIR/core/bin/yumi`
++4. **启动守护进程**: `nohup $DAEMON_PATH > /dev/null 2>&1 &`
++
++---
++
++## 10. 配置系统
++
++### 10.1 主配置 (`config/config.yaml`)
++
++```yaml
++Meta:
++  Loglevel: "INFO"
++  Language: "zh"
++
++# 功能开关
++CpuIdleScalingGovernor: true
++IOOptimization: true
++
++# IO 设置
++IO_Settings:
++  Scheduler: "none"
++  read_ahead_kb: "128"
++  nomerges: "2"
++  iostats: "0"
++
++# Cpuidle Governor
++CpuIdle:
++  current_governor: "menu"
++
++# 各模式 CLG 配置
++balance:
++  CpuLoadGovernor:
++    enabled: true
++    up_threshold: 0.80
++    down_threshold: 0.50
++    smoothing_up: 0.60
++    smoothing_down: 0.30
++    perf_floor: 0.15
++    perf_ceil: 1.0
++    ...
++
++powersave:  { CpuLoadGovernor: ... }
++performance: { CpuLoadGovernor: ... }
++fast:       { CpuLoadGovernor: ... }
++```
++
++### 10.2 规则配置 (`rules.yaml`)
++
++```yaml
++yumi_scheduler: true
++dynamic_enabled: true
++global_mode: "balance"
++app_modes:
++  "com.miHoYo.GenshinImpact": "fas"
++  "com.tencent.tmgp.sgame": "fas"
++ignored_apps: ["com.example.benchmark"]
++
++fas_rules:
++  fps_gears: [30, 60, 90, 120, 144]
++  fps_margin: 3.0
++  pid:
++    kp: 0.050
++    ki: 0.010
++    kd: 0.006
++  cluster_profiles:
++    - { capacity_weight: 1.0 }   # 小核
++    - { capacity_weight: 1.5 }   # 中核
++    - { capacity_weight: 2.5 }   # 大核
++    - { capacity_weight: 3.5 }   # 超大核
++  per_app_profiles:
++    "com.miHoYo.GenshinImpact":
++      target_fps: [30, 60]
++      fps_margin: 4.0
++```
++
++---
++
++## 11. 构建系统
++
++### 11.1 依赖工具链
++
++- Rust nightly + `rust-src` component
++- `cargo-ndk` (Android NDK 交叉编译)
++- Android NDK r29
++- `bpf-linker` (eBPF 链接器)
++- Node.js 24 (WebUI 构建)
++
++### 11.2 构建流程
++
++```
++cargo xtask build
++    ├── 1. npm run build (webui/)          → webroot/
++    ├── 2. cargo-ndk aarch64 release (src/) → core/bin/yumi
++    │       └── build.rs 编译 yumi-ebpf (bpfel-unknown-none)
++    └── 3. 打包: module/ + webroot/ + core/ → yumi-v2.0.2.zip
++```
++
++### 11.3 CI/CD
++
++GitHub Actions (`.github/workflows/build.yml`):
++- Ubuntu runner
++- 安装 Node.js 24, Rust nightly, Android NDK r29
++- 运行 `cargo xtask build`
++- 上传 `yumi-*.zip` artifact
++
++---
++
++## 12. 安全与鲁棒性机制
++
++### 12.1 FastWriter (`utils.rs`)
++
++写入 sysfs 前调用 `libc::umount2(MNT_DETACH)` 解除可能的 mount 覆盖，确保写入成功。
++
++### 12.2 频率验证 (`policy_controller.rs`)
++
++每 1.5 秒读取 `scaling_cur_freq`，若内核/驱动覆盖了写入值，自动重新 unmount 并重写。
++
++### 12.3 Panic 捕获
++
++Scheduler IPC 事件循环包裹在 `std::panic::catch_unwind` 中，防止调度线程静默死亡导致频率悬停。
++
++### 12.4 配置安全
++
++所有浮点配置均经过 `normalize()` 处理:
++- 非有限值 (NaN/Inf) 回退默认值
++- 阈值限制在 [0, 1] 区间
++- 交叉约束 (floor ≤ ceil ≤ init) 防止 `clamp` panic
++
++### 12.5 Doze 保护
++
++息屏时自动生成极端省电配置，无视用户配置:
++- `perf_ceil ≤ 0.40`
++- `smoothing_up = 0.10` (升频迟钝)
++- `smoothing_down = 1.0` (瞬间降频)
++
++---
++
++## 13. 数据流全景图
++
++```
++┌──────────────┐     uprobe      ┌─────────────┐
++│ libgui.so    │────────────────▶│  RING_BUF   │────┐
++│ queueBuffer  │                 │  (eBPF)     │    │
++└──────────────┘                 └─────────────┘    │
++                                                   ▼
++┌──────────────┐   tracepoint   ┌─────────────┐  ┌──────────────┐
++│ sched_switch │───────────────▶│ CORE_BUSY   │  │ fps_monitor  │
++│ (kernel)     │                │ THREAD_RUN  │  │  (mio poll)  │
++└──────────────┘                │ TGID_RUN    │  └──────┬───────┘
++                                └─────────────┘         │
++                                   │                    │ FrameUpdate
++                                   │ SystemLoadUpdate   │
++                                   ▼                    ▼
++                         ┌─────────────────────────────────┐
++                         │      Scheduler IPC Thread       │
++                         │  ┌─────────┐    ┌─────────────┐ │
++                         │  │  FAS    │ or │    CLG      │ │
++                         │  │Controller│   │  Governor   │ │
++                         │  └───┬─────┘    └──────┬──────┘ │
++                         └──────┼─────────────────┼────────┘
++                                │                 │
++                    ┌───────────┘                 └───────────┐
++                    ▼                                         ▼
++            ┌─────────────┐                          ┌─────────────┐
++            │ PolicyCtrl[]│                          │ PolicyCtrl[]│
++            │ FastWriter  │                          │ FastWriter  │
++            └──────┬──────┘                          └──────┬──────┘
++                   │                                         │
++                   ▼                                         ▼
++        ┌─────────────────┐                        ┌─────────────────┐
++        │ scaling_max_freq│                        │ scaling_max_freq│
++        │ scaling_min_freq│                        │ scaling_min_freq│
++        │ scaling_governor│                        │ scaling_governor│
++        └─────────────────┘                        └─────────────────┘
++```
++
++---
++
++## 14. 术语表
++
++| 术语 | 全称 | 说明 |
++|------|------|------|
++| **FAS** | Frame-Aware Scheduling | 帧感知调度，基于帧时间的游戏场景 CPU 频率控制 |
++| **CLG** | CPU Load Governor | CPU 负载调速器，日常场景的自适应频率调节 |
++| **eBPF** | extended Berkeley Packet Filter | Linux 内核可编程探针框架 |
++| **uprobe** | User-space probe | 用户态函数探针 |
++| **tracepoint** | Kernel tracepoint | 内核静态插桩点 |
++| **PID** | Proportional-Integral-Derivative | PID 控制器，用于闭环反馈控制 |
++| **Cgroup** | Control Group | Linux 进程分组机制，用于识别前台应用 |
++| **TGID** | Thread Group ID | 线程组 ID，即进程 PID |
++| **TID** | Thread ID | 线程 ID |
++| **Policy** | CPUFreq Policy | Linux CPU 频率策略，通常对应一个 CPU Cluster |
++| **Perf** | Performance Index | 性能指数，0.0~1.0 表示从最低到最高频率的比例 |
++| **Gear** | FPS Gear | 帧率档位 (30/60/90/120/144fps) |
++| **Jank** | Frame Jank | 帧卡顿，指帧时间超过预算的渲染帧 |
++| **Doze** | Deep Doze | 息屏深度睡眠模式 |
++| **Headroom** | Performance Headroom | 性能余量，在目标利用率之上预留的缓冲 |
++| **Magisk** | - | Android Root 方案，支持模块系统 |
++| **KernelSU** | - | 基于内核的 Android Root 方案 |
++
++---
++
++---
++
++## 15. 构建与部署流水线
++
++### 15.1 .cargo/config.toml
++
++```toml
++[target.aarch64-linux-android]
++linker = "aarch64-linux-android21-clang"
++```
++
++指定 Android NDK 的交叉链接器，确保 Rust 可以编译出 ARM64 原生二进制。
++
++### 15.2 build.rs (编译期 eBPF 构建)
++
++在 `cargo build` 主 Rust 程序之前自动执行：
++
++1. `cargo install bpf-linker --force` — 安装 eBPF 链接器
++2. `cargo build --target bpfel-unknown-none -Z build-std=core` — 编译 `yumi-ebpf/` 中的 no_std eBPF 程序
++3. 产物路径: `target/.../bpfel-unknown-none/release/yumi-ebpf`
++
++产物在 Rust 主程序中以 `include_bytes!()` 方式嵌入为静态字节数组。
++
++### 15.3 xtask 构建编排 (cargo xtask build)
++
++| 步骤 | 命令 | 产物 |
++|------|------|------|
++| 1. WebUI | `npm run build` (在 webui/ 目录) | `webui/dist/` → 模块 webroot/ |
++| 2. Rust Core | `cargo +nightly ndk --platform 26 -t arm64-v8a build -Z build-std -r` | `target/aarch64-linux-android/release/yumi` → `core/bin/yumi` |
++| 3. 打包 | 拷贝 module/ + webroot/ + core/bin → 临时目录 → zip | `output/yumi-v2.0.2-<commit>-<datetime>.zip` |
++
++构建产物是一个标准的 Magisk/KernelSU 模块 ZIP，可直接刷入或通过 Manager 安装。
++
++---
++
++## 16. 开发规范与 AI 协作 (CLAUDE.md / AGENTS.md)
++
++项目包含两份给 AI Agent 的开发规范文件:
++
++### 架构原则
++
++| 原则 | 说明 |
++|------|------|
++| **极简实现** | 选择满足当前需求的最简实现，绝不搞推测性抽象 |
++| **端到端先行** | 先跑通 Rust 核心闭环，不为未来复杂度拆除可运行功能 |
++| **模块解耦** | FAS / CLG / IPC 严格解耦，强类型约束 |
++| **成熟库优先** | 新增依赖前先盘点 `Cargo.toml` 已有能力 |
++| **终态决策** | 每次修改必须做可持续的终态架构决策，不做"先这样以后换" |
++
++### 文档规范
++
++- 功能/逻辑/IPC/配置/交互/模块职责变化时必须同步更新 README、架构文档、接口文档
++- 宣布完成前必须检查文档同步
++- 正式说明书语气，严禁补丁式措辞（如"修订说明""当前改为"）
++
++### 编码协作
++
++- 跨模块公共文件或核心配置变动必须立刻停止并请示用户
++- 用户是底层小白，使用通俗大白话与生活比喻沟通
++- Git 提交遵循 Conventional Commits: `feat(fas): ...`, `fix(clg): ...`
++
++---
++
++## 17. 模块生命周期
++
++### 17.1 安装
++
++1. Magisk Manager / KernelSU Manager 刷入 `yumi-*.zip`
++2. `customize.sh` 执行: 显示欢迎信息 (自动检测中文)
++3. 模块文件解压到 `/data/adb/modules/yumi/`
++4. 下次重启时 `service.sh` 自动启动守护进程
++
++### 17.2 启动流程
++
++```
++系统启动 → boot_completed=1 → service.sh 执行
++    ├── killall -9 yumi            # 清理残留进程
++    ├── chmod 755 core/bin/yumi    # 设置权限
++    └── nohup core/bin/yumi > /dev/null &
++        └── main.rs:
++            ├── chdir 到模块根目录
++            ├── 读取 config.yaml → 加载语言 → 初始化日志
++            ├── 创建 mpsc channel
++            ├── 启动 Scheduler IPC 线程 (事件循环)
++            └── 启动 Monitor 线程 (4 个子线程 + app_detection 主循环)
++```
++
++### 17.3 OTA 更新
++
++`updateInformation/update.json` 被 KernelSU/Magisk Manager 读取，自动检测新版本。  
++`changelog.md` 记录每个版本的变更明细。
++
++### 17.4 卸载
++
++`uninstall.sh` 在 Manager 卸载模块时执行，清理运行时文件。
++
++---
++
++## 18. Rust 依赖全景
++
++| 分类 | 依赖 | 用途 |
++|------|------|------|
++| **eBPF** | `aya 0.14` | 加载 eBPF 程序，操作 RingBuf/PerCpuArray/HashMap |
++| **eBPF (probe)** | `aya-ebpf 0.2` | eBPF 探针端 (no_std)，宏与 maps |
++| **异步** | `tokio 1` (full) | FPS/CPU 监控环的 Tokio 运行时 |
++| **IO 轮询** | `mio 1` (os-ext) | 非阻塞轮询 eBPF RingBuf fd |
++| **序列化** | `serde 1`, `serde_yaml 0.9` | 配置/规则 YAML 读写 |
++| **Netlink** | `netlink-sys 0.8`, `kobject-uevent 0.2` | 屏幕状态 uevent 监听 |
++| **文件监控** | `inotify 0.11` | 配置热重载 |
++| **日志** | `log4rs 1.4`, `log 0.4` | 滚动文件日志 (5MB×3) |
++| **国际化** | `fluent 0.17`, `fluent-bundle 0.16` | FTL 格式多语言 |
++| **系统接口** | `nix 0.31` (fs, signal, inotify) | umount2, sysfs 操作 |
++| **sysfs 写入** | `libc 0.2` | setrlimit(RLIMIT_MEMLOCK), umount2(MNT_DETACH) |
++
++---
++
++## 19. 关键数据结构总览
++
++### eBPF Maps (内核侧)
++
++```
++RING_BUF        RingBuf       帧事件输出队列 (0x8000 bytes)
++CORE_IDLE_TIME  PerCpuArray   每核累计 Idle 时间 (ns)
++CORE_BUSY_TIME  PerCpuArray   每核累计 Busy 时间 (ns)
++CORE_LAST_TIME  PerCpuArray   每核上次 sched_switch 时间戳
++CORE_CURRENT_TID PerCpuArray  每核当前运行 TID
++CORE_CURRENT_TGID PerCpuArray 每核当前运行 TGID
++THREAD_RUN_TIME HashMap<u32, u64> 线程级运行时间 (32768 条目)
++TGID_RUN_TIME   HashMap<u32, u64> TGID 级运行时间 (1024 条目)
++```
++
++### DaemonEvent 总线 (用户态)
++
++```
++ModeChange        { package_name, pid, mode, temperature }  — 应用/温度变化
++FrameUpdate       { frame_delta_ns }                       — eBPF 帧间隔 (ns)
++SystemLoadUpdate  { core_utils, foreground_max_util }      — eBPF CPU 负载
++ConfigReload      (RulesConfig)                            — 配置热重载
++ScreenStateChange (bool)                                   — 屏幕亮灭
++```
++
++### 配置层级
++
++```
++┌───────────────────────────────────────────────────────┐
++│  config.yaml (主配置)                                    │
++│  ├── Meta: loglevel, language                          │
++│  ├── FunctionToggles: cpu_idle, io_optimization        │
++│  ├── IO_Settings: scheduler, read_ahead_kb, etc        │
++│  ├── CpuIdle: current_governor                         │
++│  └── Modes: powersave, balance, performance, fast      │
++│       └── CpuLoadGovernorConfig (per-mode CLG 参数)      │
++├───────────────────────────────────────────────────────┤
++│  rules.yaml (应用规则)                                   │
++│  ├── global_mode, dynamic_enabled                      │
++│  ├── app_modes: HashMap<包名, 模式>                     │
++│  ├── ignored_apps                                      │
++│  └── fas_rules: FasRulesConfig                         │
++│       ├── fps_gears, fps_margin, pid 系数              │
++│       ├── cluster_profiles (capacity_weight)           │
++│       ├── per_app_profiles (per-app fps 档位)           │
++│       ├── 加载检测 / 齿轮 / jank / 温度参数              │
++│       └── cold_boot / app_switch 参数                   │
++└───────────────────────────────────────────────────────┘
++```
++
++---
++
++## 20. 线程模型全景
++
++```
++┌─ main ─────────────────────────────────────────────────┐
++│ main.rs: 初始化 + 启动子线程                              │
++│                                                         │
++│  monitor_thread ───────────────────────────────────┐   │
++│  ├── screen_watcher    (Netlink uevent 监听)        │   │
++│  ├── config_watcher    (inotify rules.yaml 监听)    │   │
++│  ├── fps_monitor_ebpf  (Tokio + mio + eBPF RingBuf)│   │
++│  │   └── PID 更新 Task (tokio::spawn, 500ms 轮询)   │   │
++│  ├── cpu_monitor_ebpf  (Tokio + eBPF TracePoint)   │   │
++│  │   └── PID 更新 Task (tokio::spawn, 500ms 轮询)   │   │
++│  └── app_detection_loop (阻塞主循环: Cgroup 读取)    │   │
++│                                                     │   │
++│  scheduler_thread ────────────────────────────────┐ │   │
++│  ├── config_watcher (inotify config/ 目录监听)     │ │   │
++│  └── scheduler_ipc (事件循环: FAS / CLG / sysfs)  │ │   │
++│                                                    │   │
++│  ←─ mpsc channel (DaemonEvent) ────────────────────┘   │
++└────────────────────────────────────────────────────────┘
++```
++
++---
++
++*本文档基于 yumi v2.0.2 源码生成，覆盖核心架构与关键实现细节。*
+diff --git a/module/config/config.yaml b/module/config/config.yaml
+index 3ba6c86..c94b1af 100644
+--- a/module/config/config.yaml
++++ b/module/config/config.yaml
+@@ -9,6 +9,7 @@ meta:
+ function:
+   CpuIdleScalingGovernor: false
+   IOOptimization: true
++  SchedulerTuning: true
+ 
+ # IO 设置
+ IO_Settings:
+@@ -21,6 +22,30 @@ IO_Settings:
+ CpuIdle:
+   current_governor: ""
+ 
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++
++IdleDive:
++  enabled: true
++  dive_threshold: 0.12
++  exit_threshold: 0.18
++  dive_delay_ms: 500
++  exit_delay_ms: 30
++  governors:
++    normal: "menu"
++    diving: "menu"
++    doze: "menu"
++  params:
++    normal_latency_us: 100
++    diving_latency_us: 800
++    doze_latency_us: 1500
++
+ # --- 性能模式 ---
+ 
+ # 省电模式
+@@ -109,4 +134,4 @@ fast:
+     down_fast_threshold: 0.10
+     down_fast_mult: 2.5
+     spike_jump_threshold: 0.35
+-    spike_decay: 0.30
+\ No newline at end of file
++    spike_decay: 0.30
+diff --git a/module/config/i18n/en.ftl b/module/config/i18n/en.ftl
+index 1cd1064..a8a0770 100644
+--- a/module/config/i18n/en.ftl
++++ b/module/config/i18n/en.ftl
+@@ -115,3 +115,31 @@ main-config-watch-thread-create = Main config watcher thread created.
+ 
+ # --- Logger ---
+ log-level-updated = Log level updated to: { $level }
++
++# --- StillDive ---
++clg-still-enter = [CLG] Screen-on Still Dive: entered deep power-saving mode (perf ≤ { $ceil })
++clg-still-exit = [CLG] Screen-on Still Dive: activity detected, exited (exit boost { $boost } ticks)
++
++# --- IdleDive ---
++idle-dive-init = [IdleDive] CPU Still Dive controller initialized
++idle-dive-init-failed = [IdleDive] Initialization failed: { $error }
++idle-dive-unavailable = [IdleDive] cpuidle node unavailable, CPU Still Dive disabled
++idle-dive-enter = [IdleDive] Entered dive state
++idle-dive-exit = [IdleDive] Exited dive state
++idle-dive-enter-dozed = [IdleDive] Entered doze dive state
++idle-dive-exit-dozed = [IdleDive] Exited doze dive state
++idle-dive-config-reloaded = [IdleDive] Config hot-reloaded
++
++# --- TouchBoost ---
++touch-boost-init = [TouchBoost] Touch boost controller initialized
++touch-boost-init-failed = [TouchBoost] Initialization failed: { $error }
++touch-boost-no-device = [TouchBoost] Touch device not found, TouchBoost disabled
++touch-boost-listener-started = [TouchBoost] Listener started, watching { $count } device(s)
++touch-boost-thread-started = [TouchBoost] Thread started
++touch-boost-start = [TouchBoost] Touch start, applying boost
++touch-boost-release = [TouchBoost] Touch released, starting decay recovery
++touch-boost-recovered = [TouchBoost] Recovery complete
++touch-boost-config-reloaded = [TouchBoost] Config hot-reloaded
++
++# --- Scheduler Tuning ---
++apply-scheduler-tuning = Kernel scheduler power-saving parameters applied
+diff --git a/module/config/i18n/zh.ftl b/module/config/i18n/zh.ftl
+index 368c533..f20c719 100644
+--- a/module/config/i18n/zh.ftl
++++ b/module/config/i18n/zh.ftl
+@@ -114,3 +114,31 @@ main-config-watch-thread-create = 主配置监控线程已创建
+ 
+ # --- Logger ---
+ log-level-updated = 日志级别已更新为: { $level }
++
++# --- StillDive ---
++clg-still-enter = [CLG] 亮屏静止下潜: 已进入深度省电模式 (perf ≤ { $ceil })
++clg-still-exit = [CLG] 亮屏静止下潜: 检测到活动，已退出 (升频助力 { $boost } ticks)
++
++# --- IdleDive ---
++idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成
++idle-dive-init-failed = [IdleDive] 初始化失败: { $error }
++idle-dive-unavailable = [IdleDive] cpuidle 节点不可用，CPU 静止下潜已禁用
++idle-dive-enter = [IdleDive] 进入下潜状态
++idle-dive-exit = [IdleDive] 退出下潜状态
++idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
++idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
++idle-dive-config-reloaded = [IdleDive] 配置已热重载
++
++# --- TouchBoost ---
++touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成
++touch-boost-init-failed = [TouchBoost] 初始化失败: { $error }
++touch-boost-no-device = [TouchBoost] 未找到触摸设备，TouchBoost 已禁用
++touch-boost-listener-started = [TouchBoost] 监听器已启动，监听 { $count } 个设备
++touch-boost-thread-started = [TouchBoost] 线程已启动
++touch-boost-start = [TouchBoost] 触摸开始，应用 boost
++touch-boost-release = [TouchBoost] 松手，开始衰减恢复
++touch-boost-recovered = [TouchBoost] 恢复完成
++touch-boost-config-reloaded = [TouchBoost] 配置已热重载
++
++# --- Scheduler Tuning ---
++apply-scheduler-tuning = 内核调度器节能参数已应用
+diff --git a/module/config/idle_dive.yaml b/module/config/idle_dive.yaml
+new file mode 100644
+index 0000000..88e079a
+--- /dev/null
++++ b/module/config/idle_dive.yaml
+@@ -0,0 +1,13 @@
++enabled: true
++dive_threshold: 0.12
++exit_threshold: 0.18
++dive_delay_ms: 500
++exit_delay_ms: 30
++governors:
++  normal: "menu"
++  diving: "menu"
++  doze: "menu"
++params:
++  normal_latency_us: 100
++  diving_latency_us: 800
++  doze_latency_us: 1500
+diff --git a/module/config/touch_boost.yaml b/module/config/touch_boost.yaml
+new file mode 100644
+index 0000000..40a6c5b
+--- /dev/null
++++ b/module/config/touch_boost.yaml
+@@ -0,0 +1,9 @@
++enabled: true
++boost_freqs:
++  - 2500000
++  - 0
++  - 2000000
++release_delay_ms: 100
++recover_decay: 0.15
++min_boost_duration_ms: 50
++input_device: ""
+diff --git a/src/idle_dive/config.rs b/src/idle_dive/config.rs
+new file mode 100644
+index 0000000..7128bc0
+--- /dev/null
++++ b/src/idle_dive/config.rs
+@@ -0,0 +1,103 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use serde::Deserialize;
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveConfig {
++    #[serde(default = "crate::utils::default_true")]
++    pub enabled: bool,
++    #[serde(default = "d_dive_threshold")]
++    pub dive_threshold: f32,
++    #[serde(default = "d_exit_threshold")]
++    pub exit_threshold: f32,
++    #[serde(default = "d_dive_delay_ms")]
++    pub dive_delay_ms: u64,
++    #[serde(default = "d_exit_delay_ms")]
++    pub exit_delay_ms: u64,
++    #[serde(default)]
++    pub governors: IdleDiveGovernors,
++    #[serde(default)]
++    pub params: IdleDiveParams,
++}
++
++fn d_dive_threshold() -> f32 { 0.12 }
++fn d_exit_threshold() -> f32 { 0.18 }
++fn d_dive_delay_ms() -> u64 { 500 }
++fn d_exit_delay_ms() -> u64 { 30 }
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveGovernors {
++    pub normal: String,
++    pub diving: String,
++    pub doze: String,
++}
++
++impl Default for IdleDiveGovernors {
++    fn default() -> Self {
++        Self {
++            normal: "menu".to_string(),
++            diving: "menu".to_string(),
++            doze: "menu".to_string(),
++        }
++    }
++}
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct IdleDiveParams {
++    pub normal_latency_us: i32,
++    pub diving_latency_us: i32,
++    pub doze_latency_us: i32,
++}
++
++impl Default for IdleDiveParams {
++    fn default() -> Self {
++        Self {
++            normal_latency_us: 100,
++            diving_latency_us: 800,
++            doze_latency_us: 1500,
++        }
++    }
++}
++
++impl Default for IdleDiveConfig {
++    fn default() -> Self {
++        Self {
++            enabled: true,
++            dive_threshold: d_dive_threshold(),
++            exit_threshold: d_exit_threshold(),
++            dive_delay_ms: d_dive_delay_ms(),
++            exit_delay_ms: d_exit_delay_ms(),
++            governors: IdleDiveGovernors::default(),
++            params: IdleDiveParams::default(),
++        }
++    }
++}
++
++impl IdleDiveConfig {
++    pub fn normalize(&mut self) {
++        if !self.dive_threshold.is_finite() { self.dive_threshold = d_dive_threshold(); }
++        if !self.exit_threshold.is_finite() { self.exit_threshold = d_exit_threshold(); }
++        self.dive_threshold = self.dive_threshold.clamp(0.0, 1.0);
++        self.exit_threshold = self.exit_threshold.clamp(0.0, 1.0);
++        if self.exit_threshold <= self.dive_threshold {
++            self.exit_threshold = (self.dive_threshold + 0.05).min(1.0);
++        }
++        if self.dive_delay_ms == 0 { self.dive_delay_ms = d_dive_delay_ms(); }
++        if self.exit_delay_ms == 0 { self.exit_delay_ms = d_exit_delay_ms(); }
++    }
++}
+diff --git a/src/idle_dive/controller.rs b/src/idle_dive/controller.rs
+new file mode 100644
+index 0000000..89bcbe2
+--- /dev/null
++++ b/src/idle_dive/controller.rs
+@@ -0,0 +1,150 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use std::time::Instant;
++use anyhow::Result;
++use log::info;
++
++use crate::i18n::t;
++use crate::idle_dive::config::IdleDiveConfig;
++use crate::idle_dive::latency::LatencyWriter;
++
++#[derive(Debug, Clone, Copy, PartialEq)]
++pub enum IdleDiveState {
++    Normal,
++    Diving,
++    DozeDiving,
++}
++
++pub struct IdleDiveController {
++    config: IdleDiveConfig,
++    state: IdleDiveState,
++    latency_writer: LatencyWriter,
++    dive_timer: Instant,
++    exit_timer: Instant,
++    low_util_ticks: u32,
++    high_util_ticks: u32,
++    disabled: bool,
++}
++
++impl IdleDiveController {
++    pub fn new(config: IdleDiveConfig) -> Result<Self> {
++        let latency_writer = LatencyWriter::new()?;
++
++        info!("{}", t("idle-dive-init"));
++
++        Ok(Self {
++            config,
++            state: IdleDiveState::Normal,
++            latency_writer,
++            dive_timer: Instant::now(),
++            exit_timer: Instant::now(),
++            low_util_ticks: 0,
++            high_util_ticks: 0,
++            disabled: false,
++        })
++    }
++
++    pub fn disabled() -> Self {
++        Self {
++            config: IdleDiveConfig::default(),
++            state: IdleDiveState::Normal,
++            latency_writer: LatencyWriter::disabled(),
++            dive_timer: Instant::now(),
++            exit_timer: Instant::now(),
++            low_util_ticks: 0,
++            high_util_ticks: 0,
++            disabled: true,
++        }
++    }
++
++    pub fn update(&mut self, avg_util: f32) {
++        if self.disabled { return; }
++
++        match self.state {
++            IdleDiveState::Normal => {
++                if avg_util < self.config.dive_threshold {
++                    if self.dive_timer.elapsed().as_millis() as u64 >= self.config.dive_delay_ms {
++                        self.transition_to(IdleDiveState::Diving);
++                    }
++                } else {
++                    self.dive_timer = Instant::now();
++                }
++            }
++            IdleDiveState::Diving => {
++                if avg_util > self.config.exit_threshold {
++                    if self.exit_timer.elapsed().as_millis() as u64 >= self.config.exit_delay_ms {
++                        self.transition_to(IdleDiveState::Normal);
++                    }
++                } else {
++                    self.exit_timer = Instant::now();
++                }
++            }
++            IdleDiveState::DozeDiving => {}
++        }
++    }
++
++    pub fn enter_doze(&mut self) {
++        if self.disabled { return; }
++        self.transition_to(IdleDiveState::DozeDiving);
++    }
++
++    pub fn exit_doze(&mut self) {
++        if self.disabled { return; }
++        if self.state == IdleDiveState::DozeDiving {
++            self.transition_to(IdleDiveState::Normal);
++        }
++    }
++
++    pub fn on_touch_fast_exit(&mut self) {
++        if self.disabled { return; }
++        if self.state != IdleDiveState::Normal {
++            self.transition_to(IdleDiveState::Normal);
++        }
++    }
++
++    pub fn reload_config(&mut self, config: IdleDiveConfig) {
++        self.config = config;
++        info!("{}", t("idle-dive-config-reloaded"));
++    }
++
++    fn transition_to(&mut self, new_state: IdleDiveState) {
++        if self.state == new_state { return; }
++
++        match new_state {
++            IdleDiveState::Normal => {
++                info!("{}", t("idle-dive-exit"));
++                let _ = self.latency_writer.set_governor(&self.config.governors.normal);
++                let _ = self.latency_writer.set_latency(self.config.params.normal_latency_us);
++                self.dive_timer = Instant::now();
++            }
++            IdleDiveState::Diving => {
++                info!("{}", t("idle-dive-enter"));
++                let _ = self.latency_writer.set_governor(&self.config.governors.diving);
++                let _ = self.latency_writer.set_latency(self.config.params.diving_latency_us);
++                self.exit_timer = Instant::now();
++            }
++            IdleDiveState::DozeDiving => {
++                info!("{}", t("idle-dive-enter-dozed"));
++                let _ = self.latency_writer.set_governor(&self.config.governors.doze);
++                let _ = self.latency_writer.set_latency(self.config.params.doze_latency_us);
++            }
++        }
++
++        self.state = new_state;
++    }
++}
+diff --git a/src/idle_dive/latency.rs b/src/idle_dive/latency.rs
+new file mode 100644
+index 0000000..7441754
+--- /dev/null
++++ b/src/idle_dive/latency.rs
+@@ -0,0 +1,151 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use std::fs;
++use std::os::unix::io::RawFd;
++use anyhow::Result;
++use log::warn;
++
++use crate::i18n::t_with_args;
++use crate::fluent_args;
++
++pub struct LatencyWriter {
++    pm_qos_fd: Option<RawFd>,
++    governor_paths: Vec<String>,
++    latency_paths: Vec<String>,
++}
++
++impl LatencyWriter {
++    pub fn new() -> Result<Self> {
++        let pm_qos_fd = Self::open_pm_qos();
++
++        let mut governor_paths = Vec::new();
++        let mut latency_paths = Vec::new();
++
++        if let Ok(entries) = fs::read_dir("/sys/devices/system/cpu/cpuidle") {
++            for entry in entries.flatten() {
++                if let Some(name) = entry.file_name().to_str() {
++                    if name.starts_with("policy") {
++                        let base = entry.path();
++                        let gov_path = base.join("current_governor_ro");
++                        if gov_path.exists() {
++                            governor_paths.push(gov_path.to_string_lossy().to_string());
++                        } else {
++                            let gov_path_rw = base.join("current_governor");
++                            if gov_path_rw.exists() {
++                                governor_paths.push(gov_path_rw.to_string_lossy().to_string());
++                            }
++                        }
++                        let lat_path = base.join("current_latency_us");
++                        if lat_path.exists() {
++                            latency_paths.push(lat_path.to_string_lossy().to_string());
++                        }
++                    }
++                }
++            }
++        }
++
++        if governor_paths.is_empty() && latency_paths.is_empty() && pm_qos_fd.is_none() {
++            return Err(anyhow::anyhow!("cpuidle nodes unavailable"));
++        }
++
++        Ok(Self {
++            pm_qos_fd,
++            governor_paths,
++            latency_paths,
++        })
++    }
++
++    pub fn disabled() -> Self {
++        Self {
++            pm_qos_fd: None,
++            governor_paths: Vec::new(),
++            latency_paths: Vec::new(),
++        }
++    }
++
++    fn open_pm_qos() -> Option<RawFd> {
++        match fs::OpenOptions::new()
++            .write(true)
++            .open("/dev/cpu_dma_latency")
++        {
++            Ok(f) => {
++                use std::os::unix::io::IntoRawFd;
++                Some(f.into_raw_fd())
++            }
++            Err(e) => {
++                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                    "path" => "/dev/cpu_dma_latency".to_string(),
++                    "error" => e.to_string()
++                )));
++                None
++            }
++        }
++    }
++
++    pub fn set_governor(&self, governor: &str) -> Result<()> {
++        for path in &self.governor_paths {
++            if let Err(e) = crate::utils::write_to_file(path, governor.as_bytes()) {
++                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                    "path" => path.clone(),
++                    "error" => e.to_string()
++                )));
++            }
++        }
++        Ok(())
++    }
++
++    pub fn set_latency(&self, latency_us: i32) -> Result<()> {
++        if let Some(fd) = self.pm_qos_fd {
++            let value = latency_us.to_ne_bytes();
++            unsafe {
++                let ret = libc::write(
++                    fd,
++                    value.as_ptr() as *const libc::c_void,
++                    value.len(),
++                );
++                if ret < 0 {
++                    warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                        "path" => "/dev/cpu_dma_latency".to_string(),
++                        "error" => std::io::Error::last_os_error().to_string()
++                    )));
++                }
++            }
++        }
++
++        for path in &self.latency_paths {
++            if let Err(e) = crate::utils::write_to_file(path, latency_us.to_string().as_bytes()) {
++                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                    "path" => path.clone(),
++                    "error" => e.to_string()
++                )));
++            }
++        }
++
++        Ok(())
++    }
++}
++
++impl Drop for LatencyWriter {
++    fn drop(&mut self) {
++        if let Some(fd) = self.pm_qos_fd {
++            unsafe {
++                libc::close(fd);
++            }
++        }
++    }
++}
+diff --git a/src/idle_dive/mod.rs b/src/idle_dive/mod.rs
+new file mode 100644
+index 0000000..c3a7b1e
+--- /dev/null
++++ b/src/idle_dive/mod.rs
+@@ -0,0 +1,23 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++mod config;
++mod controller;
++mod latency;
++
++pub use config::IdleDiveConfig;
++pub use controller::IdleDiveController;
+diff --git a/src/main.rs b/src/main.rs
+index 20cc71f..5ea0f4a 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -16,6 +16,8 @@
+  */
+ 
+ mod common;
++mod idle_dive;
++mod touch_boost;
+ mod logger;
+ mod monitor;
+ mod scheduler;
+diff --git a/src/scheduler/config.rs b/src/scheduler/config.rs
+index 5ac5a9b..615f018 100644
+--- a/src/scheduler/config.rs
++++ b/src/scheduler/config.rs
+@@ -168,6 +168,60 @@ impl CpuLoadGovernorConfig {
+     }
+ }
+ 
++// ════════════════════════════════════════════════════════════════
++//  CPU Still Dive 配置
++// ════════════════════════════════════════════════════════════════
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct StillDiveConfig {
++    #[serde(default = "crate::utils::default_true")] pub enabled: bool,
++    #[serde(default = "sd_enter_thresh")] pub enter_threshold: f32,
++    #[serde(default = "sd_enter_ticks")] pub enter_ticks: u32,
++    #[serde(default = "sd_exit_thresh")] pub exit_threshold: f32,
++    #[serde(default = "sd_exit_boost")] pub exit_boost_ticks: u32,
++    #[serde(default = "sd_perf_ceil")] pub perf_ceil: f32,
++    #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
++}
++
++fn sd_enter_thresh() -> f32 { 0.08 }
++fn sd_enter_ticks() -> u32 { 10 }
++fn sd_exit_thresh() -> f32 { 0.20 }
++fn sd_exit_boost() -> u32 { 5 }
++fn sd_perf_ceil() -> f32 { 0.30 }
++fn sd_smoothing_up() -> f32 { 0.05 }
++
++impl Default for StillDiveConfig {
++    fn default() -> Self {
++        Self {
++            enabled: true,
++            enter_threshold: sd_enter_thresh(),
++            enter_ticks: sd_enter_ticks(),
++            exit_threshold: sd_exit_thresh(),
++            exit_boost_ticks: sd_exit_boost(),
++            perf_ceil: sd_perf_ceil(),
++            smoothing_up: sd_smoothing_up(),
++        }
++    }
++}
++
++impl StillDiveConfig {
++    pub fn normalize(&mut self) {
++        if !self.enter_threshold.is_finite() { self.enter_threshold = sd_enter_thresh(); }
++        if !self.exit_threshold.is_finite() { self.exit_threshold = sd_exit_thresh(); }
++        if !self.perf_ceil.is_finite() { self.perf_ceil = sd_perf_ceil(); }
++        if !self.smoothing_up.is_finite() { self.smoothing_up = sd_smoothing_up(); }
++        self.enter_threshold = self.enter_threshold.clamp(0.0, 1.0);
++        self.exit_threshold = self.exit_threshold.clamp(0.0, 1.0);
++        self.perf_ceil = self.perf_ceil.clamp(0.0, 1.0);
++        self.smoothing_up = self.smoothing_up.clamp(0.0, 1.0);
++        if self.exit_threshold <= self.enter_threshold {
++            self.exit_threshold = (self.enter_threshold + 0.05).min(1.0);
++        }
++        if self.enter_ticks == 0 { self.enter_ticks = sd_enter_ticks(); }
++        if self.exit_boost_ticks > 100 { self.exit_boost_ticks = 100; }
++    }
++}
++
+ // ════════════════════════════════════════════════════════════════
+ //  核心模式与杂项配置
+ // ════════════════════════════════════════════════════════════════
+@@ -211,6 +265,7 @@ pub struct CpuIdle {
+ pub struct FunctionToggles {
+     #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
+     #[serde(rename = "IOOptimization")] pub io_optimization: bool,
++    #[serde(default, rename = "SchedulerTuning")] pub scheduler_tuning: bool,
+ }
+ 
+ #[derive(Debug, Deserialize, Default)]
+@@ -223,6 +278,12 @@ pub struct Config {
+     pub io_settings: IOSettings,
+     #[serde(default, rename = "CpuIdle")]
+     pub cpu_idle: CpuIdle,
++    #[serde(default, rename = "StillDive")]
++    pub still_dive: StillDiveConfig,
++    #[serde(default, rename = "IdleDive")]
++    pub idle_dive: crate::idle_dive::IdleDiveConfig,
++    #[serde(default, rename = "TouchBoost")]
++    pub touch_boost: crate::touch_boost::TouchBoostConfig,
+     
+     // 按场景划分的性能模式
+     #[serde(default)] pub powersave: Mode,
+@@ -247,4 +308,4 @@ impl Config {
+             _ => None,
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/scheduler/cpu_load_governor.rs b/src/scheduler/cpu_load_governor.rs
+index 922f093..2ef25ec 100644
+--- a/src/scheduler/cpu_load_governor.rs
++++ b/src/scheduler/cpu_load_governor.rs
+@@ -17,6 +17,7 @@
+ 
+ 
+ use crate::scheduler::config::CpuLoadGovernorConfig;
++use crate::scheduler::config::StillDiveConfig;
+ use crate::utils::FastWriter;
+ use log::{info, debug, warn};
+ use std::fs;
+@@ -107,11 +108,14 @@ impl ClusterState {
+ 
+ pub struct CpuLoadGovernor {
+     clusters: Vec<ClusterState>,
+-    /// CLG 接管前的系统状态，release 时恢复（首次 init 时捕获）
+     restore: Vec<PolicyRestore>,
+     cfg: CpuLoadGovernorConfig,
+     active: bool,
+     log_counter: u32,
++    still_dive: Option<StillDiveConfig>,
++    still_mode: bool,
++    still_low_ticks: u32,
++    still_exit_boost: u32,
+ }
+ 
+ impl CpuLoadGovernor {
+@@ -122,6 +126,10 @@ impl CpuLoadGovernor {
+             cfg: CpuLoadGovernorConfig::default(),
+             active: false,
+             log_counter: 0,
++            still_dive: None,
++            still_mode: false,
++            still_low_ticks: 0,
++            still_exit_boost: 0,
+         }
+     }
+ 
+@@ -129,10 +137,14 @@ impl CpuLoadGovernor {
+         self.active
+     }
+ 
+-    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
++    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
+         self.release();
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
++        self.still_dive = still_dive;
++        if let Some(ref mut sd) = self.still_dive {
++            sd.normalize();
++        }
+ 
+         let clusters = crate::scheduler::get_cpu_policies();
+ 
+@@ -256,17 +268,22 @@ impl CpuLoadGovernor {
+ 
+     pub fn release(&mut self) {
+         if self.active { info!("{}", t("clg-deactivated")); }
+-        // 恢复系统原始状态，避免 release 后 CPU 悬停在 CLG 最后写入的值上。
+-        // 恢复失败的条目保留，下次 release/init 时重试，避免静默漂移。
+         self.restore.retain(|r| !Self::restore_policy(r));
+         self.clusters.clear();
+         self.active = false;
+         self.log_counter = 0;
++        self.still_mode = false;
++        self.still_low_ticks = 0;
++        self.still_exit_boost = 0;
+     }
+ 
+-    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
++    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
++        self.still_dive = still_dive;
++        if let Some(ref mut sd) = self.still_dive {
++            sd.normalize();
++        }
+         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
+             "up" => format!("{:.2}", self.cfg.up_threshold),
+             "down" => format!("{:.2}", self.cfg.down_threshold),
+@@ -334,11 +351,52 @@ impl CpuLoadGovernor {
+     pub fn on_load_update(&mut self, core_utils: &[f32]) {
+         if !self.active { return; }
+ 
++        if let Some(ref sd) = self.still_dive {
++            let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
++
++            if !self.still_mode {
++                if max_util <= sd.enter_threshold {
++                    self.still_low_ticks += 1;
++                } else {
++                    self.still_low_ticks = 0;
++                }
++                if self.still_low_ticks >= sd.enter_ticks {
++                    self.still_mode = true;
++                    log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
++                        "ceil" => format!("{:.0}%", sd.perf_ceil * 100.0)
++                    )));
++                }
++            } else {
++                if max_util > sd.exit_threshold {
++                    self.still_mode = false;
++                    self.still_exit_boost = sd.exit_boost_ticks;
++                    log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
++                        "boost" => sd.exit_boost_ticks.to_string()
++                    )));
++                }
++            }
++
++            if self.still_exit_boost > 0 {
++                self.still_exit_boost -= 1;
++            }
++        }
++
++        let effective_perf_ceil = if self.still_mode {
++            self.still_dive.as_ref().unwrap().perf_ceil
++        } else {
++            self.cfg.perf_ceil
++        };
++        let effective_perf_floor = if self.still_mode { 0.0 } else { self.cfg.perf_floor };
++        let effective_smoothing_up = if self.still_mode {
++            self.still_dive.as_ref().unwrap().smoothing_up
++        } else if self.still_exit_boost > 0 {
++            1.0
++        } else {
++            self.cfg.smoothing_up
++        };
++
+         for cluster in &mut self.clusters {
+             let raw_util = cluster.max_util(core_utils);
+-            // 尖峰抑制：单 tick 跳升超过阈值时衰减其增量，
+-            // 孤立瞬时尖峰（如单核 0↔100%）不瞬间拉满 perf；
+-            // 持续负载下一 tick jump 归零即全量生效，不拖慢真实升频
+             let util = if raw_util > cluster.last_util + self.cfg.spike_jump_threshold {
+                 cluster.last_util + (raw_util - cluster.last_util) * self.cfg.spike_decay
+             } else {
+@@ -346,69 +404,58 @@ impl CpuLoadGovernor {
+             };
+             cluster.last_util = raw_util;
+ 
+-            // headroom 在 up_threshold 附近线性过渡，避免阶跃导致的振荡
+             let ramp_start = self.cfg.up_threshold - self.cfg.headroom_ramp;
+             let headroom = if util >= self.cfg.up_threshold {
+                 self.cfg.headroom_factor
+             } else if util > ramp_start {
+-                let t = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
+-                1.0 + (self.cfg.headroom_factor - 1.0) * t
++                let t_val = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
++                1.0 + (self.cfg.headroom_factor - 1.0) * t_val
+             } else {
+                 1.0
+             };
+ 
+             let target_perf = (util * headroom)
+-                .clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
++                .clamp(effective_perf_floor, effective_perf_ceil);
+             let old_perf = cluster.current_perf;
+ 
+             if target_perf > old_perf {
+                 cluster.down_wait = 0;
+                 cluster.up_wait += 1;
+ 
+-                // 升频速率限制：必须连续 up_rate_limit_ticks 才执行
+                 if cluster.up_wait < self.cfg.up_rate_limit_ticks {
+                     continue;
+                 }
+ 
+-                let is_high_load = util >= self.cfg.up_threshold; 
+-                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold; 
++                let is_high_load = util >= self.cfg.up_threshold;
++                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold;
+ 
+                 if is_high_load || is_significant_jump {
+-                    cluster.current_perf += (target_perf - old_perf) * self.cfg.smoothing_up;
++                    cluster.current_perf += (target_perf - old_perf) * effective_smoothing_up;
+                 } else {
+-                    // 滞回带内升频：速率随 util 接近 up_threshold 线性提升——
+-                    // 低 util 端用 slow_up_scale 防抖，高 util 端逼近全速，
+-                    // 避免中等负载（如 73%）下 0.008/tick 的慢速爬升导致体验卡顿
+                     let span = (self.cfg.up_threshold - self.cfg.down_threshold).max(1e-6);
+                     let gap = ((util - self.cfg.down_threshold) / span).clamp(0.0, 1.0);
+-                    let speed = self.cfg.smoothing_up
++                    let speed = effective_smoothing_up
+                         * (self.cfg.slow_up_scale + (1.0 - self.cfg.slow_up_scale) * gap);
+-                    cluster.current_perf += (target_perf - old_perf) * speed; 
++                    cluster.current_perf += (target_perf - old_perf) * speed;
+                 }
+             } else {
+                 cluster.up_wait = 0;
+                 cluster.down_wait += 1;
+-                // 极低负载立即快速降频（跳过 down_wait 确认期），
+-                // 消除尖峰消失后 perf 长时间悬停高位的滞后
+                 if cluster.down_wait >= self.cfg.down_rate_limit_ticks
+                     || util < self.cfg.down_fast_threshold
+                 {
+-                    // 降频门控：只要目标低于当前即可降，避免滞回带内锁死高位
+                     let active_smoothing_down = if util < self.cfg.down_fast_threshold {
+-                        // 极低负载：快速回落
+                         self.cfg.smoothing_down * self.cfg.down_fast_mult
+                     } else if util < self.cfg.down_threshold {
+-                        // 跌破降频阈值：正常速率降频
+                         self.cfg.smoothing_down
+                     } else {
+-                        // 滞回带内（down_threshold..up_threshold）：慢速下探防抖
+                         self.cfg.smoothing_down * self.cfg.slow_down_scale
+                     };
+                     cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
+                 }
+             }
+ 
+-            cluster.current_perf = cluster.current_perf.clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
++            cluster.current_perf = cluster.current_perf.clamp(effective_perf_floor, effective_perf_ceil);
+             let target_freq = cluster.find_nearest_freq(cluster.current_perf);
+             cluster.write_freq(target_freq);
+         }
+diff --git a/src/scheduler/mod.rs b/src/scheduler/mod.rs
+index a219f90..55e1cc1 100644
+--- a/src/scheduler/mod.rs
++++ b/src/scheduler/mod.rs
+@@ -171,6 +171,52 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+             
+             let mut fas_controller = crate::scheduler::fas::FasController::new();
+             let mut cpu_governor = crate::scheduler::cpu_load_governor::CpuLoadGovernor::new();
++            let mut idle_dive = {
++                let config_lock = config_clone.read().unwrap();
++                if config_lock.idle_dive.enabled {
++                    match crate::idle_dive::IdleDiveController::new(config_lock.idle_dive.clone()) {
++                        Ok(c) => c,
++                        Err(e) => {
++                            log::error!("{}", t_with_args("idle-dive-init-failed", &fluent_args!("error" => e.to_string())));
++                            crate::idle_dive::IdleDiveController::disabled()
++                        }
++                    }
++                } else {
++                    crate::idle_dive::IdleDiveController::disabled()
++                }
++            };
++
++            let (touch_tx, touch_rx) = mpsc::channel::<crate::touch_boost::TouchEvent>();
++            let mut touch_boost = {
++                let config_lock = config_clone.read().unwrap();
++                if config_lock.touch_boost.enabled {
++                    match crate::touch_boost::TouchMonitor::new(config_lock.touch_boost.clone()) {
++                        Ok(monitor) => {
++                            std::thread::Builder::new()
++                                .name("touch_monitor".to_string())
++                                .spawn(move || {
++                                    if let Err(e) = monitor.run(touch_tx) {
++                                        log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
++                                    }
++                                })
++                                .ok();
++                            match crate::touch_boost::TouchBoostController::new(config_lock.touch_boost.clone()) {
++                                Ok(c) => c,
++                                Err(e) => {
++                                    log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
++                                    crate::touch_boost::TouchBoostController::disabled()
++                                }
++                            }
++                        }
++                        Err(e) => {
++                            log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
++                            crate::touch_boost::TouchBoostController::disabled()
++                        }
++                    }
++                } else {
++                    crate::touch_boost::TouchBoostController::disabled()
++                }
++            };
+ 
+             let rules_path = crate::monitor::config::get_rules_path();
+             let mut current_rules = crate::utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path).unwrap_or_default();
+@@ -201,7 +247,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                     let config_lock = config_clone.read().unwrap();
+                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
+                     if clg_cfg.enabled {
+-                        cpu_governor.init_policies(&clg_cfg);
++                        let still_dive = if config_lock.still_dive.enabled {
++                            Some(config_lock.still_dive.clone())
++                        } else {
++                            None
++                        };
++                        cpu_governor.init_policies(&clg_cfg, still_dive);
+                         log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
+                     }
+                 }
+@@ -211,6 +262,19 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+             // 避免调度线程静默死亡（进程存活但频率停在最后状态）
+             let loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+             for msg in rx {
++                while let Ok(touch_event) = touch_rx.try_recv() {
++                    match touch_event {
++                        crate::touch_boost::TouchEvent::Start => {
++                            touch_boost.on_touch_start();
++                            idle_dive.on_touch_fast_exit();
++                        }
++                        crate::touch_boost::TouchEvent::End => {
++                            touch_boost.on_touch_end();
++                        }
++                    }
++                }
++                touch_boost.update();
++
+                 match msg {
+                     // --- 1. 屏幕状态事件 (息屏深度睡眠) ---
+                     DaemonEvent::ScreenStateChange(screen_on) => {
+@@ -218,6 +282,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                         let current_mode = mode_clone.lock().unwrap().clone();
+ 
+                         if !is_screen_on {
++                            idle_dive.enter_doze();
+                             log::info!("{}", t("scheduler-doze-enable"));
+                             
+                             // 息屏立刻剥夺 FAS 的频率控制权
+@@ -238,8 +303,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                             doze_cfg.smoothing_up = 0.10;           // 升频极其迟钝
+                             doze_cfg.smoothing_down = 1.0;          // 瞬间降频
+                             
+-                            cpu_governor.init_policies(&doze_cfg);
++                            cpu_governor.init_policies(&doze_cfg, None);
+                         } else {
++                            idle_dive.exit_doze();
+                             log::info!("{}", t("scheduler-doze-restore"));
+                             
+                             let config_lock = config_clone.read().unwrap();
+@@ -247,9 +313,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                             
+                             if current_mode != "fas" {
+                                 if clg_cfg.enabled {
+-                                    // 息屏 doze 期间 CLG 仍持有 writer，热切换配置即可
+-                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
+-                                    else { cpu_governor.init_policies(&clg_cfg); }
++                                    let still_dive = if config_lock.still_dive.enabled {
++                                        Some(config_lock.still_dive.clone())
++                                    } else {
++                                        None
++                                    };
++                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
++                                    else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                                 } 
+                                 else { cpu_governor.release(); }
+                             } else {
+@@ -319,9 +389,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                                     let config_lock = config_clone.read().unwrap();
+                                     let clg_cfg = get_clg_cfg(&config_lock, &mode);
+                                     if clg_cfg.enabled {
+-                                        // CLG 已激活时热切换配置，避免同模式反复切换全量重建
+-                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
+-                                        else { cpu_governor.init_policies(&clg_cfg); }
++                                        let still_dive = if config_lock.still_dive.enabled {
++                                            Some(config_lock.still_dive.clone())
++                                        } else {
++                                            None
++                                        };
++                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); }
++                                        else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                                     } else {
+                                         cpu_governor.release();
+                                     }
+@@ -344,6 +418,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                         if cpu_governor.is_active() {
+                             cpu_governor.on_load_update(&core_utils);
+                         }
++                        if !core_utils.is_empty() {
++                            let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;
++                            idle_dive.update(avg);
++                        }
+                     },
+ 
+                     // --- 4. 帧率事件 (eBPF 驱动) ---
+@@ -366,19 +444,30 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                     DaemonEvent::ConfigReload(new_rules) => {
+                         current_rules = new_rules;
+                         let current_mode = mode_clone.lock().unwrap().clone();
+-                        
++
++                        {
++                            let config_lock = config_clone.read().unwrap();
++                            idle_dive.reload_config(config_lock.idle_dive.clone());
++                            touch_boost.reload_config(config_lock.touch_boost.clone());
++                        }
++
+                         if current_mode == "fas" {
+                             if fas_controller.policies.is_empty() {
+                                 fas_controller.load_policies(&current_rules.fas_rules);
+                             } else {
+                                 fas_controller.reload_rules(&current_rules.fas_rules);
+                             }
+-                        } else if is_screen_on { // 息屏时不要用新配置覆盖 Doze
++                        } else if is_screen_on {
+                             let config_lock = config_clone.read().unwrap();
+                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
+                             if clg_cfg.enabled {
+-                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
+-                                else { cpu_governor.init_policies(&clg_cfg); }
++                                let still_dive = if config_lock.still_dive.enabled {
++                                    Some(config_lock.still_dive.clone())
++                                } else {
++                                    None
++                                };
++                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
++                                else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                             } else if cpu_governor.is_active() {
+                                 cpu_governor.release();
+                             }
+diff --git a/src/scheduler/scheduler.rs b/src/scheduler/scheduler.rs
+index 55ebbc6..2eb927e 100644
+--- a/src/scheduler/scheduler.rs
++++ b/src/scheduler/scheduler.rs
+@@ -44,6 +44,7 @@ impl CpuScheduler {
+     pub fn apply_system_tweaks(&self) -> Result<()> {
+         self.apply_cpu_idle_governor()?;
+         self.apply_io_settings()?;
++        self.apply_scheduler_tuning()?;
+         Ok(())
+     }
+ 
+@@ -101,4 +102,16 @@ impl CpuScheduler {
+         log::info!("{}", t("apply-io-settings-start"));
+         Ok(())
+     }
++
++    fn apply_scheduler_tuning(&self) -> Result<()> {
++        let config = self.config.read().unwrap();
++        if !config.function.scheduler_tuning {
++            return Ok(());
++        }
++        let _ = utils::try_write_file("/proc/sys/kernel/sched_wakeup_granularity_ms", "15");
++        let _ = utils::try_write_file("/proc/sys/kernel/sched_migration_cost_ns", "500000");
++        let _ = utils::try_write_file("/proc/sys/kernel/sched_nr_migrate", "8");
++        log::info!("{}", t("apply-scheduler-tuning"));
++        Ok(())
++    }
+ }
+\ No newline at end of file
+diff --git a/src/touch_boost/config.rs b/src/touch_boost/config.rs
+new file mode 100644
+index 0000000..7dea46c
+--- /dev/null
++++ b/src/touch_boost/config.rs
+@@ -0,0 +1,70 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use serde::Deserialize;
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct TouchBoostConfig {
++    #[serde(default = "crate::utils::default_true")]
++    pub enabled: bool,
++    #[serde(default = "d_boost_freqs")]
++    pub boost_freqs: Vec<u32>,
++    #[serde(default = "d_release_delay_ms")]
++    pub release_delay_ms: u64,
++    #[serde(default = "d_recover_decay")]
++    pub recover_decay: f32,
++    #[serde(default = "d_min_boost_duration_ms")]
++    pub min_boost_duration_ms: u64,
++    #[serde(default)]
++    pub input_device: String,
++}
++
++fn d_boost_freqs() -> Vec<u32> { vec![2500000, 0, 2000000] }
++fn d_release_delay_ms() -> u64 { 100 }
++fn d_recover_decay() -> f32 { 0.15 }
++fn d_min_boost_duration_ms() -> u64 { 50 }
++
++impl Default for TouchBoostConfig {
++    fn default() -> Self {
++        Self {
++            enabled: true,
++            boost_freqs: d_boost_freqs(),
++            release_delay_ms: d_release_delay_ms(),
++            recover_decay: d_recover_decay(),
++            min_boost_duration_ms: d_min_boost_duration_ms(),
++            input_device: String::new(),
++        }
++    }
++}
++
++impl TouchBoostConfig {
++    pub fn normalize(&mut self) {
++        if self.boost_freqs.is_empty() {
++            self.boost_freqs = d_boost_freqs();
++        }
++        if self.release_delay_ms == 0 {
++            self.release_delay_ms = d_release_delay_ms();
++        }
++        if !self.recover_decay.is_finite() {
++            self.recover_decay = d_recover_decay();
++        }
++        self.recover_decay = self.recover_decay.clamp(0.01, 1.0);
++        if self.min_boost_duration_ms == 0 {
++            self.min_boost_duration_ms = d_min_boost_duration_ms();
++        }
++    }
++}
+diff --git a/src/touch_boost/controller.rs b/src/touch_boost/controller.rs
+new file mode 100644
+index 0000000..481e848
+--- /dev/null
++++ b/src/touch_boost/controller.rs
+@@ -0,0 +1,172 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use std::fs;
++use std::time::Instant;
++
++use anyhow::Result;
++use log::info;
++
++use crate::i18n::t;
++use crate::touch_boost::config::TouchBoostConfig;
++use crate::utils::FastWriter;
++
++pub struct TouchBoostController {
++    config: TouchBoostConfig,
++    cluster_writers: Vec<FastWriter>,
++    current_boost_freqs: Vec<u32>,
++    boost_until: Instant,
++    touch_released_at: Option<Instant>,
++    is_boosting: bool,
++    disabled: bool,
++}
++
++impl TouchBoostController {
++    pub fn new(config: TouchBoostConfig) -> Result<Self> {
++        let (writers, initial_freqs) = Self::init_cluster_writers(&config);
++
++        info!("{}", t("touch-boost-init"));
++
++        Ok(Self {
++            config,
++            cluster_writers: writers,
++            current_boost_freqs: initial_freqs,
++            boost_until: Instant::now(),
++            touch_released_at: None,
++            is_boosting: false,
++            disabled: false,
++        })
++    }
++
++    pub fn disabled() -> Self {
++        Self {
++            config: TouchBoostConfig::default(),
++            cluster_writers: Vec::new(),
++            current_boost_freqs: Vec::new(),
++            boost_until: Instant::now(),
++            touch_released_at: None,
++            is_boosting: false,
++            disabled: true,
++        }
++    }
++
++    pub fn on_touch_start(&mut self) {
++        if self.disabled { return; }
++        self.is_boosting = true;
++        self.touch_released_at = None;
++        self.boost_until = Instant::now() + std::time::Duration::from_millis(self.config.min_boost_duration_ms);
++        self.apply_boost();
++        info!("{}", t("touch-boost-start"));
++    }
++
++    pub fn on_touch_end(&mut self) {
++        if self.disabled { return; }
++        self.touch_released_at = Some(Instant::now());
++        info!("{}", t("touch-boost-release"));
++    }
++
++    pub fn update(&mut self) {
++        if self.disabled || !self.is_boosting { return; }
++
++        if let Some(released_at) = self.touch_released_at {
++            let elapsed = released_at.elapsed().as_millis() as u64;
++            if elapsed < self.config.release_delay_ms { return; }
++            if Instant::now() < self.boost_until { return; }
++
++            let decay_factor = self.config.recover_decay;
++            let mut all_recovered = true;
++
++            for (i, freq) in self.current_boost_freqs.iter_mut().enumerate() {
++                if i >= self.config.boost_freqs.len() { break; }
++                let target = self.config.boost_freqs[i];
++                if target == 0 { continue; }
++
++                if *freq > 0 {
++                    let new_freq = (*freq as f32 * (1.0 - decay_factor)) as u32;
++                    if new_freq <= 100000 {
++                        *freq = 0;
++                        self.write_freq(i, 0);
++                    } else {
++                        *freq = new_freq;
++                        self.write_freq(i, new_freq);
++                        all_recovered = false;
++                    }
++                }
++            }
++
++            if all_recovered {
++                self.is_boosting = false;
++                self.touch_released_at = None;
++                info!("{}", t("touch-boost-recovered"));
++            }
++        }
++    }
++
++    pub fn reload_config(&mut self, config: TouchBoostConfig) {
++        self.config = config;
++        let (writers, initial_freqs) = Self::init_cluster_writers(&self.config);
++        self.cluster_writers = writers;
++        self.current_boost_freqs = initial_freqs;
++        info!("{}", t("touch-boost-config-reloaded"));
++    }
++
++    fn apply_boost(&mut self) {
++        for (i, &target_freq) in self.config.boost_freqs.iter().enumerate() {
++            if target_freq == 0 { continue; }
++            if i < self.cluster_writers.len() {
++                self.current_boost_freqs[i] = target_freq;
++                self.write_freq(i, target_freq);
++            }
++        }
++    }
++
++    fn write_freq(&mut self, cluster_idx: usize, freq: u32) {
++        if let Some(writer) = self.cluster_writers.get_mut(cluster_idx) {
++            writer.write_value_force(freq);
++        }
++    }
++
++    fn init_cluster_writers(config: &TouchBoostConfig) -> (Vec<FastWriter>, Vec<u32>) {
++        let mut writers = Vec::new();
++        let mut initial_freqs = Vec::new();
++
++        if let Ok(entries) = fs::read_dir("/sys/devices/system/cpu/cpufreq") {
++            let mut policies: Vec<String> = entries
++                .filter_map(|e| e.ok())
++                .filter(|e| {
++                    e.file_name().to_str().map_or(false, |n| n.starts_with("policy"))
++                })
++                .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
++                .collect();
++            policies.sort();
++
++            for (i, policy_name) in policies.iter().enumerate() {
++                let min_freq_path = format!(
++                    "/sys/devices/system/cpu/cpufreq/{}/scaling_min_freq",
++                    policy_name
++                );
++                let writer = FastWriter::new(&min_freq_path);
++                writers.push(writer);
++                initial_freqs.push(
++                    config.boost_freqs.get(i).copied().unwrap_or(0)
++                );
++            }
++        }
++
++        (writers, initial_freqs)
++    }
++}
+diff --git a/src/touch_boost/mod.rs b/src/touch_boost/mod.rs
+new file mode 100644
+index 0000000..146759a
+--- /dev/null
++++ b/src/touch_boost/mod.rs
+@@ -0,0 +1,24 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++mod config;
++mod controller;
++mod monitor;
++
++pub use config::TouchBoostConfig;
++pub use controller::TouchBoostController;
++pub use monitor::{TouchMonitor, TouchEvent};
+diff --git a/src/touch_boost/monitor.rs b/src/touch_boost/monitor.rs
+new file mode 100644
+index 0000000..fae4102
+--- /dev/null
++++ b/src/touch_boost/monitor.rs
+@@ -0,0 +1,178 @@
++/*
++ * Copyright (C) 2026 yuki
++ *
++ * This program is free software: you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation, either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
++ */
++
++use std::fs::{self, File, OpenOptions};
++use std::os::unix::io::{AsRawFd, RawFd};
++use std::sync::mpsc::Sender;
++
++use anyhow::Result;
++use log::{info, warn};
++
++use crate::i18n::{t, t_with_args};
++use crate::fluent_args;
++use crate::touch_boost::config::TouchBoostConfig;
++
++const BTN_TOUCH: u16 = 0x14a;
++const ABS_MT_TRACKING_ID: u16 = 0x39;
++const EV_KEY: u16 = 1;
++const EV_ABS: u16 = 3;
++
++#[derive(Debug, Clone)]
++pub enum TouchEvent {
++    Start,
++    End,
++}
++
++pub struct TouchMonitor {
++    epoll_fd: RawFd,
++    input_files: Vec<File>,
++}
++
++impl TouchMonitor {
++    pub fn new(config: TouchBoostConfig) -> Result<Self> {
++        let devices = if config.input_device.is_empty() {
++            Self::find_touch_devices()?
++        } else {
++            vec![config.input_device.clone()]
++        };
++
++        if devices.is_empty() {
++            return Err(anyhow::anyhow!("no touch input devices found"));
++        }
++
++        let epoll_fd = unsafe { libc::epoll_create1(0) };
++        if epoll_fd < 0 {
++            return Err(anyhow::anyhow!("epoll_create1 failed"));
++        }
++
++        let mut input_files = Vec::new();
++        for dev in &devices {
++            match OpenOptions::new().read(true).open(dev) {
++                Ok(f) => {
++                    let fd = f.as_raw_fd();
++                    let mut ev = libc::epoll_event { events: libc::EPOLLIN as u32, u64: fd as u64 };
++                    let ret = unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut ev) };
++                    if ret < 0 {
++                        warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                            "path" => dev.clone(), "error" => "epoll_ctl failed".to_string()
++                        )));
++                        continue;
++                    }
++                    input_files.push(f);
++                }
++                Err(e) => {
++                    warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                        "path" => dev.clone(), "error" => e.to_string()
++                    )));
++                }
++            }
++        }
++
++        if input_files.is_empty() {
++            unsafe { libc::close(epoll_fd); }
++            return Err(anyhow::anyhow!("no input devices could be opened"));
++        }
++
++        info!("{}", t_with_args("touch-boost-listener-started",
++            &fluent_args!("count" => input_files.len().to_string())));
++
++        Ok(Self { epoll_fd, input_files })
++    }
++
++    pub fn run(&self, tx: Sender<TouchEvent>) -> Result<()> {
++        info!("{}", t("touch-boost-thread-started"));
++
++        let mut events = [libc::epoll_event { events: 0, u64: 0 }; 16];
++        let mut touching = false;
++
++        loop {
++            let n = unsafe {
++                libc::epoll_wait(self.epoll_fd, events.as_mut_ptr(), events.len() as i32, -1)
++            };
++            if n < 0 {
++                let err = std::io::Error::last_os_error();
++                if err.kind() == std::io::ErrorKind::Interrupted { continue; }
++                return Err(anyhow::anyhow!("epoll_wait failed: {}", err));
++            }
++
++            for i in 0..n as usize {
++                let fd = events[i].u64 as RawFd;
++                let mut buf = [0u8; 256];
++                let bytes = unsafe {
++                    libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
++                };
++                if bytes < 0 { continue; }
++
++                let count = bytes as usize / std::mem::size_of::<InputEvent>();
++                for j in 0..count {
++                    let offset = j * std::mem::size_of::<InputEvent>();
++                    let ev = unsafe {
++                        std::ptr::read_unaligned(buf[offset..].as_ptr() as *const InputEvent)
++                    };
++
++                    if ev.type_ == EV_KEY && ev.code == BTN_TOUCH {
++                        if ev.value > 0 && !touching {
++                            touching = true;
++                            let _ = tx.send(TouchEvent::Start);
++                        } else if ev.value == 0 && touching {
++                            touching = false;
++                            let _ = tx.send(TouchEvent::End);
++                        }
++                    } else if ev.type_ == EV_ABS && ev.code == ABS_MT_TRACKING_ID {
++                        if ev.value >= 0 && !touching {
++                            touching = true;
++                            let _ = tx.send(TouchEvent::Start);
++                        } else if ev.value < 0 && touching {
++                            touching = false;
++                            let _ = tx.send(TouchEvent::End);
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    fn find_touch_devices() -> Result<Vec<String>> {
++        let mut devices = Vec::new();
++        let base = "/dev/input";
++        if let Ok(entries) = fs::read_dir(base) {
++            for entry in entries.flatten() {
++                let path = entry.path();
++                let name = path.file_name().unwrap_or_default().to_string_lossy();
++                if name.starts_with("event") {
++                    devices.push(path.to_string_lossy().to_string());
++                }
++            }
++        }
++        devices.sort();
++        Ok(devices)
++    }
++}
++
++impl Drop for TouchMonitor {
++    fn drop(&mut self) {
++        unsafe { libc::close(self.epoll_fd); }
++    }
++}
++
++#[repr(C)]
++struct InputEvent {
++    time: libc::timeval,
++    type_: u16,
++    code: u16,
++    value: i32,
++}

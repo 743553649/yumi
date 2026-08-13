@@ -128,6 +128,8 @@ idle-dive-exit = [IdleDive] 退出下潜状态
 idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
 idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
 idle-dive-config-reloaded = [IdleDive] 配置已热重载
+idle-dive-set-governor-failed = [IdleDive] 设置 { $state } 调速器失败: { $error }
+idle-dive-set-latency-failed = [IdleDive] 设置 { $state } 延迟失败: { $error }
 
 # --- TouchBoost ---
 touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成

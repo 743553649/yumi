@@ -17,9 +17,9 @@
 
 use std::time::Instant;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
 
-use crate::i18n::t;
+use crate::i18n::{t, t_with_args};
 use crate::idle_dive::config::IdleDiveConfig;
 use crate::idle_dive::latency::LatencyWriter;
 
@@ -36,8 +36,6 @@ pub struct IdleDiveController {
     latency_writer: LatencyWriter,
     dive_timer: Instant,
     exit_timer: Instant,
-    low_util_ticks: u32,
-    high_util_ticks: u32,
     disabled: bool,
 }
 
@@ -53,8 +51,6 @@ impl IdleDiveController {
             latency_writer,
             dive_timer: Instant::now(),
             exit_timer: Instant::now(),
-            low_util_ticks: 0,
-            high_util_ticks: 0,
             disabled: false,
         })
     }
@@ -66,8 +62,6 @@ impl IdleDiveController {
             latency_writer: LatencyWriter::disabled(),
             dive_timer: Instant::now(),
             exit_timer: Instant::now(),
-            low_util_ticks: 0,
-            high_util_ticks: 0,
             disabled: true,
         }
     }
@@ -129,20 +123,32 @@ impl IdleDiveController {
         match new_state {
             IdleDiveState::Normal => {
                 info!("{}", t("idle-dive-exit"));
-                let _ = self.latency_writer.set_governor(&self.config.governors.normal);
-                let _ = self.latency_writer.set_latency(self.config.params.normal_latency_us);
+                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.normal) {
+                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+                }
+                if let Err(e) = self.latency_writer.set_latency(self.config.params.normal_latency_us) {
+                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+                }
                 self.dive_timer = Instant::now();
             }
             IdleDiveState::Diving => {
                 info!("{}", t("idle-dive-enter"));
-                let _ = self.latency_writer.set_governor(&self.config.governors.diving);
-                let _ = self.latency_writer.set_latency(self.config.params.diving_latency_us);
+                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.diving) {
+                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+                }
+                if let Err(e) = self.latency_writer.set_latency(self.config.params.diving_latency_us) {
+                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+                }
                 self.exit_timer = Instant::now();
             }
             IdleDiveState::DozeDiving => {
                 info!("{}", t("idle-dive-enter-dozed"));
-                let _ = self.latency_writer.set_governor(&self.config.governors.doze);
-                let _ = self.latency_writer.set_latency(self.config.params.doze_latency_us);
+                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.doze) {
+                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+                }
+                if let Err(e) = self.latency_writer.set_latency(self.config.params.doze_latency_us) {
+                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+                }
             }
         }
 

@@ -28,6 +28,7 @@ use crate::utils::FastWriter;
 pub struct TouchBoostController {
     config: TouchBoostConfig,
     cluster_writers: Vec<FastWriter>,
+    available_freqs: Vec<Vec<u32>>,
     current_boost_freqs: Vec<u32>,
     boost_until: Instant,
     touch_released_at: Option<Instant>,
@@ -37,13 +38,14 @@ pub struct TouchBoostController {
 
 impl TouchBoostController {
     pub fn new(config: TouchBoostConfig) -> Result<Self> {
-        let (writers, initial_freqs) = Self::init_cluster_writers(&config);
+        let (writers, freq_lists, initial_freqs) = Self::init_cluster_writers(&config);
 
         info!("{}", t("touch-boost-init"));
 
         Ok(Self {
             config,
             cluster_writers: writers,
+            available_freqs: freq_lists,
             current_boost_freqs: initial_freqs,
             boost_until: Instant::now(),
             touch_released_at: None,
@@ -56,6 +58,7 @@ impl TouchBoostController {
         Self {
             config: TouchBoostConfig::default(),
             cluster_writers: Vec::new(),
+            available_freqs: Vec::new(),
             current_boost_freqs: Vec::new(),
             boost_until: Instant::now(),
             touch_released_at: None,
@@ -97,7 +100,11 @@ impl TouchBoostController {
                 if target == 0 { continue; }
 
                 if *freq > 0 {
-                    let new_freq = (*freq as f32 * (1.0 - decay_factor)) as u32;
+                    let raw = (*freq as f32 * (1.0 - decay_factor)) as u32;
+                    let new_freq = Self::find_nearest_freq(
+                        &self.available_freqs.get(i).map_or(&[][..], |v| v.as_slice()),
+                        raw,
+                    );
                     if new_freq <= 100000 {
                         *freq = 0;
                         freq_updates.push((i, 0));
@@ -123,8 +130,9 @@ impl TouchBoostController {
 
     pub fn reload_config(&mut self, config: TouchBoostConfig) {
         self.config = config;
-        let (writers, initial_freqs) = Self::init_cluster_writers(&self.config);
+        let (writers, freq_lists, initial_freqs) = Self::init_cluster_writers(&self.config);
         self.cluster_writers = writers;
+        self.available_freqs = freq_lists;
         self.current_boost_freqs = initial_freqs;
         info!("{}", t("touch-boost-config-reloaded"));
     }
@@ -149,8 +157,9 @@ impl TouchBoostController {
         }
     }
 
-    fn init_cluster_writers(config: &TouchBoostConfig) -> (Vec<FastWriter>, Vec<u32>) {
+    fn init_cluster_writers(config: &TouchBoostConfig) -> (Vec<FastWriter>, Vec<Vec<u32>>, Vec<u32>) {
         let mut writers = Vec::new();
+        let mut freq_lists = Vec::new();
         let mut initial_freqs = Vec::new();
 
         if let Ok(entries) = fs::read_dir("/sys/devices/system/cpu/cpufreq") {
@@ -169,13 +178,42 @@ impl TouchBoostController {
                     policy_name
                 );
                 let writer = FastWriter::new(&min_freq_path);
+
+                let avail_path = format!(
+                    "/sys/devices/system/cpu/cpufreq/{}/scaling_available_frequencies",
+                    policy_name
+                );
+                let mut freqs: Vec<u32> = fs::read_to_string(&avail_path)
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
+                freqs.sort_unstable();
+                freqs.dedup();
+
                 writers.push(writer);
+                freq_lists.push(freqs);
                 initial_freqs.push(
                     config.boost_freqs.get(i).copied().unwrap_or(0)
                 );
             }
         }
 
-        (writers, initial_freqs)
+        (writers, freq_lists, initial_freqs)
+    }
+
+    fn find_nearest_freq(available: &[u32], target: u32) -> u32 {
+        if available.is_empty() { return target; }
+        let idx = available.partition_point(|&f| f < target);
+        if idx == 0 { available[0] }
+        else if idx >= available.len() { *available.last().unwrap() }
+        else {
+            let lo = idx - 1;
+            if target - available[lo] <= available[idx] - target {
+                available[lo]
+            } else {
+                available[idx]
+            }
+        }
     }
 }

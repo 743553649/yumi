@@ -1,0 +1,494 @@
+diff --git a/module/config/config.yaml b/module/config/config.yaml
+index 3ba6c86..3aa46cd 100644
+--- a/module/config/config.yaml
++++ b/module/config/config.yaml
+@@ -9,6 +9,7 @@ meta:
+ function:
+   CpuIdleScalingGovernor: false
+   IOOptimization: true
++  SchedulerTuning: true
+ 
+ # IO 设置
+ IO_Settings:
+@@ -21,6 +22,15 @@ IO_Settings:
+ CpuIdle:
+   current_governor: ""
+ 
++StillDive:
++  enabled: true
++  enter_threshold: 0.08
++  enter_ticks: 10
++  exit_threshold: 0.20
++  exit_boost_ticks: 5
++  perf_ceil: 0.30
++  smoothing_up: 0.05
++
+ # --- 性能模式 ---
+ 
+ # 省电模式
+@@ -109,4 +119,4 @@ fast:
+     down_fast_threshold: 0.10
+     down_fast_mult: 2.5
+     spike_jump_threshold: 0.35
+-    spike_decay: 0.30
+\ No newline at end of file
++    spike_decay: 0.30
+diff --git a/module/config/i18n/en.ftl b/module/config/i18n/en.ftl
+index 1cd1064..a8a0770 100644
+--- a/module/config/i18n/en.ftl
++++ b/module/config/i18n/en.ftl
+@@ -115,3 +115,31 @@ main-config-watch-thread-create = Main config watcher thread created.
+ 
+ # --- Logger ---
+ log-level-updated = Log level updated to: { $level }
++
++# --- StillDive ---
++clg-still-enter = [CLG] Screen-on Still Dive: entered deep power-saving mode (perf ≤ { $ceil })
++clg-still-exit = [CLG] Screen-on Still Dive: activity detected, exited (exit boost { $boost } ticks)
++
++# --- IdleDive ---
++idle-dive-init = [IdleDive] CPU Still Dive controller initialized
++idle-dive-init-failed = [IdleDive] Initialization failed: { $error }
++idle-dive-unavailable = [IdleDive] cpuidle node unavailable, CPU Still Dive disabled
++idle-dive-enter = [IdleDive] Entered dive state
++idle-dive-exit = [IdleDive] Exited dive state
++idle-dive-enter-dozed = [IdleDive] Entered doze dive state
++idle-dive-exit-dozed = [IdleDive] Exited doze dive state
++idle-dive-config-reloaded = [IdleDive] Config hot-reloaded
++
++# --- TouchBoost ---
++touch-boost-init = [TouchBoost] Touch boost controller initialized
++touch-boost-init-failed = [TouchBoost] Initialization failed: { $error }
++touch-boost-no-device = [TouchBoost] Touch device not found, TouchBoost disabled
++touch-boost-listener-started = [TouchBoost] Listener started, watching { $count } device(s)
++touch-boost-thread-started = [TouchBoost] Thread started
++touch-boost-start = [TouchBoost] Touch start, applying boost
++touch-boost-release = [TouchBoost] Touch released, starting decay recovery
++touch-boost-recovered = [TouchBoost] Recovery complete
++touch-boost-config-reloaded = [TouchBoost] Config hot-reloaded
++
++# --- Scheduler Tuning ---
++apply-scheduler-tuning = Kernel scheduler power-saving parameters applied
+diff --git a/module/config/i18n/zh.ftl b/module/config/i18n/zh.ftl
+index 368c533..f20c719 100644
+--- a/module/config/i18n/zh.ftl
++++ b/module/config/i18n/zh.ftl
+@@ -114,3 +114,31 @@ main-config-watch-thread-create = 主配置监控线程已创建
+ 
+ # --- Logger ---
+ log-level-updated = 日志级别已更新为: { $level }
++
++# --- StillDive ---
++clg-still-enter = [CLG] 亮屏静止下潜: 已进入深度省电模式 (perf ≤ { $ceil })
++clg-still-exit = [CLG] 亮屏静止下潜: 检测到活动，已退出 (升频助力 { $boost } ticks)
++
++# --- IdleDive ---
++idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成
++idle-dive-init-failed = [IdleDive] 初始化失败: { $error }
++idle-dive-unavailable = [IdleDive] cpuidle 节点不可用，CPU 静止下潜已禁用
++idle-dive-enter = [IdleDive] 进入下潜状态
++idle-dive-exit = [IdleDive] 退出下潜状态
++idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
++idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
++idle-dive-config-reloaded = [IdleDive] 配置已热重载
++
++# --- TouchBoost ---
++touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成
++touch-boost-init-failed = [TouchBoost] 初始化失败: { $error }
++touch-boost-no-device = [TouchBoost] 未找到触摸设备，TouchBoost 已禁用
++touch-boost-listener-started = [TouchBoost] 监听器已启动，监听 { $count } 个设备
++touch-boost-thread-started = [TouchBoost] 线程已启动
++touch-boost-start = [TouchBoost] 触摸开始，应用 boost
++touch-boost-release = [TouchBoost] 松手，开始衰减恢复
++touch-boost-recovered = [TouchBoost] 恢复完成
++touch-boost-config-reloaded = [TouchBoost] 配置已热重载
++
++# --- Scheduler Tuning ---
++apply-scheduler-tuning = 内核调度器节能参数已应用
+diff --git a/src/scheduler/config.rs b/src/scheduler/config.rs
+index 5ac5a9b..be37b15 100644
+--- a/src/scheduler/config.rs
++++ b/src/scheduler/config.rs
+@@ -168,6 +168,60 @@ impl CpuLoadGovernorConfig {
+     }
+ }
+ 
++// ════════════════════════════════════════════════════════════════
++//  CPU Still Dive 配置
++// ════════════════════════════════════════════════════════════════
++
++#[derive(Debug, Deserialize, Clone)]
++pub struct StillDiveConfig {
++    #[serde(default = "crate::utils::default_true")] pub enabled: bool,
++    #[serde(default = "sd_enter_thresh")] pub enter_threshold: f32,
++    #[serde(default = "sd_enter_ticks")] pub enter_ticks: u32,
++    #[serde(default = "sd_exit_thresh")] pub exit_threshold: f32,
++    #[serde(default = "sd_exit_boost")] pub exit_boost_ticks: u32,
++    #[serde(default = "sd_perf_ceil")] pub perf_ceil: f32,
++    #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
++}
++
++fn sd_enter_thresh() -> f32 { 0.08 }
++fn sd_enter_ticks() -> u32 { 10 }
++fn sd_exit_thresh() -> f32 { 0.20 }
++fn sd_exit_boost() -> u32 { 5 }
++fn sd_perf_ceil() -> f32 { 0.30 }
++fn sd_smoothing_up() -> f32 { 0.05 }
++
++impl Default for StillDiveConfig {
++    fn default() -> Self {
++        Self {
++            enabled: true,
++            enter_threshold: sd_enter_thresh(),
++            enter_ticks: sd_enter_ticks(),
++            exit_threshold: sd_exit_thresh(),
++            exit_boost_ticks: sd_exit_boost(),
++            perf_ceil: sd_perf_ceil(),
++            smoothing_up: sd_smoothing_up(),
++        }
++    }
++}
++
++impl StillDiveConfig {
++    pub fn normalize(&mut self) {
++        if !self.enter_threshold.is_finite() { self.enter_threshold = sd_enter_thresh(); }
++        if !self.exit_threshold.is_finite() { self.exit_threshold = sd_exit_thresh(); }
++        if !self.perf_ceil.is_finite() { self.perf_ceil = sd_perf_ceil(); }
++        if !self.smoothing_up.is_finite() { self.smoothing_up = sd_smoothing_up(); }
++        self.enter_threshold = self.enter_threshold.clamp(0.0, 1.0);
++        self.exit_threshold = self.exit_threshold.clamp(0.0, 1.0);
++        self.perf_ceil = self.perf_ceil.clamp(0.0, 1.0);
++        self.smoothing_up = self.smoothing_up.clamp(0.0, 1.0);
++        if self.exit_threshold <= self.enter_threshold {
++            self.exit_threshold = (self.enter_threshold + 0.05).min(1.0);
++        }
++        if self.enter_ticks == 0 { self.enter_ticks = sd_enter_ticks(); }
++        if self.exit_boost_ticks > 100 { self.exit_boost_ticks = 100; }
++    }
++}
++
+ // ════════════════════════════════════════════════════════════════
+ //  核心模式与杂项配置
+ // ════════════════════════════════════════════════════════════════
+@@ -211,6 +265,7 @@ pub struct CpuIdle {
+ pub struct FunctionToggles {
+     #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
+     #[serde(rename = "IOOptimization")] pub io_optimization: bool,
++    #[serde(default, rename = "SchedulerTuning")] pub scheduler_tuning: bool,
+ }
+ 
+ #[derive(Debug, Deserialize, Default)]
+@@ -223,6 +278,8 @@ pub struct Config {
+     pub io_settings: IOSettings,
+     #[serde(default, rename = "CpuIdle")]
+     pub cpu_idle: CpuIdle,
++    #[serde(default, rename = "StillDive")]
++    pub still_dive: StillDiveConfig,
+     
+     // 按场景划分的性能模式
+     #[serde(default)] pub powersave: Mode,
+@@ -247,4 +304,4 @@ impl Config {
+             _ => None,
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/scheduler/cpu_load_governor.rs b/src/scheduler/cpu_load_governor.rs
+index 922f093..2ef25ec 100644
+--- a/src/scheduler/cpu_load_governor.rs
++++ b/src/scheduler/cpu_load_governor.rs
+@@ -17,6 +17,7 @@
+ 
+ 
+ use crate::scheduler::config::CpuLoadGovernorConfig;
++use crate::scheduler::config::StillDiveConfig;
+ use crate::utils::FastWriter;
+ use log::{info, debug, warn};
+ use std::fs;
+@@ -107,11 +108,14 @@ impl ClusterState {
+ 
+ pub struct CpuLoadGovernor {
+     clusters: Vec<ClusterState>,
+-    /// CLG 接管前的系统状态，release 时恢复（首次 init 时捕获）
+     restore: Vec<PolicyRestore>,
+     cfg: CpuLoadGovernorConfig,
+     active: bool,
+     log_counter: u32,
++    still_dive: Option<StillDiveConfig>,
++    still_mode: bool,
++    still_low_ticks: u32,
++    still_exit_boost: u32,
+ }
+ 
+ impl CpuLoadGovernor {
+@@ -122,6 +126,10 @@ impl CpuLoadGovernor {
+             cfg: CpuLoadGovernorConfig::default(),
+             active: false,
+             log_counter: 0,
++            still_dive: None,
++            still_mode: false,
++            still_low_ticks: 0,
++            still_exit_boost: 0,
+         }
+     }
+ 
+@@ -129,10 +137,14 @@ impl CpuLoadGovernor {
+         self.active
+     }
+ 
+-    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
++    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
+         self.release();
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
++        self.still_dive = still_dive;
++        if let Some(ref mut sd) = self.still_dive {
++            sd.normalize();
++        }
+ 
+         let clusters = crate::scheduler::get_cpu_policies();
+ 
+@@ -256,17 +268,22 @@ impl CpuLoadGovernor {
+ 
+     pub fn release(&mut self) {
+         if self.active { info!("{}", t("clg-deactivated")); }
+-        // 恢复系统原始状态，避免 release 后 CPU 悬停在 CLG 最后写入的值上。
+-        // 恢复失败的条目保留，下次 release/init 时重试，避免静默漂移。
+         self.restore.retain(|r| !Self::restore_policy(r));
+         self.clusters.clear();
+         self.active = false;
+         self.log_counter = 0;
++        self.still_mode = false;
++        self.still_low_ticks = 0;
++        self.still_exit_boost = 0;
+     }
+ 
+-    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
++    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
++        self.still_dive = still_dive;
++        if let Some(ref mut sd) = self.still_dive {
++            sd.normalize();
++        }
+         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
+             "up" => format!("{:.2}", self.cfg.up_threshold),
+             "down" => format!("{:.2}", self.cfg.down_threshold),
+@@ -334,11 +351,52 @@ impl CpuLoadGovernor {
+     pub fn on_load_update(&mut self, core_utils: &[f32]) {
+         if !self.active { return; }
+ 
++        if let Some(ref sd) = self.still_dive {
++            let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
++
++            if !self.still_mode {
++                if max_util <= sd.enter_threshold {
++                    self.still_low_ticks += 1;
++                } else {
++                    self.still_low_ticks = 0;
++                }
++                if self.still_low_ticks >= sd.enter_ticks {
++                    self.still_mode = true;
++                    log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
++                        "ceil" => format!("{:.0}%", sd.perf_ceil * 100.0)
++                    )));
++                }
++            } else {
++                if max_util > sd.exit_threshold {
++                    self.still_mode = false;
++                    self.still_exit_boost = sd.exit_boost_ticks;
++                    log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
++                        "boost" => sd.exit_boost_ticks.to_string()
++                    )));
++                }
++            }
++
++            if self.still_exit_boost > 0 {
++                self.still_exit_boost -= 1;
++            }
++        }
++
++        let effective_perf_ceil = if self.still_mode {
++            self.still_dive.as_ref().unwrap().perf_ceil
++        } else {
++            self.cfg.perf_ceil
++        };
++        let effective_perf_floor = if self.still_mode { 0.0 } else { self.cfg.perf_floor };
++        let effective_smoothing_up = if self.still_mode {
++            self.still_dive.as_ref().unwrap().smoothing_up
++        } else if self.still_exit_boost > 0 {
++            1.0
++        } else {
++            self.cfg.smoothing_up
++        };
++
+         for cluster in &mut self.clusters {
+             let raw_util = cluster.max_util(core_utils);
+-            // 尖峰抑制：单 tick 跳升超过阈值时衰减其增量，
+-            // 孤立瞬时尖峰（如单核 0↔100%）不瞬间拉满 perf；
+-            // 持续负载下一 tick jump 归零即全量生效，不拖慢真实升频
+             let util = if raw_util > cluster.last_util + self.cfg.spike_jump_threshold {
+                 cluster.last_util + (raw_util - cluster.last_util) * self.cfg.spike_decay
+             } else {
+@@ -346,69 +404,58 @@ impl CpuLoadGovernor {
+             };
+             cluster.last_util = raw_util;
+ 
+-            // headroom 在 up_threshold 附近线性过渡，避免阶跃导致的振荡
+             let ramp_start = self.cfg.up_threshold - self.cfg.headroom_ramp;
+             let headroom = if util >= self.cfg.up_threshold {
+                 self.cfg.headroom_factor
+             } else if util > ramp_start {
+-                let t = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
+-                1.0 + (self.cfg.headroom_factor - 1.0) * t
++                let t_val = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
++                1.0 + (self.cfg.headroom_factor - 1.0) * t_val
+             } else {
+                 1.0
+             };
+ 
+             let target_perf = (util * headroom)
+-                .clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
++                .clamp(effective_perf_floor, effective_perf_ceil);
+             let old_perf = cluster.current_perf;
+ 
+             if target_perf > old_perf {
+                 cluster.down_wait = 0;
+                 cluster.up_wait += 1;
+ 
+-                // 升频速率限制：必须连续 up_rate_limit_ticks 才执行
+                 if cluster.up_wait < self.cfg.up_rate_limit_ticks {
+                     continue;
+                 }
+ 
+-                let is_high_load = util >= self.cfg.up_threshold; 
+-                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold; 
++                let is_high_load = util >= self.cfg.up_threshold;
++                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold;
+ 
+                 if is_high_load || is_significant_jump {
+-                    cluster.current_perf += (target_perf - old_perf) * self.cfg.smoothing_up;
++                    cluster.current_perf += (target_perf - old_perf) * effective_smoothing_up;
+                 } else {
+-                    // 滞回带内升频：速率随 util 接近 up_threshold 线性提升——
+-                    // 低 util 端用 slow_up_scale 防抖，高 util 端逼近全速，
+-                    // 避免中等负载（如 73%）下 0.008/tick 的慢速爬升导致体验卡顿
+                     let span = (self.cfg.up_threshold - self.cfg.down_threshold).max(1e-6);
+                     let gap = ((util - self.cfg.down_threshold) / span).clamp(0.0, 1.0);
+-                    let speed = self.cfg.smoothing_up
++                    let speed = effective_smoothing_up
+                         * (self.cfg.slow_up_scale + (1.0 - self.cfg.slow_up_scale) * gap);
+-                    cluster.current_perf += (target_perf - old_perf) * speed; 
++                    cluster.current_perf += (target_perf - old_perf) * speed;
+                 }
+             } else {
+                 cluster.up_wait = 0;
+                 cluster.down_wait += 1;
+-                // 极低负载立即快速降频（跳过 down_wait 确认期），
+-                // 消除尖峰消失后 perf 长时间悬停高位的滞后
+                 if cluster.down_wait >= self.cfg.down_rate_limit_ticks
+                     || util < self.cfg.down_fast_threshold
+                 {
+-                    // 降频门控：只要目标低于当前即可降，避免滞回带内锁死高位
+                     let active_smoothing_down = if util < self.cfg.down_fast_threshold {
+-                        // 极低负载：快速回落
+                         self.cfg.smoothing_down * self.cfg.down_fast_mult
+                     } else if util < self.cfg.down_threshold {
+-                        // 跌破降频阈值：正常速率降频
+                         self.cfg.smoothing_down
+                     } else {
+-                        // 滞回带内（down_threshold..up_threshold）：慢速下探防抖
+                         self.cfg.smoothing_down * self.cfg.slow_down_scale
+                     };
+                     cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
+                 }
+             }
+ 
+-            cluster.current_perf = cluster.current_perf.clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
++            cluster.current_perf = cluster.current_perf.clamp(effective_perf_floor, effective_perf_ceil);
+             let target_freq = cluster.find_nearest_freq(cluster.current_perf);
+             cluster.write_freq(target_freq);
+         }
+diff --git a/src/scheduler/mod.rs b/src/scheduler/mod.rs
+index a219f90..343472b 100644
+--- a/src/scheduler/mod.rs
++++ b/src/scheduler/mod.rs
+@@ -201,7 +201,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                     let config_lock = config_clone.read().unwrap();
+                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
+                     if clg_cfg.enabled {
+-                        cpu_governor.init_policies(&clg_cfg);
++                        let still_dive = if config_lock.still_dive.enabled {
++                            Some(config_lock.still_dive.clone())
++                        } else {
++                            None
++                        };
++                        cpu_governor.init_policies(&clg_cfg, still_dive);
+                         log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
+                     }
+                 }
+@@ -238,7 +243,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                             doze_cfg.smoothing_up = 0.10;           // 升频极其迟钝
+                             doze_cfg.smoothing_down = 1.0;          // 瞬间降频
+                             
+-                            cpu_governor.init_policies(&doze_cfg);
++                            cpu_governor.init_policies(&doze_cfg, None);
+                         } else {
+                             log::info!("{}", t("scheduler-doze-restore"));
+                             
+@@ -247,9 +252,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                             
+                             if current_mode != "fas" {
+                                 if clg_cfg.enabled {
+-                                    // 息屏 doze 期间 CLG 仍持有 writer，热切换配置即可
+-                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
+-                                    else { cpu_governor.init_policies(&clg_cfg); }
++                                    let still_dive = if config_lock.still_dive.enabled {
++                                        Some(config_lock.still_dive.clone())
++                                    } else {
++                                        None
++                                    };
++                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
++                                    else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                                 } 
+                                 else { cpu_governor.release(); }
+                             } else {
+@@ -319,9 +328,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                                     let config_lock = config_clone.read().unwrap();
+                                     let clg_cfg = get_clg_cfg(&config_lock, &mode);
+                                     if clg_cfg.enabled {
+-                                        // CLG 已激活时热切换配置，避免同模式反复切换全量重建
+-                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
+-                                        else { cpu_governor.init_policies(&clg_cfg); }
++                                        let still_dive = if config_lock.still_dive.enabled {
++                                            Some(config_lock.still_dive.clone())
++                                        } else {
++                                            None
++                                        };
++                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); }
++                                        else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                                     } else {
+                                         cpu_governor.release();
+                                     }
+@@ -373,12 +386,17 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                             } else {
+                                 fas_controller.reload_rules(&current_rules.fas_rules);
+                             }
+-                        } else if is_screen_on { // 息屏时不要用新配置覆盖 Doze
++                        } else if is_screen_on {
+                             let config_lock = config_clone.read().unwrap();
+                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
+                             if clg_cfg.enabled {
+-                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
+-                                else { cpu_governor.init_policies(&clg_cfg); }
++                                let still_dive = if config_lock.still_dive.enabled {
++                                    Some(config_lock.still_dive.clone())
++                                } else {
++                                    None
++                                };
++                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
++                                else { cpu_governor.init_policies(&clg_cfg, still_dive); }
+                             } else if cpu_governor.is_active() {
+                                 cpu_governor.release();
+                             }
