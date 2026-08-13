@@ -169,6 +169,60 @@ impl CpuLoadGovernorConfig {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  CPU Still Dive 配置
+// ════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct StillDiveConfig {
+    #[serde(default = "crate::utils::default_true")] pub enabled: bool,
+    #[serde(default = "sd_enter_thresh")] pub enter_threshold: f32,
+    #[serde(default = "sd_enter_ticks")] pub enter_ticks: u32,
+    #[serde(default = "sd_exit_thresh")] pub exit_threshold: f32,
+    #[serde(default = "sd_exit_boost")] pub exit_boost_ticks: u32,
+    #[serde(default = "sd_perf_ceil")] pub perf_ceil: f32,
+    #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
+}
+
+fn sd_enter_thresh() -> f32 { 0.08 }
+fn sd_enter_ticks() -> u32 { 10 }
+fn sd_exit_thresh() -> f32 { 0.20 }
+fn sd_exit_boost() -> u32 { 5 }
+fn sd_perf_ceil() -> f32 { 0.30 }
+fn sd_smoothing_up() -> f32 { 0.05 }
+
+impl Default for StillDiveConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            enter_threshold: sd_enter_thresh(),
+            enter_ticks: sd_enter_ticks(),
+            exit_threshold: sd_exit_thresh(),
+            exit_boost_ticks: sd_exit_boost(),
+            perf_ceil: sd_perf_ceil(),
+            smoothing_up: sd_smoothing_up(),
+        }
+    }
+}
+
+impl StillDiveConfig {
+    pub fn normalize(&mut self) {
+        if !self.enter_threshold.is_finite() { self.enter_threshold = sd_enter_thresh(); }
+        if !self.exit_threshold.is_finite() { self.exit_threshold = sd_exit_thresh(); }
+        if !self.perf_ceil.is_finite() { self.perf_ceil = sd_perf_ceil(); }
+        if !self.smoothing_up.is_finite() { self.smoothing_up = sd_smoothing_up(); }
+        self.enter_threshold = self.enter_threshold.clamp(0.0, 1.0);
+        self.exit_threshold = self.exit_threshold.clamp(0.0, 1.0);
+        self.perf_ceil = self.perf_ceil.clamp(0.0, 1.0);
+        self.smoothing_up = self.smoothing_up.clamp(0.0, 1.0);
+        if self.exit_threshold <= self.enter_threshold {
+            self.exit_threshold = (self.enter_threshold + 0.05).min(1.0);
+        }
+        if self.enter_ticks == 0 { self.enter_ticks = sd_enter_ticks(); }
+        if self.exit_boost_ticks > 100 { self.exit_boost_ticks = 100; }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
 //  核心模式与杂项配置
 // ════════════════════════════════════════════════════════════════
 
@@ -211,6 +265,7 @@ pub struct CpuIdle {
 pub struct FunctionToggles {
     #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
     #[serde(rename = "IOOptimization")] pub io_optimization: bool,
+    #[serde(default, rename = "SchedulerTuning")] pub scheduler_tuning: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -223,6 +278,12 @@ pub struct Config {
     pub io_settings: IOSettings,
     #[serde(default, rename = "CpuIdle")]
     pub cpu_idle: CpuIdle,
+    #[serde(default, rename = "StillDive")]
+    pub still_dive: StillDiveConfig,
+    #[serde(default, rename = "IdleDive")]
+    pub idle_dive: crate::idle_dive::IdleDiveConfig,
+    #[serde(default, rename = "TouchBoost")]
+    pub touch_boost: crate::touch_boost::TouchBoostConfig,
     
     // 按场景划分的性能模式
     #[serde(default)] pub powersave: Mode,

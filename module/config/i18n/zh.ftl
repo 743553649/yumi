@@ -114,3 +114,31 @@ main-config-watch-thread-create = 主配置监控线程已创建
 
 # --- Logger ---
 log-level-updated = 日志级别已更新为: { $level }
+
+# --- StillDive ---
+clg-still-enter = [CLG] 亮屏静止下潜: 已进入深度省电模式 (perf ≤ { $ceil })
+clg-still-exit = [CLG] 亮屏静止下潜: 检测到活动，已退出 (升频助力 { $boost } ticks)
+
+# --- IdleDive ---
+idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成
+idle-dive-init-failed = [IdleDive] 初始化失败: { $error }
+idle-dive-unavailable = [IdleDive] cpuidle 节点不可用，CPU 静止下潜已禁用
+idle-dive-enter = [IdleDive] 进入下潜状态
+idle-dive-exit = [IdleDive] 退出下潜状态
+idle-dive-enter-dozed = [IdleDive] 进入息屏下潜状态
+idle-dive-exit-dozed = [IdleDive] 退出息屏下潜状态
+idle-dive-config-reloaded = [IdleDive] 配置已热重载
+
+# --- TouchBoost ---
+touch-boost-init = [TouchBoost] 触摸提频控制器初始化完成
+touch-boost-init-failed = [TouchBoost] 初始化失败: { $error }
+touch-boost-no-device = [TouchBoost] 未找到触摸设备，TouchBoost 已禁用
+touch-boost-listener-started = [TouchBoost] 监听器已启动，监听 { $count } 个设备
+touch-boost-thread-started = [TouchBoost] 线程已启动
+touch-boost-start = [TouchBoost] 触摸开始，应用 boost
+touch-boost-release = [TouchBoost] 松手，开始衰减恢复
+touch-boost-recovered = [TouchBoost] 恢复完成
+touch-boost-config-reloaded = [TouchBoost] 配置已热重载
+
+# --- Scheduler Tuning ---
+apply-scheduler-tuning = 内核调度器节能参数已应用

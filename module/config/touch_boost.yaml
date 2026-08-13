@@ -1,0 +1,9 @@
+enabled: true
+boost_freqs:
+  - 2500000
+  - 0
+  - 2000000
+release_delay_ms: 100
+recover_decay: 0.15
+min_boost_duration_ms: 50
+input_device: ""

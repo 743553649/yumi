@@ -171,6 +171,52 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             
             let mut fas_controller = crate::scheduler::fas::FasController::new();
             let mut cpu_governor = crate::scheduler::cpu_load_governor::CpuLoadGovernor::new();
+            let mut idle_dive = {
+                let config_lock = config_clone.read().unwrap();
+                if config_lock.idle_dive.enabled {
+                    match crate::idle_dive::IdleDiveController::new(config_lock.idle_dive.clone()) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("{}", t_with_args("idle-dive-init-failed", &fluent_args!("error" => e.to_string())));
+                            crate::idle_dive::IdleDiveController::disabled()
+                        }
+                    }
+                } else {
+                    crate::idle_dive::IdleDiveController::disabled()
+                }
+            };
+
+            let (touch_tx, touch_rx) = mpsc::channel::<crate::touch_boost::TouchEvent>();
+            let mut touch_boost = {
+                let config_lock = config_clone.read().unwrap();
+                if config_lock.touch_boost.enabled {
+                    match crate::touch_boost::TouchMonitor::new(config_lock.touch_boost.clone()) {
+                        Ok(monitor) => {
+                            std::thread::Builder::new()
+                                .name("touch_monitor".to_string())
+                                .spawn(move || {
+                                    if let Err(e) = monitor.run(touch_tx) {
+                                        log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
+                                    }
+                                })
+                                .ok();
+                            match crate::touch_boost::TouchBoostController::new(config_lock.touch_boost.clone()) {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
+                                    crate::touch_boost::TouchBoostController::disabled()
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("{}", t_with_args("touch-boost-init-failed", &fluent_args!("error" => e.to_string())));
+                            crate::touch_boost::TouchBoostController::disabled()
+                        }
+                    }
+                } else {
+                    crate::touch_boost::TouchBoostController::disabled()
+                }
+            };
 
             let rules_path = crate::monitor::config::get_rules_path();
             let mut current_rules = crate::utils::read_config::<crate::monitor::config::RulesConfig, _>(&rules_path).unwrap_or_default();
@@ -201,7 +247,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     let config_lock = config_clone.read().unwrap();
                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                     if clg_cfg.enabled {
-                        cpu_governor.init_policies(&clg_cfg);
+                        let still_dive = if config_lock.still_dive.enabled {
+                            Some(config_lock.still_dive.clone())
+                        } else {
+                            None
+                        };
+                        cpu_governor.init_policies(&clg_cfg, still_dive);
                         log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
                     }
                 }
@@ -211,6 +262,19 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             // 避免调度线程静默死亡（进程存活但频率停在最后状态）
             let loop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             for msg in rx {
+                while let Ok(touch_event) = touch_rx.try_recv() {
+                    match touch_event {
+                        crate::touch_boost::TouchEvent::Start => {
+                            touch_boost.on_touch_start();
+                            idle_dive.on_touch_fast_exit();
+                        }
+                        crate::touch_boost::TouchEvent::End => {
+                            touch_boost.on_touch_end();
+                        }
+                    }
+                }
+                touch_boost.update();
+
                 match msg {
                     // --- 1. 屏幕状态事件 (息屏深度睡眠) ---
                     DaemonEvent::ScreenStateChange(screen_on) => {
@@ -218,6 +282,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         let current_mode = mode_clone.lock().unwrap().clone();
 
                         if !is_screen_on {
+                            idle_dive.enter_doze();
                             log::info!("{}", t("scheduler-doze-enable"));
                             
                             // 息屏立刻剥夺 FAS 的频率控制权
@@ -238,8 +303,9 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             doze_cfg.smoothing_up = 0.10;           // 升频极其迟钝
                             doze_cfg.smoothing_down = 1.0;          // 瞬间降频
                             
-                            cpu_governor.init_policies(&doze_cfg);
+                            cpu_governor.init_policies(&doze_cfg, None);
                         } else {
+                            idle_dive.exit_doze();
                             log::info!("{}", t("scheduler-doze-restore"));
                             
                             let config_lock = config_clone.read().unwrap();
@@ -247,9 +313,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             
                             if current_mode != "fas" {
                                 if clg_cfg.enabled {
-                                    // 息屏 doze 期间 CLG 仍持有 writer，热切换配置即可
-                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
-                                    else { cpu_governor.init_policies(&clg_cfg); }
+                                    let still_dive = if config_lock.still_dive.enabled {
+                                        Some(config_lock.still_dive.clone())
+                                    } else {
+                                        None
+                                    };
+                                    if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
+                                    else { cpu_governor.init_policies(&clg_cfg, still_dive); }
                                 } 
                                 else { cpu_governor.release(); }
                             } else {
@@ -319,9 +389,13 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                     let config_lock = config_clone.read().unwrap();
                                     let clg_cfg = get_clg_cfg(&config_lock, &mode);
                                     if clg_cfg.enabled {
-                                        // CLG 已激活时热切换配置，避免同模式反复切换全量重建
-                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
-                                        else { cpu_governor.init_policies(&clg_cfg); }
+                                        let still_dive = if config_lock.still_dive.enabled {
+                                            Some(config_lock.still_dive.clone())
+                                        } else {
+                                            None
+                                        };
+                                        if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); }
+                                        else { cpu_governor.init_policies(&clg_cfg, still_dive); }
                                     } else {
                                         cpu_governor.release();
                                     }
@@ -343,6 +417,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         // 如果 CLG 处于活动状态（包含日常模式或息屏 Doze 模式），全权投喂
                         if cpu_governor.is_active() {
                             cpu_governor.on_load_update(&core_utils);
+                        }
+                        if !core_utils.is_empty() {
+                            let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;
+                            idle_dive.update(avg);
                         }
                     },
 
@@ -366,19 +444,30 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     DaemonEvent::ConfigReload(new_rules) => {
                         current_rules = new_rules;
                         let current_mode = mode_clone.lock().unwrap().clone();
-                        
+
+                        {
+                            let config_lock = config_clone.read().unwrap();
+                            idle_dive.reload_config(config_lock.idle_dive.clone());
+                            touch_boost.reload_config(config_lock.touch_boost.clone());
+                        }
+
                         if current_mode == "fas" {
                             if fas_controller.policies.is_empty() {
                                 fas_controller.load_policies(&current_rules.fas_rules);
                             } else {
                                 fas_controller.reload_rules(&current_rules.fas_rules);
                             }
-                        } else if is_screen_on { // 息屏时不要用新配置覆盖 Doze
+                        } else if is_screen_on {
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                             if clg_cfg.enabled {
-                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
-                                else { cpu_governor.init_policies(&clg_cfg); }
+                                let still_dive = if config_lock.still_dive.enabled {
+                                    Some(config_lock.still_dive.clone())
+                                } else {
+                                    None
+                                };
+                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg, still_dive); } 
+                                else { cpu_governor.init_policies(&clg_cfg, still_dive); }
                             } else if cpu_governor.is_active() {
                                 cpu_governor.release();
                             }

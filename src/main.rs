@@ -16,6 +16,8 @@
  */
 
 mod common;
+mod idle_dive;
+mod touch_boost;
 mod logger;
 mod monitor;
 mod scheduler;

@@ -17,6 +17,7 @@
 
 
 use crate::scheduler::config::CpuLoadGovernorConfig;
+use crate::scheduler::config::StillDiveConfig;
 use crate::utils::FastWriter;
 use log::{info, debug, warn};
 use std::fs;
@@ -107,11 +108,14 @@ impl ClusterState {
 
 pub struct CpuLoadGovernor {
     clusters: Vec<ClusterState>,
-    /// CLG 接管前的系统状态，release 时恢复（首次 init 时捕获）
     restore: Vec<PolicyRestore>,
     cfg: CpuLoadGovernorConfig,
     active: bool,
     log_counter: u32,
+    still_dive: Option<StillDiveConfig>,
+    still_mode: bool,
+    still_low_ticks: u32,
+    still_exit_boost: u32,
 }
 
 impl CpuLoadGovernor {
@@ -122,6 +126,10 @@ impl CpuLoadGovernor {
             cfg: CpuLoadGovernorConfig::default(),
             active: false,
             log_counter: 0,
+            still_dive: None,
+            still_mode: false,
+            still_low_ticks: 0,
+            still_exit_boost: 0,
         }
     }
 
@@ -129,10 +137,14 @@ impl CpuLoadGovernor {
         self.active
     }
 
-    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
+    pub fn init_policies(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
         self.release();
         self.cfg = gov_cfg.clone();
         self.normalize_cfg();
+        self.still_dive = still_dive;
+        if let Some(ref mut sd) = self.still_dive {
+            sd.normalize();
+        }
 
         let clusters = crate::scheduler::get_cpu_policies();
 
@@ -256,17 +268,22 @@ impl CpuLoadGovernor {
 
     pub fn release(&mut self) {
         if self.active { info!("{}", t("clg-deactivated")); }
-        // 恢复系统原始状态，避免 release 后 CPU 悬停在 CLG 最后写入的值上。
-        // 恢复失败的条目保留，下次 release/init 时重试，避免静默漂移。
         self.restore.retain(|r| !Self::restore_policy(r));
         self.clusters.clear();
         self.active = false;
         self.log_counter = 0;
+        self.still_mode = false;
+        self.still_low_ticks = 0;
+        self.still_exit_boost = 0;
     }
 
-    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
+    pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
         self.cfg = gov_cfg.clone();
         self.normalize_cfg();
+        self.still_dive = still_dive;
+        if let Some(ref mut sd) = self.still_dive {
+            sd.normalize();
+        }
         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
             "up" => format!("{:.2}", self.cfg.up_threshold),
             "down" => format!("{:.2}", self.cfg.down_threshold),
@@ -334,11 +351,52 @@ impl CpuLoadGovernor {
     pub fn on_load_update(&mut self, core_utils: &[f32]) {
         if !self.active { return; }
 
+        if let Some(ref sd) = self.still_dive {
+            let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
+
+            if !self.still_mode {
+                if max_util <= sd.enter_threshold {
+                    self.still_low_ticks += 1;
+                } else {
+                    self.still_low_ticks = 0;
+                }
+                if self.still_low_ticks >= sd.enter_ticks {
+                    self.still_mode = true;
+                    log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
+                        "ceil" => format!("{:.0}%", sd.perf_ceil * 100.0)
+                    )));
+                }
+            } else {
+                if max_util > sd.exit_threshold {
+                    self.still_mode = false;
+                    self.still_exit_boost = sd.exit_boost_ticks;
+                    log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
+                        "boost" => sd.exit_boost_ticks.to_string()
+                    )));
+                }
+            }
+
+            if self.still_exit_boost > 0 {
+                self.still_exit_boost -= 1;
+            }
+        }
+
+        let effective_perf_ceil = if self.still_mode {
+            self.still_dive.as_ref().unwrap().perf_ceil
+        } else {
+            self.cfg.perf_ceil
+        };
+        let effective_perf_floor = if self.still_mode { 0.0 } else { self.cfg.perf_floor };
+        let effective_smoothing_up = if self.still_mode {
+            self.still_dive.as_ref().unwrap().smoothing_up
+        } else if self.still_exit_boost > 0 {
+            1.0
+        } else {
+            self.cfg.smoothing_up
+        };
+
         for cluster in &mut self.clusters {
             let raw_util = cluster.max_util(core_utils);
-            // 尖峰抑制：单 tick 跳升超过阈值时衰减其增量，
-            // 孤立瞬时尖峰（如单核 0↔100%）不瞬间拉满 perf；
-            // 持续负载下一 tick jump 归零即全量生效，不拖慢真实升频
             let util = if raw_util > cluster.last_util + self.cfg.spike_jump_threshold {
                 cluster.last_util + (raw_util - cluster.last_util) * self.cfg.spike_decay
             } else {
@@ -346,69 +404,58 @@ impl CpuLoadGovernor {
             };
             cluster.last_util = raw_util;
 
-            // headroom 在 up_threshold 附近线性过渡，避免阶跃导致的振荡
             let ramp_start = self.cfg.up_threshold - self.cfg.headroom_ramp;
             let headroom = if util >= self.cfg.up_threshold {
                 self.cfg.headroom_factor
             } else if util > ramp_start {
-                let t = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
-                1.0 + (self.cfg.headroom_factor - 1.0) * t
+                let t_val = ((util - ramp_start) / self.cfg.headroom_ramp.max(1e-6)).clamp(0.0, 1.0);
+                1.0 + (self.cfg.headroom_factor - 1.0) * t_val
             } else {
                 1.0
             };
 
             let target_perf = (util * headroom)
-                .clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
+                .clamp(effective_perf_floor, effective_perf_ceil);
             let old_perf = cluster.current_perf;
 
             if target_perf > old_perf {
                 cluster.down_wait = 0;
                 cluster.up_wait += 1;
 
-                // 升频速率限制：必须连续 up_rate_limit_ticks 才执行
                 if cluster.up_wait < self.cfg.up_rate_limit_ticks {
                     continue;
                 }
 
-                let is_high_load = util >= self.cfg.up_threshold; 
-                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold; 
+                let is_high_load = util >= self.cfg.up_threshold;
+                let is_significant_jump = target_perf > old_perf + self.cfg.up_jump_threshold;
 
                 if is_high_load || is_significant_jump {
-                    cluster.current_perf += (target_perf - old_perf) * self.cfg.smoothing_up;
+                    cluster.current_perf += (target_perf - old_perf) * effective_smoothing_up;
                 } else {
-                    // 滞回带内升频：速率随 util 接近 up_threshold 线性提升——
-                    // 低 util 端用 slow_up_scale 防抖，高 util 端逼近全速，
-                    // 避免中等负载（如 73%）下 0.008/tick 的慢速爬升导致体验卡顿
                     let span = (self.cfg.up_threshold - self.cfg.down_threshold).max(1e-6);
                     let gap = ((util - self.cfg.down_threshold) / span).clamp(0.0, 1.0);
-                    let speed = self.cfg.smoothing_up
+                    let speed = effective_smoothing_up
                         * (self.cfg.slow_up_scale + (1.0 - self.cfg.slow_up_scale) * gap);
-                    cluster.current_perf += (target_perf - old_perf) * speed; 
+                    cluster.current_perf += (target_perf - old_perf) * speed;
                 }
             } else {
                 cluster.up_wait = 0;
                 cluster.down_wait += 1;
-                // 极低负载立即快速降频（跳过 down_wait 确认期），
-                // 消除尖峰消失后 perf 长时间悬停高位的滞后
                 if cluster.down_wait >= self.cfg.down_rate_limit_ticks
                     || util < self.cfg.down_fast_threshold
                 {
-                    // 降频门控：只要目标低于当前即可降，避免滞回带内锁死高位
                     let active_smoothing_down = if util < self.cfg.down_fast_threshold {
-                        // 极低负载：快速回落
                         self.cfg.smoothing_down * self.cfg.down_fast_mult
                     } else if util < self.cfg.down_threshold {
-                        // 跌破降频阈值：正常速率降频
                         self.cfg.smoothing_down
                     } else {
-                        // 滞回带内（down_threshold..up_threshold）：慢速下探防抖
                         self.cfg.smoothing_down * self.cfg.slow_down_scale
                     };
                     cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
                 }
             }
 
-            cluster.current_perf = cluster.current_perf.clamp(self.cfg.perf_floor, self.cfg.perf_ceil);
+            cluster.current_perf = cluster.current_perf.clamp(effective_perf_floor, effective_perf_ceil);
             let target_freq = cluster.find_nearest_freq(cluster.current_perf);
             cluster.write_freq(target_freq);
         }

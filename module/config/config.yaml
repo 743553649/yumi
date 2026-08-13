@@ -9,6 +9,7 @@ meta:
 function:
   CpuIdleScalingGovernor: false
   IOOptimization: true
+  SchedulerTuning: true
 
 # IO 设置
 IO_Settings:
@@ -20,6 +21,15 @@ IO_Settings:
 # CPU 空闲设置
 CpuIdle:
   current_governor: ""
+
+StillDive:
+  enabled: true
+  enter_threshold: 0.08
+  enter_ticks: 10
+  exit_threshold: 0.20
+  exit_boost_ticks: 5
+  perf_ceil: 0.30
+  smoothing_up: 0.05
 
 # --- 性能模式 ---
 

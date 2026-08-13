@@ -115,3 +115,31 @@ main-config-watch-thread-create = Main config watcher thread created.
 
 # --- Logger ---
 log-level-updated = Log level updated to: { $level }
+
+# --- StillDive ---
+clg-still-enter = [CLG] Screen-on Still Dive: entered deep power-saving mode (perf ≤ { $ceil })
+clg-still-exit = [CLG] Screen-on Still Dive: activity detected, exited (exit boost { $boost } ticks)
+
+# --- IdleDive ---
+idle-dive-init = [IdleDive] CPU Still Dive controller initialized
+idle-dive-init-failed = [IdleDive] Initialization failed: { $error }
+idle-dive-unavailable = [IdleDive] cpuidle node unavailable, CPU Still Dive disabled
+idle-dive-enter = [IdleDive] Entered dive state
+idle-dive-exit = [IdleDive] Exited dive state
+idle-dive-enter-dozed = [IdleDive] Entered doze dive state
+idle-dive-exit-dozed = [IdleDive] Exited doze dive state
+idle-dive-config-reloaded = [IdleDive] Config hot-reloaded
+
+# --- TouchBoost ---
+touch-boost-init = [TouchBoost] Touch boost controller initialized
+touch-boost-init-failed = [TouchBoost] Initialization failed: { $error }
+touch-boost-no-device = [TouchBoost] Touch device not found, TouchBoost disabled
+touch-boost-listener-started = [TouchBoost] Listener started, watching { $count } device(s)
+touch-boost-thread-started = [TouchBoost] Thread started
+touch-boost-start = [TouchBoost] Touch start, applying boost
+touch-boost-release = [TouchBoost] Touch released, starting decay recovery
+touch-boost-recovered = [TouchBoost] Recovery complete
+touch-boost-config-reloaded = [TouchBoost] Config hot-reloaded
+
+# --- Scheduler Tuning ---
+apply-scheduler-tuning = Kernel scheduler power-saving parameters applied
