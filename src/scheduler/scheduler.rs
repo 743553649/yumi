@@ -20,7 +20,8 @@ use anyhow::Result;
 use std::fs;
 use std::sync::{Arc, RwLock};
 
-use crate::i18n::t;
+use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
 use crate::utils;
 use crate::utils::SysPathExist;
 
@@ -69,7 +70,7 @@ impl CpuScheduler {
         let io = &config.io_settings;
         let block_dir = std::path::Path::new("/sys/block");
         if !block_dir.exists() {
-            log::warn!("IOOptimization: /sys/block does not exist, skipping");
+            log::warn!("{}", t("io-block-not-found"));
             return Ok(());
         }
 
@@ -95,7 +96,7 @@ impl CpuScheduler {
                     let p = queue_path.join("iostats");
                     if p.exists() { let _ = utils::try_write_file(&p, &io.iostats); }
                 }
-                log::debug!("IOOptimization: applied to {:?}", dev_path.file_name().unwrap_or_default());
+                log::debug!("{}", t_with_args("io-applied", &fluent_args!("device" => dev_path.file_name().unwrap_or_default().to_string_lossy().to_string())));
             }
         }
 

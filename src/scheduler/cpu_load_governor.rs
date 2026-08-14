@@ -487,6 +487,12 @@ impl CpuLoadGovernor {
                     "boost" => format!("{:.0}", c.boost_max as f32 / 1000.0)
                 )));
             }
+            if let Some(ref sd) = self.still_dive {
+                let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
+                debug!("[StillDive] max_util={:.1}% threshold={:.0}% mode={} ticks={}/{}",
+                    max_util * 100.0, sd.enter_threshold * 100.0,
+                    self.still_mode, self.still_low_ticks, sd.enter_ticks);
+            }
         }
     }
 

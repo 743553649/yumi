@@ -22,9 +22,10 @@ use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
 use log4rs::config::{Appender, Config, Root};
-use log4rs::encode::pattern::PatternEncoder;
+use log4rs::encode::{Encode, Write as EncodeWrite};
 use log4rs::Handle;
 use once_cell::sync::OnceCell;
+use std::io::Write;
 use std::sync::Mutex;
 use crate::common;
 use crate::i18n::t_with_args;
@@ -44,6 +45,34 @@ fn parse_level(level_str: &str) -> LevelFilter {
     }
 }
 
+struct CompactEncoder;
+
+impl Encode for CompactEncoder {
+    fn encode(&self, w: &mut dyn EncodeWrite, record: &log::Record) -> anyhow::Result<()> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+        let h = (secs % 86400) / 3600;
+        let m = (secs % 3600) / 60;
+        let s = secs % 60;
+
+        let level = match record.level() {
+            log::Level::Error => 'E',
+            log::Level::Warn => 'W',
+            log::Level::Info => 'I',
+            log::Level::Debug => 'D',
+            log::Level::Trace => 'T',
+        };
+
+        let module = record.module_path()
+            .and_then(|m| m.rsplit("::").next())
+            .unwrap_or("?");
+
+        writeln!(w, "{:02}:{:02}:{:02} {} {} {}", h, m, s, level, module, record.args())
+    }
+}
+
 fn build_config(level: LevelFilter) -> Result<Config> {
     let root = common::get_module_root();
     let log_path = root.join("logs/daemon.log");
@@ -55,7 +84,7 @@ fn build_config(level: LevelFilter) -> Result<Config> {
     let policy = CompoundPolicy::new(Box::new(trigger), Box::new(roller));
 
     let appender = RollingFileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("[{d(%Y-%m-%d %H:%M:%S)}] [{l}] [{M}] {m}{n}")))
+        .encoder(Box::new(CompactEncoder))
         .build(log_path, Box::new(policy))?;
 
     let config = Config::builder()

@@ -19,7 +19,7 @@ use std::fs;
 use std::time::Instant;
 
 use anyhow::Result;
-use log::info;
+use log::{debug, info};
 
 use crate::i18n::t;
 use crate::touch_boost::config::TouchBoostConfig;
@@ -73,13 +73,13 @@ impl TouchBoostController {
         self.touch_released_at = None;
         self.boost_until = Instant::now() + std::time::Duration::from_millis(self.config.min_boost_duration_ms);
         self.apply_boost();
-        info!("{}", t("touch-boost-start"));
+        debug!("{}", t("touch-boost-start"));
     }
 
     pub fn on_touch_end(&mut self) {
         if self.disabled { return; }
         self.touch_released_at = Some(Instant::now());
-        info!("{}", t("touch-boost-release"));
+        debug!("{}", t("touch-boost-release"));
     }
 
     pub fn update(&mut self) {
@@ -123,7 +123,7 @@ impl TouchBoostController {
             if all_recovered {
                 self.is_boosting = false;
                 self.touch_released_at = None;
-                info!("{}", t("touch-boost-recovered"));
+                debug!("{}", t("touch-boost-recovered"));
             }
         }
     }

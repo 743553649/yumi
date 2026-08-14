@@ -144,3 +144,11 @@ touch-boost-config-reloaded = [TouchBoost] 配置已热重载
 
 # --- Scheduler Tuning ---
 apply-scheduler-tuning = 内核调度器节能参数已应用
+
+# --- Common ---
+file-write-failed = 写入文件 { $path } 失败: { $error }
+sysfs-write-freq-skipped = [SysFS] 写入频率 { $freq } 到 { $path } 跳过: { $error }
+config-parse-error = [配置] 解析 { $path } 出错: { $error }，使用默认值
+config-not-found = [配置] 未找到 { $path }，使用默认值
+io-block-not-found = [IO优化] /sys/block 不存在，跳过
+io-applied = [IO优化] 已应用到 { $device }

@@ -145,3 +145,11 @@ touch-boost-config-reloaded = [TouchBoost] Config hot-reloaded
 
 # --- Scheduler Tuning ---
 apply-scheduler-tuning = Kernel scheduler power-saving parameters applied
+
+# --- Common ---
+file-write-failed = Failed to write to { $path }: { $error }
+sysfs-write-freq-skipped = [SysFS] Write freq { $freq } to { $path } skipped: { $error }
+config-parse-error = [Config] Parse error { $path }: { $error }. Using default
+config-not-found = [Config] Not found: { $path }. Using default
+io-block-not-found = [IO] /sys/block does not exist, skipping
+io-applied = [IO] Applied to { $device }

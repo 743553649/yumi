@@ -25,7 +25,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use nix::unistd::{access, AccessFlags};
 
-use crate::i18n::t_with_args;
+use crate::i18n::{t, t_with_args};
 use crate::fluent_args;
 
 /// 向文件写入内容，并处理可能的错误
@@ -47,7 +47,7 @@ pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Res
 // 尝试写入内容 (不抛出错误，只记录警告)
 pub fn try_write_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
     if let Err(e) = write_to_file(path.as_ref(), content) {
-        log::warn!("Failed to write to {}: {}.", path.as_ref().display(), e);
+        log::warn!("{}", t_with_args("file-write-failed", &fluent_args!("path" => path.as_ref().display().to_string(), "error" => e.to_string())));
     }
     Ok(())
 }
@@ -226,7 +226,7 @@ impl FastWriter {
                     // 两者均为预期内的瞬态错误，降级为 debug 并且不缓存，下次 tick 自动重试
                     match e.raw_os_error() {
                         Some(libc::EINVAL) | Some(libc::EBUSY) => {
-                            log::debug!("write freq {} to {:?} skipped: {}", value, self.path, e);
+                            log::debug!("{}", t_with_args("sysfs-write-freq-skipped", &fluent_args!("freq" => value.to_string(), "path" => format!("{:?}", self.path), "error" => e.to_string())));
                         }
                         _ => {
                             log::warn!("{}", t_with_args("sysfs-write-freq-failed",
@@ -287,12 +287,12 @@ where
             let mut s = String::new();
             file.read_to_string(&mut s)?;
             serde_yaml::from_str(&s).or_else(|e| {
-                log::warn!("[Config] Parse error {}: {}. Default.", path_ref.display(), e);
+                log::warn!("{}", t_with_args("config-parse-error", &fluent_args!("path" => path_ref.display().to_string(), "error" => e.to_string())));
                 Ok(T::default())
             })
         }
         Err(_) => {
-            log::warn!("[Config] Not found: {}. Default.", path_ref.display());
+            log::warn!("{}", t_with_args("config-not-found", &fluent_args!("path" => path_ref.display().to_string())));
             Ok(T::default())
         }
     }
