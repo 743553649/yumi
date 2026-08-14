@@ -20,6 +20,7 @@ use anyhow::Result;
 use log::{info, warn};
 
 use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
 use crate::idle_dive::config::IdleDiveConfig;
 use crate::idle_dive::latency::LatencyWriter;
 
