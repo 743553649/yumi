@@ -296,7 +296,30 @@ impl CpuLoadGovernor {
     pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
         self.cfg = gov_cfg.clone();
         self.normalize_cfg();
-        self.still_dive = still_dive.map(|c| { let mut c = c; c.normalize(); StillDiveRuntime::new(c) });
+
+        let old_runtime = self.still_dive.take();
+        match (old_runtime, still_dive) {
+            (Some(mut runtime), Some(mut new_config)) => {
+                new_config.normalize();
+                if runtime.config.enter_threshold != new_config.enter_threshold
+                    || runtime.config.enter_ticks != new_config.enter_ticks {
+                    runtime.low_ticks = 0;
+                }
+                if runtime.config.exit_threshold != new_config.exit_threshold
+                    || runtime.config.exit_ticks != new_config.exit_ticks {
+                    runtime.high_ticks = 0;
+                }
+                runtime.config = new_config;
+                self.still_dive = Some(runtime);
+            }
+            (None, Some(mut new_config)) => {
+                new_config.normalize();
+                self.still_dive = Some(StillDiveRuntime::new(new_config));
+            }
+            (Some(_), None) => {}
+            (None, None) => {}
+        }
+
         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
             "up" => format!("{:.2}", self.cfg.up_threshold),
             "down" => format!("{:.2}", self.cfg.down_threshold),
