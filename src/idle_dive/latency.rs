@@ -15,19 +15,21 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use anyhow::Result;
+use log::{debug, warn};
 use std::fs;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
-use anyhow::Result;
-use log::warn;
 
-use crate::i18n::t_with_args;
 use crate::fluent_args;
+use crate::i18n::t_with_args;
 
 pub struct LatencyWriter {
     pm_qos_fd: Option<RawFd>,
     governor_paths: Vec<PathBuf>,
     latency_paths: Vec<PathBuf>,
+    warned_governor: bool,
+    warned_latency: bool,
 }
 
 impl LatencyWriter {
@@ -68,6 +70,8 @@ impl LatencyWriter {
             pm_qos_fd,
             governor_paths,
             latency_paths,
+            warned_governor: false,
+            warned_latency: false,
         })
     }
 
@@ -76,6 +80,8 @@ impl LatencyWriter {
             pm_qos_fd: None,
             governor_paths: Vec::new(),
             latency_paths: Vec::new(),
+            warned_governor: false,
+            warned_latency: false,
         }
     }
 
@@ -89,46 +95,94 @@ impl LatencyWriter {
                 Some(f.into_raw_fd())
             }
             Err(e) => {
-                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
-                    "path" => "/dev/cpu_dma_latency".to_string(),
-                    "error" => e.to_string()
-                )));
+                warn!(
+                    "{}",
+                    t_with_args(
+                        "sysfs-open-failed",
+                        &fluent_args!(
+                            "path" => "/dev/cpu_dma_latency".to_string(),
+                            "error" => e.to_string()
+                        )
+                    )
+                );
                 None
             }
         }
     }
 
-    pub fn set_governor(&self, governor: &str) -> Result<()> {
-        if self.governor_paths.is_empty() { return Ok(()); }
+    pub fn set_governor(&mut self, governor: &str) -> Result<()> {
+        if self.governor_paths.is_empty() {
+            return Ok(());
+        }
         let mut any_ok = false;
         for path in &self.governor_paths {
-            if let Err(e) = crate::utils::write_to_file(path, governor.as_bytes()) {
-                warn!("{}", t_with_args("sysfs-write-failed", &fluent_args!(
-                    "path" => path.display().to_string(),
-                    "error" => e.to_string()
-                )));
+            if let Err(e) = crate::utils::write_to_file_nochmod(path, governor.as_bytes()) {
+                if self.warned_governor {
+                    debug!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-write-failed",
+                            &fluent_args!(
+                                "path" => path.display().to_string(),
+                                "error" => e.to_string()
+                            )
+                        )
+                    );
+                } else {
+                    warn!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-write-failed",
+                            &fluent_args!(
+                                "path" => path.display().to_string(),
+                                "error" => e.to_string()
+                            )
+                        )
+                    );
+                    self.warned_governor = true;
+                }
             } else {
                 any_ok = true;
             }
         }
-        if any_ok { Ok(()) } else { Err(anyhow::anyhow!("all governor writes failed")) }
+        if any_ok {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("all governor writes failed"))
+        }
     }
 
-    pub fn set_latency(&self, latency_us: i32) -> Result<()> {
+    pub fn set_latency(&mut self, latency_us: i32) -> Result<()> {
         let mut pm_qos_ok = self.pm_qos_fd.is_none();
         if let Some(fd) = self.pm_qos_fd {
             let value = latency_us.to_ne_bytes();
             unsafe {
-                let ret = libc::write(
-                    fd,
-                    value.as_ptr() as *const libc::c_void,
-                    value.len(),
-                );
+                let ret = libc::write(fd, value.as_ptr() as *const libc::c_void, value.len());
                 if ret < 0 {
-                    warn!("{}", t_with_args("sysfs-write-failed", &fluent_args!(
-                        "path" => "/dev/cpu_dma_latency".to_string(),
-                        "error" => std::io::Error::last_os_error().to_string()
-                    )));
+                    if self.warned_latency {
+                        debug!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-write-failed",
+                                &fluent_args!(
+                                    "path" => "/dev/cpu_dma_latency".to_string(),
+                                    "error" => std::io::Error::last_os_error().to_string()
+                                )
+                            )
+                        );
+                    } else {
+                        warn!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-write-failed",
+                                &fluent_args!(
+                                    "path" => "/dev/cpu_dma_latency".to_string(),
+                                    "error" => std::io::Error::last_os_error().to_string()
+                                )
+                            )
+                        );
+                        self.warned_latency = true;
+                    }
                 } else {
                     pm_qos_ok = true;
                 }
@@ -137,18 +191,44 @@ impl LatencyWriter {
 
         let mut any_sysfs_ok = false;
         for path in &self.latency_paths {
-            if let Err(e) = crate::utils::write_to_file(path, latency_us.to_string().as_bytes()) {
-                warn!("{}", t_with_args("sysfs-write-failed", &fluent_args!(
-                    "path" => path.display().to_string(),
-                    "error" => e.to_string()
-                )));
+            if let Err(e) =
+                crate::utils::write_to_file_nochmod(path, latency_us.to_string().as_bytes())
+            {
+                if self.warned_latency {
+                    debug!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-write-failed",
+                            &fluent_args!(
+                                "path" => path.display().to_string(),
+                                "error" => e.to_string()
+                            )
+                        )
+                    );
+                } else {
+                    warn!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-write-failed",
+                            &fluent_args!(
+                                "path" => path.display().to_string(),
+                                "error" => e.to_string()
+                            )
+                        )
+                    );
+                    self.warned_latency = true;
+                }
             } else {
                 any_sysfs_ok = true;
             }
         }
 
         if self.latency_paths.is_empty() {
-            if pm_qos_ok { Ok(()) } else { Err(anyhow::anyhow!("all latency writes failed")) }
+            if pm_qos_ok {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("all latency writes failed"))
+            }
         } else if pm_qos_ok || any_sysfs_ok {
             Ok(())
         } else {
