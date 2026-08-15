@@ -1,5 +1,3 @@
-mod zip_ext;
-
 use std::{
     fs,
     path::{Path, PathBuf},
