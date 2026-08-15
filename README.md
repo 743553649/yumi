@@ -114,7 +114,7 @@ yumi 内置三层智能省电联动架构，在用户不操作手机时自动压
 │  └────────┬─────────┘                                │
 │           ▼                                          │
 │  ┌──────────────────┐  CPU 空闲 → 降频/深度休眠       │
-│  │ IdleDive         │  (检测 CPU idle >12%)          │
+│  │ IdleDive         │  (检测 CPU 利用率 <12%)         │
 │  └────────┬─────────┘                                │
 │           ▼                                          │
 │  ┌──────────────────┐  用户触摸 → 立即恢复正常频率    │
@@ -125,8 +125,8 @@ yumi 内置三层智能省电联动架构，在用户不操作手机时自动压
 
 | 模块 | 触发条件 | 效果 | 配置文件 |
 | :--- | :--- | :--- | :--- |
-| **StillDive** | 亮屏、CPU 负载 <8% 持续 10 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
-| **IdleDive** | CPU idle >12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
+| **StillDive** | 亮屏、前台 app CPU 利用率 <5% 持续 30 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
+| **IdleDive** | CPU 平均利用率 <12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
 | **TouchBoost** | 用户触摸屏幕 | boost 频率拉满，100ms 后恢复，防止卡顿 | `module/config/touch_boost.yaml` |
 
 **关键配置参数：**
@@ -136,9 +136,9 @@ StillDive 在 `config.yaml` 中配置：
 ```yaml
 StillDive:
   enabled: true
-  enter_threshold: 0.08    # 进入下潜的 CPU 利用率阈值
-  enter_ticks: 10          # 连续多少个 tick 满足条件才进入
-  exit_threshold: 0.20     # 退出下潜的 CPU 利用率阈值
+  enter_threshold: 0.05    # 前台 app 总 CPU 利用率阈值
+  enter_ticks: 30          # 连续多少个 tick 满足条件才进入（30 tick ≈ 6秒）
+  exit_threshold: 0.15     # 退出下潜的前台 app CPU 利用率阈值
   exit_boost_ticks: 5      # 退出后 boost 持续 tick 数
   perf_ceil: 0.30          # 下潜时的性能上限
   smoothing_up: 0.05       # 升频平滑系数（越小越平滑）

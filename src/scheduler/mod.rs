@@ -424,7 +424,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         }
                         // 如果 CLG 处于活动状态（包含日常模式或息屏 Doze 模式），全权投喂
                         if cpu_governor.is_active() {
-                            cpu_governor.on_load_update(&core_utils);
+                            cpu_governor.on_load_update(&core_utils, foreground_max_util);
                         }
                         if !core_utils.is_empty() {
                             let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;

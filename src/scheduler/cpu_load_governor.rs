@@ -102,6 +102,25 @@ impl ClusterState {
     }
 }
 
+struct StillDiveRuntime {
+    config: StillDiveConfig,
+    mode: bool,
+    low_ticks: u32,
+    exit_boost: u32,
+}
+
+impl StillDiveRuntime {
+    fn new(config: StillDiveConfig) -> Self {
+        Self { config, mode: false, low_ticks: 0, exit_boost: 0 }
+    }
+
+    fn reset(&mut self) {
+        self.mode = false;
+        self.low_ticks = 0;
+        self.exit_boost = 0;
+    }
+}
+
 // ════════════════════════════════════════════════════════════════
 //  CpuLoadGovernor — 主控制器
 // ════════════════════════════════════════════════════════════════
@@ -112,10 +131,7 @@ pub struct CpuLoadGovernor {
     cfg: CpuLoadGovernorConfig,
     active: bool,
     log_counter: u32,
-    still_dive: Option<StillDiveConfig>,
-    still_mode: bool,
-    still_low_ticks: u32,
-    still_exit_boost: u32,
+    still_dive: Option<StillDiveRuntime>,
 }
 
 impl CpuLoadGovernor {
@@ -127,9 +143,6 @@ impl CpuLoadGovernor {
             active: false,
             log_counter: 0,
             still_dive: None,
-            still_mode: false,
-            still_low_ticks: 0,
-            still_exit_boost: 0,
         }
     }
 
@@ -141,10 +154,7 @@ impl CpuLoadGovernor {
         self.release();
         self.cfg = gov_cfg.clone();
         self.normalize_cfg();
-        self.still_dive = still_dive;
-        if let Some(ref mut sd) = self.still_dive {
-            sd.normalize();
-        }
+        self.still_dive = still_dive.map(|c| { let mut c = c; c.normalize(); StillDiveRuntime::new(c) });
 
         let clusters = crate::scheduler::get_cpu_policies();
 
@@ -274,18 +284,15 @@ impl CpuLoadGovernor {
         self.clusters.clear();
         self.active = false;
         self.log_counter = 0;
-        self.still_mode = false;
-        self.still_low_ticks = 0;
-        self.still_exit_boost = 0;
+        if let Some(ref mut sd) = self.still_dive {
+            sd.reset();
+        }
     }
 
     pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
         self.cfg = gov_cfg.clone();
         self.normalize_cfg();
-        self.still_dive = still_dive;
-        if let Some(ref mut sd) = self.still_dive {
-            sd.normalize();
-        }
+        self.still_dive = still_dive.map(|c| { let mut c = c; c.normalize(); StillDiveRuntime::new(c) });
         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
             "up" => format!("{:.2}", self.cfg.up_threshold),
             "down" => format!("{:.2}", self.cfg.down_threshold),
@@ -350,52 +357,62 @@ impl CpuLoadGovernor {
         all_ok
     }
 
-    pub fn on_load_update(&mut self, core_utils: &[f32]) {
+    pub fn on_load_update(&mut self, core_utils: &[f32], foreground_max_util: f32) {
         if !self.active { return; }
 
-        if let Some(ref sd) = self.still_dive {
-            let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
-
-            if !self.still_mode {
-                if max_util <= sd.enter_threshold {
-                    self.still_low_ticks += 1;
+        if let Some(ref mut sd) = self.still_dive {
+            if !sd.mode {
+                if foreground_max_util <= sd.config.enter_threshold {
+                    sd.low_ticks += 1;
                 } else {
-                    self.still_low_ticks = 0;
+                    sd.low_ticks = 0;
                 }
-                if self.still_low_ticks >= sd.enter_ticks {
-                    self.still_mode = true;
+                if sd.low_ticks >= sd.config.enter_ticks {
+                    sd.mode = true;
                     log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
-                        "ceil" => format!("{:.0}%", sd.perf_ceil * 100.0)
+                        "ceil" => format!("{:.0}%", sd.config.perf_ceil * 100.0)
                     )));
                 }
             } else {
-                if max_util > sd.exit_threshold {
-                    self.still_mode = false;
-                    self.still_exit_boost = sd.exit_boost_ticks;
+                if foreground_max_util > sd.config.exit_threshold {
+                    sd.mode = false;
+                    sd.exit_boost = sd.config.exit_boost_ticks;
                     log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
-                        "boost" => sd.exit_boost_ticks.to_string()
+                        "boost" => sd.config.exit_boost_ticks.to_string()
                     )));
                 }
             }
-
-            if self.still_exit_boost > 0 {
-                self.still_exit_boost -= 1;
-            }
         }
 
-        let effective_perf_ceil = if self.still_mode {
-            self.still_dive.as_ref().unwrap().perf_ceil
+        let effective_perf_ceil = if let Some(ref sd) = self.still_dive {
+            if sd.mode { sd.config.perf_ceil } else { self.cfg.perf_ceil }
         } else {
             self.cfg.perf_ceil
         };
-        let effective_perf_floor = if self.still_mode { 0.0 } else { self.cfg.perf_floor };
-        let effective_smoothing_up = if self.still_mode {
-            self.still_dive.as_ref().unwrap().smoothing_up
-        } else if self.still_exit_boost > 0 {
-            1.0
+        let effective_perf_floor = if let Some(ref sd) = self.still_dive {
+            if sd.mode { 0.0 } else { self.cfg.perf_floor }
+        } else {
+            self.cfg.perf_floor
+        };
+        let effective_smoothing_up = if let Some(ref sd) = self.still_dive {
+            if sd.mode {
+                sd.config.smoothing_up
+            } else if sd.exit_boost > 0 {
+                let base = self.cfg.smoothing_up;
+                let progress = sd.exit_boost as f32 / sd.config.exit_boost_ticks.max(1) as f32;
+                base + (1.0 - base) * progress
+            } else {
+                self.cfg.smoothing_up
+            }
         } else {
             self.cfg.smoothing_up
         };
+
+        if let Some(ref mut sd) = self.still_dive {
+            if sd.exit_boost > 0 {
+                sd.exit_boost -= 1;
+            }
+        }
 
         for cluster in &mut self.clusters {
             let raw_util = cluster.max_util(core_utils);
@@ -488,10 +505,9 @@ impl CpuLoadGovernor {
                 )));
             }
             if let Some(ref sd) = self.still_dive {
-                let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
-                debug!("[StillDive] max_util={:.1}% threshold={:.0}% mode={} ticks={}/{}",
-                    max_util * 100.0, sd.enter_threshold * 100.0,
-                    self.still_mode, self.still_low_ticks, sd.enter_ticks);
+                debug!("[StillDive] fg_util={:.1}% threshold={:.0}% mode={} ticks={}/{}",
+                    foreground_max_util * 100.0, sd.config.enter_threshold * 100.0,
+                    sd.mode, sd.low_ticks, sd.config.enter_ticks);
             }
         }
     }

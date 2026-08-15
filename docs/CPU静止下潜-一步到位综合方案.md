@@ -79,9 +79,9 @@ pub struct StillDiveConfig {
 ```
 
 默认值函数：
-- `sd_enter_thresh() -> 0.08` — 所有核心 max util < 8%
-- `sd_enter_ticks() -> 10` — 持续 10 tick (2s)
-- `sd_exit_thresh() -> 0.20` — 任意核心 util > 20% 退出
+- `sd_enter_thresh() -> 0.05` — 前台 app 总 CPU 利用率 < 5%
+- `sd_enter_ticks() -> 30` — 持续 30 tick (6s)
+- `sd_exit_thresh() -> 0.15` — 前台 app CPU 利用率 > 15% 退出
 - `sd_exit_boost() -> 5` — 退出后 5 tick (1s) 升频助力
 - `sd_perf_ceil() -> 0.30` — 下潜时 perf 上限 30%
 - `sd_smoothing_up() -> 0.05` — 下潜时升频极慢
@@ -111,7 +111,7 @@ pub struct CpuLoadGovernor {
 
 ```
 1. 如果 still_dive 存在且 enabled:
-   a. 计算 core_utils 最大 util
+   a. 计算前台 app 总 CPU 利用率（foreground_max_util）
    b. 未下潜:
       - max ≤ enter_threshold → still_low_ticks++
       - max > enter_threshold → still_low_ticks = 0
@@ -208,9 +208,9 @@ function:
 
 StillDive:
   enabled: true
-  enter_threshold: 0.08
-  enter_ticks: 10
-  exit_threshold: 0.20
+  enter_threshold: 0.05
+  enter_ticks: 30
+  exit_threshold: 0.15
   exit_boost_ticks: 5
   perf_ceil: 0.30
   smoothing_up: 0.05

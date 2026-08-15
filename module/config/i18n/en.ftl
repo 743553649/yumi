@@ -70,6 +70,7 @@ config-apply-tweaks-failed = [Config] Failed to apply reloaded system tweaks: { 
 
 # --- SysFS (shared FastWriter) ---
 sysfs-open-failed = [SysFS] Failed to open { $path }: { $error }
+sysfs-write-failed = [SysFS] Failed to write { $path }: { $error }
 sysfs-umount2-failed = [SysFS] umount2({ $path }) failed: { $error }
 sysfs-write-freq-failed = [SysFS] Write freq { $freq } failed: { $error }
 

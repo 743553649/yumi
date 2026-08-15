@@ -183,9 +183,9 @@ pub struct StillDiveConfig {
     #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
 }
 
-fn sd_enter_thresh() -> f32 { 0.20 }
-fn sd_enter_ticks() -> u32 { 10 }
-fn sd_exit_thresh() -> f32 { 0.25 }
+fn sd_enter_thresh() -> f32 { 0.05 }
+fn sd_enter_ticks() -> u32 { 30 }
+fn sd_exit_thresh() -> f32 { 0.15 }
 fn sd_exit_boost() -> u32 { 5 }
 fn sd_perf_ceil() -> f32 { 0.30 }
 fn sd_smoothing_up() -> f32 { 0.05 }

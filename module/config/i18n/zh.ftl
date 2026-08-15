@@ -69,6 +69,7 @@ config-apply-tweaks-failed = [Config] 应用重载的系统微调失败: { $erro
 
 # --- SysFS (共享 FastWriter) ---
 sysfs-open-failed = [SysFS] 打开 { $path } 失败: { $error }
+sysfs-write-failed = [SysFS] 写入 { $path } 失败: { $error }
 sysfs-umount2-failed = [SysFS] umount2({ $path }) 失败: { $error }
 sysfs-write-freq-failed = [SysFS] 写入频率 { $freq } 失败: { $error }
 
