@@ -25,7 +25,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use nix::unistd::{access, AccessFlags};
 
-use crate::i18n::{t, t_with_args};
+use crate::i18n::t_with_args;
 use crate::fluent_args;
 
 /// 向文件写入内容，并处理可能的错误

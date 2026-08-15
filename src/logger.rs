@@ -25,7 +25,6 @@ use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::{Encode, Write as EncodeWrite};
 use log4rs::Handle;
 use once_cell::sync::OnceCell;
-use std::io::Write;
 use std::sync::Mutex;
 use crate::common;
 use crate::i18n::t_with_args;
@@ -45,6 +44,7 @@ fn parse_level(level_str: &str) -> LevelFilter {
     }
 }
 
+#[derive(Debug)]
 struct CompactEncoder;
 
 impl Encode for CompactEncoder {
@@ -69,7 +69,7 @@ impl Encode for CompactEncoder {
             .and_then(|m| m.rsplit("::").next())
             .unwrap_or("?");
 
-        writeln!(w, "{:02}:{:02}:{:02} {} {} {}", h, m, s, level, module, record.args())
+        Ok(writeln!(w, "{:02}:{:02}:{:02} {} {} {}", h, m, s, level, module, record.args())?)
     }
 }
 
