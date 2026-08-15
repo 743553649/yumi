@@ -23,4 +23,5 @@ Thumbs.db
 yumi-*.zip
 *.bak
 output/
+.build-temp/
 *.log

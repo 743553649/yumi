@@ -117,7 +117,7 @@ fn build(sh: &Shell) -> Result<()> {
 }
 
 fn temp_dir() -> PathBuf {
-    Path::new("output").join(".temp")
+    Path::new(".build-temp").to_path_buf()
 }
 
 fn aarch64_bin_path() -> PathBuf {
