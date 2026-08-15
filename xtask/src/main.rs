@@ -10,9 +10,6 @@ use clap::{Parser, Subcommand};
 use fs_extra::{dir, file};
 use serde::Deserialize;
 use xshell::{cmd, Shell};
-use zip::{write::FileOptions, CompressionMethod};
-
-use crate::zip_ext::zip_create_from_directory_with_options;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Yumi Build System")]
@@ -106,27 +103,18 @@ fn build(sh: &Shell) -> Result<()> {
         &dir::CopyOptions::new().overwrite(true).content_only(true),
     )?;
     
-    // 6. 打包 Zip
+    // 6. 移动到输出目录
     let output_dir = Path::new("output");
-    fs::create_dir_all(output_dir)?; // 确保 output 目录存在
+    if output_dir.exists() {
+        fs::remove_dir_all(output_dir)?;
+    }
     
-    let zip_filename = format!(
-        "yumi-{}-{}-{}.zip",
-        data.package.version,
-        cal_git_code(sh)?,
-        get_date()
-    );
-    let zip_path = output_dir.join(zip_filename);
+    // 将 .temp 目录重命名为最终输出目录
+    fs::rename(&temp_dir, output_dir)?;
 
-    println!("开始打包: {}", zip_path.display());
-
-    let options: FileOptions<'_, ()> = FileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(9));
-        
-    zip_create_from_directory_with_options(&zip_path, &temp_dir, |_| options)?;
-
-    println!("构建并打包成功！");
+    let git_code = cal_git_code(sh)?;
+    let date = get_date();
+    println!("构建完成: yumi-{}-{}-{}", data.package.version, git_code, date);
     Ok(())
 }
 

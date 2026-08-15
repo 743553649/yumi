@@ -71,31 +71,9 @@ jobs:
       - name: Run xtask build
         run: cargo xtask build
 
-      # 8. 动态获取 xtask 生成的 zip 文件名
-      - name: Get Artifact Name
-        id: artifact-name
-        run: |
-          # 找到 output 目录下生成的 zip 文件路径
-          FILE_PATH=$(find output -name "*.zip" -type f | head -n 1)
-          if [ -z "$FILE_PATH" ]; then
-            echo "Error: No zip file found in output directory"
-            ls -la output/
-            exit 1
-          fi
-          # 提取纯文件名 (例如 yumi-1.0.0-42-20260409-2000.zip)
-          FILE_NAME=$(basename "$FILE_PATH")
-          # 去掉 .zip 后缀，防止 GitHub 下载时变成 .zip.zip
-          ARTIFACT_NAME="${FILE_NAME%.zip}"
-          
-          # 将提取出的名字和路径存入 GitHub 环境变量，供下一步使用
-          echo "name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-          echo "path=$FILE_PATH" >> $GITHUB_OUTPUT
-
-      # 9. 使用动态名称上传构建产物
+      # 9. 上传构建产物（目录会被自动打包成 zip）
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v7
         with:
-          # 使用上一步获取的动态名称
-          name: ${{ steps.artifact-name.outputs.name }}
-          # 精确指定要上传的那一个文件
-          path: ${{ steps.artifact-name.outputs.path }}
+          name: yumi-${{ github.sha }}
+          path: output/
