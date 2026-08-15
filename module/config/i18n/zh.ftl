@@ -119,6 +119,7 @@ log-level-updated = 日志级别已更新为: { $level }
 # --- StillDive ---
 clg-still-enter = [CLG] 亮屏静止下潜: 已进入深度省电模式 (perf ≤ { $ceil })
 clg-still-exit = [CLG] 亮屏静止下潜: 检测到活动，已退出 (升频助力 { $boost } ticks)
+clg-still-tick-log = [CLG] 亮屏静止下潜: 前台利用率={ $fg_util }% 阈值={ $threshold }% 模式={ $mode } ticks={ $low_ticks }/{ $enter_ticks }
 
 # --- IdleDive ---
 idle-dive-init = [IdleDive] CPU 静止下潜控制器初始化完成

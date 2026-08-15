@@ -120,6 +120,7 @@ log-level-updated = Log level updated to: { $level }
 # --- StillDive ---
 clg-still-enter = [CLG] Screen-on Still Dive: entered deep power-saving mode (perf ≤ { $ceil })
 clg-still-exit = [CLG] Screen-on Still Dive: activity detected, exited (exit boost { $boost } ticks)
+clg-still-tick-log = [CLG] StillDive: fg_util={ $fg_util }% threshold={ $threshold }% mode={ $mode } ticks={ $low_ticks }/{ $enter_ticks }
 
 # --- IdleDive ---
 idle-dive-init = [IdleDive] CPU Still Dive controller initialized
