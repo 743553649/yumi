@@ -378,6 +378,7 @@ impl CpuLoadGovernor {
                 if sd.low_ticks >= sd.config.enter_ticks {
                     sd.mode = true;
                     sd.high_ticks = 0;
+                    sd.low_ticks = 0;
                     if sd.log_cooldown == 0 {
                         log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
                             "ceil" => format!("{:.0}%", sd.config.perf_ceil * 100.0)
@@ -391,6 +392,7 @@ impl CpuLoadGovernor {
                     if sd.high_ticks >= sd.config.exit_ticks {
                         sd.mode = false;
                         sd.high_ticks = 0;
+                        sd.low_ticks = 0;
                         sd.exit_boost = sd.config.exit_boost_ticks;
                         if sd.log_cooldown == 0 {
                             log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
