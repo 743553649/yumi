@@ -178,6 +178,7 @@ pub struct StillDiveConfig {
     #[serde(default = "sd_enter_thresh")] pub enter_threshold: f32,
     #[serde(default = "sd_enter_ticks")] pub enter_ticks: u32,
     #[serde(default = "sd_exit_thresh")] pub exit_threshold: f32,
+    #[serde(default = "sd_exit_ticks")] pub exit_ticks: u32,
     #[serde(default = "sd_exit_boost")] pub exit_boost_ticks: u32,
     #[serde(default = "sd_perf_ceil")] pub perf_ceil: f32,
     #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
@@ -186,6 +187,7 @@ pub struct StillDiveConfig {
 fn sd_enter_thresh() -> f32 { 0.05 }
 fn sd_enter_ticks() -> u32 { 30 }
 fn sd_exit_thresh() -> f32 { 0.15 }
+fn sd_exit_ticks() -> u32 { 15 }
 fn sd_exit_boost() -> u32 { 5 }
 fn sd_perf_ceil() -> f32 { 0.30 }
 fn sd_smoothing_up() -> f32 { 0.05 }
@@ -197,6 +199,7 @@ impl Default for StillDiveConfig {
             enter_threshold: sd_enter_thresh(),
             enter_ticks: sd_enter_ticks(),
             exit_threshold: sd_exit_thresh(),
+            exit_ticks: sd_exit_ticks(),
             exit_boost_ticks: sd_exit_boost(),
             perf_ceil: sd_perf_ceil(),
             smoothing_up: sd_smoothing_up(),
@@ -218,6 +221,7 @@ impl StillDiveConfig {
             self.exit_threshold = (self.enter_threshold + 0.05).min(1.0);
         }
         if self.enter_ticks == 0 { self.enter_ticks = sd_enter_ticks(); }
+        if self.exit_ticks == 0 { self.exit_ticks = sd_exit_ticks(); }
         if self.exit_boost_ticks > 100 { self.exit_boost_ticks = 100; }
     }
 }

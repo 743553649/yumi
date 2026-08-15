@@ -38,7 +38,7 @@ pub struct IdleDiveConfig {
 fn d_dive_threshold() -> f32 { 0.12 }
 fn d_exit_threshold() -> f32 { 0.18 }
 fn d_dive_delay_ms() -> u64 { 500 }
-fn d_exit_delay_ms() -> u64 { 30 }
+fn d_exit_delay_ms() -> u64 { 500 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct IdleDiveGovernors {

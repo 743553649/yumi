@@ -106,18 +106,22 @@ struct StillDiveRuntime {
     config: StillDiveConfig,
     mode: bool,
     low_ticks: u32,
+    high_ticks: u32,
     exit_boost: u32,
+    log_cooldown: u32,
 }
 
 impl StillDiveRuntime {
     fn new(config: StillDiveConfig) -> Self {
-        Self { config, mode: false, low_ticks: 0, exit_boost: 0 }
+        Self { config, mode: false, low_ticks: 0, high_ticks: 0, exit_boost: 0, log_cooldown: 0 }
     }
 
     fn reset(&mut self) {
         self.mode = false;
         self.low_ticks = 0;
+        self.high_ticks = 0;
         self.exit_boost = 0;
+        self.log_cooldown = 0;
     }
 }
 
@@ -361,6 +365,10 @@ impl CpuLoadGovernor {
         if !self.active { return; }
 
         if let Some(ref mut sd) = self.still_dive {
+            if sd.log_cooldown > 0 {
+                sd.log_cooldown -= 1;
+            }
+            
             if !sd.mode {
                 if foreground_max_util <= sd.config.enter_threshold {
                     sd.low_ticks += 1;
@@ -369,17 +377,30 @@ impl CpuLoadGovernor {
                 }
                 if sd.low_ticks >= sd.config.enter_ticks {
                     sd.mode = true;
-                    log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
-                        "ceil" => format!("{:.0}%", sd.config.perf_ceil * 100.0)
-                    )));
+                    sd.high_ticks = 0;
+                    if sd.log_cooldown == 0 {
+                        log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
+                            "ceil" => format!("{:.0}%", sd.config.perf_ceil * 100.0)
+                        )));
+                        sd.log_cooldown = 10;
+                    }
                 }
             } else {
                 if foreground_max_util > sd.config.exit_threshold {
-                    sd.mode = false;
-                    sd.exit_boost = sd.config.exit_boost_ticks;
-                    log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
-                        "boost" => sd.config.exit_boost_ticks.to_string()
-                    )));
+                    sd.high_ticks += 1;
+                    if sd.high_ticks >= sd.config.exit_ticks {
+                        sd.mode = false;
+                        sd.high_ticks = 0;
+                        sd.exit_boost = sd.config.exit_boost_ticks;
+                        if sd.log_cooldown == 0 {
+                            log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
+                                "boost" => sd.config.exit_boost_ticks.to_string()
+                            )));
+                            sd.log_cooldown = 10;
+                        }
+                    }
+                } else {
+                    sd.high_ticks = 0;
                 }
             }
         }

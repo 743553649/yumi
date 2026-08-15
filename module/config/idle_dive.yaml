@@ -2,7 +2,7 @@ enabled: true
 dive_threshold: 0.12
 exit_threshold: 0.18
 dive_delay_ms: 500
-exit_delay_ms: 30
+exit_delay_ms: 500
 governors:
   normal: "menu"
   diving: "menu"

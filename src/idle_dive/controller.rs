@@ -38,6 +38,7 @@ pub struct IdleDiveController {
     dive_timer: Instant,
     exit_timer: Instant,
     last_doze_exit: Instant,
+    log_cooldown: u32,
     disabled: bool,
 }
 
@@ -54,6 +55,7 @@ impl IdleDiveController {
             dive_timer: Instant::now(),
             exit_timer: Instant::now(),
             last_doze_exit: Instant::now(),
+            log_cooldown: 0,
             disabled: false,
         })
     }
@@ -66,12 +68,17 @@ impl IdleDiveController {
             dive_timer: Instant::now(),
             exit_timer: Instant::now(),
             last_doze_exit: Instant::now(),
+            log_cooldown: 0,
             disabled: true,
         }
     }
 
     pub fn update(&mut self, avg_util: f32) {
         if self.disabled { return; }
+
+        if self.log_cooldown > 0 {
+            self.log_cooldown -= 1;
+        }
 
         match self.state {
             IdleDiveState::Normal => {
@@ -134,10 +141,13 @@ impl IdleDiveController {
             IdleDiveState::DozeDiving => (&self.config.governors.doze, self.config.params.doze_latency_us),
         };
 
-        match new_state {
-            IdleDiveState::Normal => info!("{}", t("idle-dive-exit")),
-            IdleDiveState::Diving => info!("{}", t("idle-dive-enter")),
-            IdleDiveState::DozeDiving => info!("{}", t("idle-dive-enter-dozed")),
+        if self.log_cooldown == 0 {
+            match new_state {
+                IdleDiveState::Normal => info!("{}", t("idle-dive-exit")),
+                IdleDiveState::Diving => info!("{}", t("idle-dive-enter")),
+                IdleDiveState::DozeDiving => info!("{}", t("idle-dive-enter-dozed")),
+            }
+            self.log_cooldown = 5;
         }
 
         if let Err(e) = self.latency_writer.set_governor(governor) {
