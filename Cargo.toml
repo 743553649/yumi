@@ -4,7 +4,7 @@ members = ["xtask", "yumi-ebpf"]
 [package]
 name = "yumi"
 version = "2.0.2"
-edition = "2024"
+edition = "2021"
 authors = ["yuki <loyeturz@163.com>"]
 license = "GPL-3.0-or-later"
 description = "A powerful Android system daemon for monitoring and scheduling."
