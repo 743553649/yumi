@@ -76,7 +76,12 @@ jobs:
         id: artifact-name
         run: |
           # 找到 output 目录下生成的 zip 文件路径
-          FILE_PATH=$(ls output/*.zip | head -n 1)
+          FILE_PATH=$(find output -name "*.zip" -type f | head -n 1)
+          if [ -z "$FILE_PATH" ]; then
+            echo "Error: No zip file found in output directory"
+            ls -la output/
+            exit 1
+          fi
           # 提取纯文件名 (例如 yumi-1.0.0-42-20260409-2000.zip)
           FILE_NAME=$(basename "$FILE_PATH")
           # 去掉 .zip 后缀，防止 GitHub 下载时变成 .zip.zip
