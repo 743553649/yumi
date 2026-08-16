@@ -144,6 +144,7 @@ touch-boost-start = [TouchBoost] Touch start, applying boost
 touch-boost-release = [TouchBoost] Touch released, starting decay recovery
 touch-boost-recovered = [TouchBoost] Recovery complete
 touch-boost-config-reloaded = [TouchBoost] Config hot-reloaded
+touch-boost-send-failed = [TouchBoost] Failed to send touch event: { $error }
 
 # --- Scheduler Tuning ---
 apply-scheduler-tuning = Kernel scheduler power-saving parameters applied

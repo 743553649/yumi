@@ -16,7 +16,7 @@
  */
 
 use std::fs;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use log::{debug, info};
@@ -25,6 +25,9 @@ use crate::i18n::t;
 use crate::touch_boost::config::TouchBoostConfig;
 use crate::utils::FastWriter;
 
+const MIN_RECOVERABLE_FREQ: u32 = 100_000; // 100MHz
+const LOG_COOLDOWN: Duration = Duration::from_secs(1);
+
 pub struct TouchBoostController {
     config: TouchBoostConfig,
     cluster_writers: Vec<FastWriter>,
@@ -32,6 +35,7 @@ pub struct TouchBoostController {
     current_boost_freqs: Vec<u32>,
     boost_until: Instant,
     touch_released_at: Option<Instant>,
+    last_debug_log: Instant,
     is_boosting: bool,
     disabled: bool,
 }
@@ -49,6 +53,7 @@ impl TouchBoostController {
             current_boost_freqs: initial_freqs,
             boost_until: Instant::now(),
             touch_released_at: None,
+            last_debug_log: Instant::now() - LOG_COOLDOWN,
             is_boosting: false,
             disabled: false,
         })
@@ -62,6 +67,7 @@ impl TouchBoostController {
             current_boost_freqs: Vec::new(),
             boost_until: Instant::now(),
             touch_released_at: None,
+            last_debug_log: Instant::now() - LOG_COOLDOWN,
             is_boosting: false,
             disabled: true,
         }
@@ -76,7 +82,10 @@ impl TouchBoostController {
         self.boost_until =
             Instant::now() + std::time::Duration::from_millis(self.config.min_boost_duration_ms);
         self.apply_boost();
-        debug!("{}", t("touch-boost-start"));
+        if self.last_debug_log.elapsed() >= LOG_COOLDOWN {
+            debug!("{}", t("touch-boost-start"));
+            self.last_debug_log = Instant::now();
+        }
     }
 
     pub fn on_touch_end(&mut self) {
@@ -84,7 +93,10 @@ impl TouchBoostController {
             return;
         }
         self.touch_released_at = Some(Instant::now());
-        debug!("{}", t("touch-boost-release"));
+        if self.last_debug_log.elapsed() >= LOG_COOLDOWN {
+            debug!("{}", t("touch-boost-release"));
+            self.last_debug_log = Instant::now();
+        }
     }
 
     pub fn update(&mut self) {
@@ -93,11 +105,12 @@ impl TouchBoostController {
         }
 
         if let Some(released_at) = self.touch_released_at {
-            let elapsed = released_at.elapsed().as_millis() as u64;
+            let now = Instant::now();
+            let elapsed = now.duration_since(released_at).as_millis() as u64;
             if elapsed < self.config.release_delay_ms {
                 return;
             }
-            if Instant::now() < self.boost_until {
+            if now < self.boost_until {
                 return;
             }
 
@@ -123,7 +136,7 @@ impl TouchBoostController {
                             .map_or(&[][..], |v| v.as_slice()),
                         raw,
                     );
-                    if new_freq <= 100000 {
+                    if new_freq <= MIN_RECOVERABLE_FREQ {
                         *freq = 0;
                         freq_updates.push((i, 0));
                     } else {

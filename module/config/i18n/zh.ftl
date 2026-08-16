@@ -143,6 +143,7 @@ touch-boost-start = [TouchBoost] 触摸开始，应用 boost
 touch-boost-release = [TouchBoost] 松手，开始衰减恢复
 touch-boost-recovered = [TouchBoost] 恢复完成
 touch-boost-config-reloaded = [TouchBoost] 配置已热重载
+touch-boost-send-failed = [TouchBoost] 发送触摸事件失败: { $error }
 
 # --- Scheduler Tuning ---
 apply-scheduler-tuning = 内核调度器节能参数已应用

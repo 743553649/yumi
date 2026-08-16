@@ -26,10 +26,10 @@ use crate::fluent_args;
 use crate::i18n::{t, t_with_args};
 use crate::touch_boost::config::TouchBoostConfig;
 
-const BTN_TOUCH: u16 = 0x14a;
-const ABS_MT_TRACKING_ID: u16 = 0x39;
-const EV_KEY: u16 = 1;
-const EV_ABS: u16 = 3;
+const BTN_TOUCH: u16 = 0x14a;         // 触摸按钮事件
+const ABS_MT_TRACKING_ID: u16 = 0x39; // 多点触控跟踪ID
+const EV_KEY: u16 = 1;                // 按键事件类型
+const EV_ABS: u16 = 3;                // 绝对坐标事件类型
 
 #[derive(Debug, Clone)]
 pub enum TouchEvent {
@@ -156,18 +156,26 @@ impl TouchMonitor {
                     if ev.type_ == EV_KEY && ev.code == BTN_TOUCH {
                         if ev.value > 0 && !touching {
                             touching = true;
-                            let _ = tx.send(TouchEvent::Start);
+                            if let Err(e) = tx.send(TouchEvent::Start) {
+                                warn!("{}", t_with_args("touch-boost-send-failed", &fluent_args!("error" => e.to_string())));
+                            }
                         } else if ev.value == 0 && touching {
                             touching = false;
-                            let _ = tx.send(TouchEvent::End);
+                            if let Err(e) = tx.send(TouchEvent::End) {
+                                warn!("{}", t_with_args("touch-boost-send-failed", &fluent_args!("error" => e.to_string())));
+                            }
                         }
                     } else if ev.type_ == EV_ABS && ev.code == ABS_MT_TRACKING_ID {
                         if ev.value >= 0 && !touching {
                             touching = true;
-                            let _ = tx.send(TouchEvent::Start);
+                            if let Err(e) = tx.send(TouchEvent::Start) {
+                                warn!("{}", t_with_args("touch-boost-send-failed", &fluent_args!("error" => e.to_string())));
+                            }
                         } else if ev.value < 0 && touching {
                             touching = false;
-                            let _ = tx.send(TouchEvent::End);
+                            if let Err(e) = tx.send(TouchEvent::End) {
+                                warn!("{}", t_with_args("touch-boost-send-failed", &fluent_args!("error" => e.to_string())));
+                            }
                         }
                     }
                 }
