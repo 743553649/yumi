@@ -15,20 +15,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use crate::common;
+use crate::fluent_args;
+use crate::i18n::t_with_args;
 use anyhow::{anyhow, Result};
 use log::LevelFilter;
-use log4rs::append::rolling_file::RollingFileAppender;
-use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
 use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
 use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
+use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
+use log4rs::append::rolling_file::RollingFileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::{Encode, Write as EncodeWrite};
 use log4rs::Handle;
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
-use crate::common;
-use crate::i18n::t_with_args;
-use crate::fluent_args;
 
 static LOG_HANDLE: OnceCell<Mutex<Handle>> = OnceCell::new();
 
@@ -65,11 +65,21 @@ impl Encode for CompactEncoder {
             log::Level::Trace => 'T',
         };
 
-        let module = record.module_path()
+        let module = record
+            .module_path()
             .and_then(|m| m.rsplit("::").next())
             .unwrap_or("?");
 
-        Ok(writeln!(w, "{:02}:{:02}:{:02} {} {} {}", h, m, s, level, module, record.args())?)
+        Ok(writeln!(
+            w,
+            "{:02}:{:02}:{:02} {} {} {}",
+            h,
+            m,
+            s,
+            level,
+            module,
+            record.args()
+        )?)
     }
 }
 
@@ -78,8 +88,7 @@ fn build_config(level: LevelFilter) -> Result<Config> {
     let log_path = root.join("logs/daemon.log");
     let archive_pattern = root.join("logs/daemon.{}.log");
 
-    let roller = FixedWindowRoller::builder()
-        .build(archive_pattern.to_str().unwrap(), 3)?;
+    let roller = FixedWindowRoller::builder().build(archive_pattern.to_str().unwrap(), 3)?;
     let trigger = SizeTrigger::new(5 * 1024 * 1024); // 5MB
     let policy = CompoundPolicy::new(Box::new(trigger), Box::new(roller));
 
@@ -99,7 +108,8 @@ pub fn init(level_str: &str) -> Result<()> {
     let level = parse_level(level_str);
     let config = build_config(level)?;
     let handle = log4rs::init_config(config)?;
-    LOG_HANDLE.set(Mutex::new(handle))
+    LOG_HANDLE
+        .set(Mutex::new(handle))
         .map_err(|_| anyhow!("Logger already initialized"))?;
     Ok(())
 }
@@ -112,7 +122,13 @@ pub fn update_level(level_str: &str) {
             match build_config(level) {
                 Ok(cfg) => {
                     handle.set_config(cfg);
-                    log::debug!("{}", t_with_args("log-level-updated", &fluent_args!("level" => level.to_string())));
+                    log::debug!(
+                        "{}",
+                        t_with_args(
+                            "log-level-updated",
+                            &fluent_args!("level" => level.to_string())
+                        )
+                    );
                 }
                 Err(e) => eprintln!("Failed to rebuild logger config: {}", e),
             }

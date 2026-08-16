@@ -22,8 +22,8 @@ use std::sync::mpsc::Sender;
 use anyhow::Result;
 use log::{info, warn};
 
-use crate::i18n::{t, t_with_args};
 use crate::fluent_args;
+use crate::i18n::{t, t_with_args};
 use crate::touch_boost::config::TouchBoostConfig;
 
 const BTN_TOUCH: u16 = 0x14a;
@@ -64,33 +64,59 @@ impl TouchMonitor {
             match OpenOptions::new().read(true).open(dev) {
                 Ok(f) => {
                     let fd = f.as_raw_fd();
-                    let mut ev = libc::epoll_event { events: libc::EPOLLIN as u32, u64: fd as u64 };
-                    let ret = unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut ev) };
+                    let mut ev = libc::epoll_event {
+                        events: libc::EPOLLIN as u32,
+                        u64: fd as u64,
+                    };
+                    let ret =
+                        unsafe { libc::epoll_ctl(epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut ev) };
                     if ret < 0 {
-                        warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
-                            "path" => dev.clone(), "error" => "epoll_ctl failed".to_string()
-                        )));
+                        warn!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-open-failed",
+                                &fluent_args!(
+                                    "path" => dev.clone(), "error" => "epoll_ctl failed".to_string()
+                                )
+                            )
+                        );
                         continue;
                     }
                     input_files.push(f);
                 }
                 Err(e) => {
-                    warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
-                        "path" => dev.clone(), "error" => e.to_string()
-                    )));
+                    warn!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-open-failed",
+                            &fluent_args!(
+                                "path" => dev.clone(), "error" => e.to_string()
+                            )
+                        )
+                    );
                 }
             }
         }
 
         if input_files.is_empty() {
-            unsafe { libc::close(epoll_fd); }
+            unsafe {
+                libc::close(epoll_fd);
+            }
             return Err(anyhow::anyhow!("no input devices could be opened"));
         }
 
-        info!("{}", t_with_args("touch-boost-listener-started",
-            &fluent_args!("count" => input_files.len().to_string())));
+        info!(
+            "{}",
+            t_with_args(
+                "touch-boost-listener-started",
+                &fluent_args!("count" => input_files.len().to_string())
+            )
+        );
 
-        Ok(Self { epoll_fd, input_files })
+        Ok(Self {
+            epoll_fd,
+            input_files,
+        })
     }
 
     pub fn run(&self, tx: Sender<TouchEvent>) -> Result<()> {
@@ -105,17 +131,20 @@ impl TouchMonitor {
             };
             if n < 0 {
                 let err = std::io::Error::last_os_error();
-                if err.kind() == std::io::ErrorKind::Interrupted { continue; }
+                if err.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
                 return Err(anyhow::anyhow!("epoll_wait failed: {}", err));
             }
 
             for i in 0..n as usize {
                 let fd = events[i].u64 as RawFd;
                 let mut buf = [0u8; 256];
-                let bytes = unsafe {
-                    libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
-                };
-                if bytes < 0 { continue; }
+                let bytes =
+                    unsafe { libc::read(fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+                if bytes < 0 {
+                    continue;
+                }
 
                 let count = bytes as usize / std::mem::size_of::<InputEvent>();
                 for j in 0..count {
@@ -165,7 +194,9 @@ impl TouchMonitor {
 
 impl Drop for TouchMonitor {
     fn drop(&mut self) {
-        unsafe { libc::close(self.epoll_fd); }
+        unsafe {
+            libc::close(self.epoll_fd);
+        }
     }
 }
 

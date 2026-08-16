@@ -23,12 +23,12 @@ use std::ptr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use aya::Ebpf;
 use aya::maps::RingBuf;
-use aya::programs::UProbe;
 use aya::programs::uprobe::{UProbeAttachLocation, UProbeAttachPoint, UProbeScope};
+use aya::programs::UProbe;
+use aya::Ebpf;
 use log::{debug, info, warn};
-use mio::{Events, Interest, Poll, Token, unix::SourceFd};
+use mio::{unix::SourceFd, Events, Interest, Poll, Token};
 use tokio::sync::watch;
 
 use crate::common::DaemonEvent;
@@ -65,7 +65,10 @@ struct ProbeState {
 
 impl ProbeState {
     fn new() -> Self {
-        Self { last_ktime_ns: None, frametimes: VecDeque::with_capacity(FRAMETIME_WINDOW) }
+        Self {
+            last_ktime_ns: None,
+            frametimes: VecDeque::with_capacity(FRAMETIME_WINDOW),
+        }
     }
 
     fn ingest(&mut self, ktime_ns: u64) {
@@ -148,8 +151,7 @@ impl FpsManager {
 
         // attach 新 PID
         let pid_i32 = new_pid as i32;
-        let scope =
-            UProbeScope::OneProcess(NonZeroU32::new(new_pid).expect("pid must be > 0"));
+        let scope = UProbeScope::OneProcess(NonZeroU32::new(new_pid).expect("pid must be > 0"));
 
         let program: &mut UProbe = self.bpf.program_mut("handle_frame").unwrap().try_into()?;
         let link = program
@@ -172,7 +174,10 @@ impl FpsManager {
 
         info!(
             "{}",
-            t_with_args("fps-monitor-attached", &fluent_args!("pid" => pid_i32.to_string()))
+            t_with_args(
+                "fps-monitor-attached",
+                &fluent_args!("pid" => pid_i32.to_string())
+            )
         );
         Ok(())
     }
@@ -186,8 +191,7 @@ impl FpsManager {
             if data.len() < size_of::<FrameTimestampEvent>() {
                 continue;
             }
-            let event =
-                unsafe { ptr::read_unaligned(data.as_ptr().cast::<FrameTimestampEvent>()) };
+            let event = unsafe { ptr::read_unaligned(data.as_ptr().cast::<FrameTimestampEvent>()) };
 
             if let Some(state) = self.states.get_mut(&event.pid) {
                 state.ingest(event.ktime_ns);

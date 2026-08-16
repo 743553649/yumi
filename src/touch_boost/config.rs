@@ -33,10 +33,18 @@ pub struct TouchBoostConfig {
     pub input_device: String,
 }
 
-fn d_boost_freqs() -> Vec<u32> { vec![2500000, 0, 2000000] }
-fn d_release_delay_ms() -> u64 { 100 }
-fn d_recover_decay() -> f32 { 0.15 }
-fn d_min_boost_duration_ms() -> u64 { 50 }
+fn d_boost_freqs() -> Vec<u32> {
+    vec![2500000, 0, 2000000]
+}
+fn d_release_delay_ms() -> u64 {
+    100
+}
+fn d_recover_decay() -> f32 {
+    0.15
+}
+fn d_min_boost_duration_ms() -> u64 {
+    50
+}
 
 impl Default for TouchBoostConfig {
     fn default() -> Self {

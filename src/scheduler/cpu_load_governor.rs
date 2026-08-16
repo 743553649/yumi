@@ -136,6 +136,30 @@ impl StillDiveRuntime {
         self.exit_boost = 0;
         self.log_cooldown = 0;
     }
+
+    fn effective_params(
+        &self,
+        base_ceil: f32,
+        base_floor: f32,
+        base_smoothing_up: f32,
+    ) -> (f32, f32, f32) {
+        let ceil = if self.mode {
+            self.config.perf_ceil
+        } else {
+            base_ceil
+        };
+        let floor = if self.mode { 0.0 } else { base_floor };
+        let smoothing_up = if self.mode {
+            self.config.smoothing_up
+        } else if self.exit_boost > 0 {
+            let progress =
+                self.exit_boost as f32 / self.config.exit_boost_ticks.max(1) as f32;
+            base_smoothing_up + (1.0 - base_smoothing_up) * progress
+        } else {
+            base_smoothing_up
+        };
+        (ceil, floor, smoothing_up)
+    }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -536,37 +560,12 @@ impl CpuLoadGovernor {
             }
         }
 
-        let effective_perf_ceil = if let Some(ref sd) = self.still_dive {
-            if sd.mode {
-                sd.config.perf_ceil
+        let (effective_perf_ceil, effective_perf_floor, effective_smoothing_up) =
+            if let Some(ref sd) = self.still_dive {
+                sd.effective_params(self.cfg.perf_ceil, self.cfg.perf_floor, self.cfg.smoothing_up)
             } else {
-                self.cfg.perf_ceil
-            }
-        } else {
-            self.cfg.perf_ceil
-        };
-        let effective_perf_floor = if let Some(ref sd) = self.still_dive {
-            if sd.mode {
-                0.0
-            } else {
-                self.cfg.perf_floor
-            }
-        } else {
-            self.cfg.perf_floor
-        };
-        let effective_smoothing_up = if let Some(ref sd) = self.still_dive {
-            if sd.mode {
-                sd.config.smoothing_up
-            } else if sd.exit_boost > 0 {
-                let base = self.cfg.smoothing_up;
-                let progress = sd.exit_boost as f32 / sd.config.exit_boost_ticks.max(1) as f32;
-                base + (1.0 - base) * progress
-            } else {
-                self.cfg.smoothing_up
-            }
-        } else {
-            self.cfg.smoothing_up
-        };
+                (self.cfg.perf_ceil, self.cfg.perf_floor, self.cfg.smoothing_up)
+            };
 
         if let Some(ref mut sd) = self.still_dive {
             if sd.exit_boost > 0 {

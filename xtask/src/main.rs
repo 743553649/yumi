@@ -57,7 +57,7 @@ fn get_date() -> String {
 
 fn build(sh: &Shell) -> Result<()> {
     let temp_dir = temp_dir();
-    
+
     // 读取 Cargo.toml (注意：因为通过 `cargo xtask` 运行，工作目录是项目根目录)
     let toml_content = fs::read_to_string("Cargo.toml")?;
     let data: CargoConfig = toml::from_str(&toml_content)?;
@@ -87,32 +87,35 @@ fn build(sh: &Shell) -> Result<()> {
     // 5. 组装 bin 目录
     let bin_path = temp_dir.join("core").join("bin");
     fs::create_dir_all(&bin_path)?;
-    
+
     file::copy(
         aarch64_bin_path(),
         bin_path.join("yumi"),
         &file::CopyOptions::new().overwrite(true),
     )?;
-    
+
     let webroot_dir = temp_dir.join("webroot");
     dir::copy(
         Path::new("webui").join("dist"),
         &webroot_dir,
         &dir::CopyOptions::new().overwrite(true).content_only(true),
     )?;
-    
+
     // 6. 移动到输出目录
     let output_dir = Path::new("output");
     if output_dir.exists() {
         fs::remove_dir_all(output_dir)?;
     }
-    
+
     // 将 .temp 目录重命名为最终输出目录
     fs::rename(&temp_dir, output_dir)?;
 
     let git_code = cal_git_code(sh)?;
     let date = get_date();
-    println!("构建完成: yumi-{}-{}-{}", data.package.version, git_code, date);
+    println!(
+        "构建完成: yumi-{}-{}-{}",
+        data.package.version, git_code, date
+    );
     Ok(())
 }
 
@@ -131,7 +134,11 @@ fn build_core(sh: &Shell) -> Result<()> {
     println!("正在编译 Rust Core...");
     // push_env 会在当前作用域内设置环境变量，离开作用域自动恢复
     let _env = sh.push_env("RUSTFLAGS", "-C default-linker-libraries");
-    cmd!(sh, "cargo +nightly ndk --platform 26 -t arm64-v8a build -Z build-std -r").run()?;
+    cmd!(
+        sh,
+        "cargo +nightly ndk --platform 26 -t arm64-v8a build -Z build-std -r"
+    )
+    .run()?;
     Ok(())
 }
 

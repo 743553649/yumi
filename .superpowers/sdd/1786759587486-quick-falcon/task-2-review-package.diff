@@ -1,0 +1,173 @@
+diff --git a/src/idle_dive/controller.rs b/src/idle_dive/controller.rs
+index d377b9d..177552c 100644
+--- a/src/idle_dive/controller.rs
++++ b/src/idle_dive/controller.rs
+@@ -121,36 +121,29 @@ impl IdleDiveController {
+     fn transition_to(&mut self, new_state: IdleDiveState) {
+         if self.state == new_state { return; }
+ 
++        let (governor, latency_us) = match new_state {
++            IdleDiveState::Normal => (&self.config.governors.normal, self.config.params.normal_latency_us),
++            IdleDiveState::Diving => (&self.config.governors.diving, self.config.params.diving_latency_us),
++            IdleDiveState::DozeDiving => (&self.config.governors.doze, self.config.params.doze_latency_us),
++        };
++
+         match new_state {
+-            IdleDiveState::Normal => {
+-                info!("{}", t("idle-dive-exit"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.normal) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.normal_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+-                }
+-                self.dive_timer = Instant::now();
+-            }
+-            IdleDiveState::Diving => {
+-                info!("{}", t("idle-dive-enter"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.diving) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.diving_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+-                }
+-                self.exit_timer = Instant::now();
+-            }
+-            IdleDiveState::DozeDiving => {
+-                info!("{}", t("idle-dive-enter-dozed"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.doze) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.doze_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+-                }
+-            }
++            IdleDiveState::Normal => info!("{}", t("idle-dive-exit")),
++            IdleDiveState::Diving => info!("{}", t("idle-dive-enter")),
++            IdleDiveState::DozeDiving => info!("{}", t("idle-dive-enter-dozed")),
++        }
++
++        if let Err(e) = self.latency_writer.set_governor(governor) {
++            warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => format!("{:?}", new_state).to_lowercase(), "error" => e.to_string())));
++        }
++        if let Err(e) = self.latency_writer.set_latency(latency_us) {
++            warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => format!("{:?}", new_state).to_lowercase(), "error" => e.to_string())));
++        }
++
++        if new_state == IdleDiveState::Normal {
++            self.dive_timer = Instant::now();
++        } else if new_state == IdleDiveState::Diving {
++            self.exit_timer = Instant::now();
+         }
+ 
+         self.state = new_state;
+diff --git a/src/idle_dive/latency.rs b/src/idle_dive/latency.rs
+index 7441754..d93f558 100644
+--- a/src/idle_dive/latency.rs
++++ b/src/idle_dive/latency.rs
+@@ -17,6 +17,7 @@
+ 
+ use std::fs;
+ use std::os::unix::io::RawFd;
++use std::path::PathBuf;
+ use anyhow::Result;
+ use log::warn;
+ 
+@@ -25,8 +26,8 @@ use crate::fluent_args;
+ 
+ pub struct LatencyWriter {
+     pm_qos_fd: Option<RawFd>,
+-    governor_paths: Vec<String>,
+-    latency_paths: Vec<String>,
++    governor_paths: Vec<PathBuf>,
++    latency_paths: Vec<PathBuf>,
+ }
+ 
+ impl LatencyWriter {
+@@ -43,16 +44,16 @@ impl LatencyWriter {
+                         let base = entry.path();
+                         let gov_path = base.join("current_governor_ro");
+                         if gov_path.exists() {
+-                            governor_paths.push(gov_path.to_string_lossy().to_string());
++                            governor_paths.push(gov_path);
+                         } else {
+                             let gov_path_rw = base.join("current_governor");
+                             if gov_path_rw.exists() {
+-                                governor_paths.push(gov_path_rw.to_string_lossy().to_string());
++                                governor_paths.push(gov_path_rw);
+                             }
+                         }
+                         let lat_path = base.join("current_latency_us");
+                         if lat_path.exists() {
+-                            latency_paths.push(lat_path.to_string_lossy().to_string());
++                            latency_paths.push(lat_path);
+                         }
+                     }
+                 }
+@@ -98,18 +99,23 @@ impl LatencyWriter {
+     }
+ 
+     pub fn set_governor(&self, governor: &str) -> Result<()> {
++        if self.governor_paths.is_empty() { return Ok(()); }
++        let mut any_ok = false;
+         for path in &self.governor_paths {
+             if let Err(e) = crate::utils::write_to_file(path, governor.as_bytes()) {
+-                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
+-                    "path" => path.clone(),
++                warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!(
++                    "path" => path.display().to_string(),
+                     "error" => e.to_string()
+                 )));
++            } else {
++                any_ok = true;
+             }
+         }
+-        Ok(())
++        if any_ok { Ok(()) } else { Err(anyhow::anyhow!("all governor writes failed")) }
+     }
+ 
+     pub fn set_latency(&self, latency_us: i32) -> Result<()> {
++        let mut pm_qos_ok = self.pm_qos_fd.is_none();
+         if let Some(fd) = self.pm_qos_fd {
+             let value = latency_us.to_ne_bytes();
+             unsafe {
+@@ -119,24 +125,35 @@ impl LatencyWriter {
+                     value.len(),
+                 );
+                 if ret < 0 {
+-                    warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!(
+                         "path" => "/dev/cpu_dma_latency".to_string(),
+                         "error" => std::io::Error::last_os_error().to_string()
+                     )));
++                } else {
++                    pm_qos_ok = true;
+                 }
+             }
+         }
+ 
++        let mut any_sysfs_ok = false;
+         for path in &self.latency_paths {
+             if let Err(e) = crate::utils::write_to_file(path, latency_us.to_string().as_bytes()) {
+-                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
+-                    "path" => path.clone(),
++                warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!(
++                    "path" => path.display().to_string(),
+                     "error" => e.to_string()
+                 )));
++            } else {
++                any_sysfs_ok = true;
+             }
+         }
+ 
+-        Ok(())
++        if self.latency_paths.is_empty() {
++            if pm_qos_ok { Ok(()) } else { Err(anyhow::anyhow!("all latency writes failed")) }
++        } else if pm_qos_ok || any_sysfs_ok {
++            Ok(())
++        } else {
++            Err(anyhow::anyhow!("all latency writes failed"))
++        }
+     }
+ }
+ 

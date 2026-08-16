@@ -68,41 +68,59 @@ impl TouchBoostController {
     }
 
     pub fn on_touch_start(&mut self) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         self.is_boosting = true;
         self.touch_released_at = None;
-        self.boost_until = Instant::now() + std::time::Duration::from_millis(self.config.min_boost_duration_ms);
+        self.boost_until =
+            Instant::now() + std::time::Duration::from_millis(self.config.min_boost_duration_ms);
         self.apply_boost();
         debug!("{}", t("touch-boost-start"));
     }
 
     pub fn on_touch_end(&mut self) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         self.touch_released_at = Some(Instant::now());
         debug!("{}", t("touch-boost-release"));
     }
 
     pub fn update(&mut self) {
-        if self.disabled || !self.is_boosting { return; }
+        if self.disabled || !self.is_boosting {
+            return;
+        }
 
         if let Some(released_at) = self.touch_released_at {
             let elapsed = released_at.elapsed().as_millis() as u64;
-            if elapsed < self.config.release_delay_ms { return; }
-            if Instant::now() < self.boost_until { return; }
+            if elapsed < self.config.release_delay_ms {
+                return;
+            }
+            if Instant::now() < self.boost_until {
+                return;
+            }
 
             let decay_factor = self.config.recover_decay;
             let mut all_recovered = true;
             let mut freq_updates: Vec<(usize, u32)> = Vec::new();
 
             for (i, freq) in self.current_boost_freqs.iter_mut().enumerate() {
-                if i >= self.config.boost_freqs.len() { break; }
+                if i >= self.config.boost_freqs.len() {
+                    break;
+                }
                 let target = self.config.boost_freqs[i];
-                if target == 0 { continue; }
+                if target == 0 {
+                    continue;
+                }
 
                 if *freq > 0 {
                     let raw = (*freq as f32 * (1.0 - decay_factor)) as u32;
                     let new_freq = Self::find_nearest_freq(
-                        &self.available_freqs.get(i).map_or(&[][..], |v| v.as_slice()),
+                        &self
+                            .available_freqs
+                            .get(i)
+                            .map_or(&[][..], |v| v.as_slice()),
                         raw,
                     );
                     if new_freq <= 100000 {
@@ -138,7 +156,11 @@ impl TouchBoostController {
     }
 
     fn apply_boost(&mut self) {
-        let freqs: Vec<(usize, u32)> = self.config.boost_freqs.iter().enumerate()
+        let freqs: Vec<(usize, u32)> = self
+            .config
+            .boost_freqs
+            .iter()
+            .enumerate()
             .filter(|&(_, &freq)| freq != 0)
             .map(|(i, &freq)| (i, freq))
             .collect();
@@ -157,7 +179,9 @@ impl TouchBoostController {
         }
     }
 
-    fn init_cluster_writers(config: &TouchBoostConfig) -> (Vec<FastWriter>, Vec<Vec<u32>>, Vec<u32>) {
+    fn init_cluster_writers(
+        config: &TouchBoostConfig,
+    ) -> (Vec<FastWriter>, Vec<Vec<u32>>, Vec<u32>) {
         let mut writers = Vec::new();
         let mut freq_lists = Vec::new();
         let mut initial_freqs = Vec::new();
@@ -166,7 +190,9 @@ impl TouchBoostController {
             let mut policies: Vec<String> = entries
                 .filter_map(|e| e.ok())
                 .filter(|e| {
-                    e.file_name().to_str().map_or(false, |n| n.starts_with("policy"))
+                    e.file_name()
+                        .to_str()
+                        .map_or(false, |n| n.starts_with("policy"))
                 })
                 .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
                 .collect();
@@ -193,9 +219,7 @@ impl TouchBoostController {
 
                 writers.push(writer);
                 freq_lists.push(freqs);
-                initial_freqs.push(
-                    config.boost_freqs.get(i).copied().unwrap_or(0)
-                );
+                initial_freqs.push(config.boost_freqs.get(i).copied().unwrap_or(0));
             }
         }
 
@@ -203,11 +227,15 @@ impl TouchBoostController {
     }
 
     fn find_nearest_freq(available: &[u32], target: u32) -> u32 {
-        if available.is_empty() { return target; }
+        if available.is_empty() {
+            return target;
+        }
         let idx = available.partition_point(|&f| f < target);
-        if idx == 0 { available[0] }
-        else if idx >= available.len() { *available.last().unwrap() }
-        else {
+        if idx == 0 {
+            available[0]
+        } else if idx >= available.len() {
+            *available.last().unwrap()
+        } else {
             let lo = idx - 1;
             if target - available[lo] <= available[idx] - target {
                 available[lo]

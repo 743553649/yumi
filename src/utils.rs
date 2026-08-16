@@ -15,18 +15,18 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use anyhow::{Result};
+use anyhow::Result;
 use inotify::{Inotify, WatchMask};
 use log;
+use nix::unistd::{access, AccessFlags};
 use serde::de::DeserializeOwned;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use nix::unistd::{access, AccessFlags};
 
-use crate::i18n::t_with_args;
 use crate::fluent_args;
+use crate::i18n::t_with_args;
 
 /// 向文件写入内容，并处理可能的错误
 pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
@@ -38,21 +38,33 @@ pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Res
     }
 
     fs::write(path, content)?;
-    
+
     // 写完后设为只读
     let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o444));
+    Ok(())
+}
+
+/// 向 sysfs 节点写入内容，不执行 chmod（由 FastWriter/enable_perm 统一管理权限）
+pub fn write_to_file_nochmod<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
+    fs::write(path, content)?;
     Ok(())
 }
 
 // 尝试写入内容 (不抛出错误，只记录警告)
 pub fn try_write_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
     if let Err(e) = write_to_file(path.as_ref(), content) {
-        log::warn!("{}", t_with_args("file-write-failed", &fluent_args!("path" => path.as_ref().display().to_string(), "error" => e.to_string())));
+        log::warn!(
+            "{}",
+            t_with_args(
+                "file-write-failed",
+                &fluent_args!("path" => path.as_ref().display().to_string(), "error" => e.to_string())
+            )
+        );
     }
     Ok(())
 }
 
-pub fn enable_perm <P: AsRef<Path>>(path: P) -> Result<()> {
+pub fn enable_perm<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     if path.exists() {
         fs::set_permissions(path, fs::Permissions::from_mode(0o664))?;
@@ -63,8 +75,10 @@ pub fn enable_perm <P: AsRef<Path>>(path: P) -> Result<()> {
 /// 监控指定路径的文件/目录事件
 pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
     let mut inotify = Inotify::init()?;
-    inotify.watches().add(path_to_watch, WatchMask::CLOSE_WRITE)?;
-    
+    inotify
+        .watches()
+        .add(path_to_watch, WatchMask::CLOSE_WRITE)?;
+
     let mut buffer = [0u8; 1024];
     inotify.read_events_blocking(&mut buffer)?;
     Ok(())
@@ -89,9 +103,9 @@ pub fn read_file_content(path: &str) -> Result<String> {
 pub fn find_cpu_temp_path() -> Result<String> {
     let thermal_path = "/sys/class/thermal";
     let thermal_dir = Path::new(thermal_path);
-    
+
     if !thermal_dir.exists() {
-         return Err(anyhow::anyhow!("Thermal directory not found"));
+        return Err(anyhow::anyhow!("Thermal directory not found"));
     }
 
     for entry in fs::read_dir(thermal_dir)? {
@@ -102,12 +116,14 @@ pub fn find_cpu_temp_path() -> Result<String> {
                 if dir_name.starts_with("thermal_zone") {
                     let type_path = path.join("type");
                     // 修复 E0532 模式匹配错误: 直接使用 if let Ok(...)
-                    if let Ok(type_content) = read_file_content(type_path.to_str().unwrap_or_default()) {
-                        if type_content.contains("soc_max") 
-                           || type_content.contains("mtktscpu") 
-                           || type_content.contains("cpu-1-") 
-                           || type_content.contains("cpu-0-0-usr") {
-                            
+                    if let Ok(type_content) =
+                        read_file_content(type_path.to_str().unwrap_or_default())
+                    {
+                        if type_content.contains("soc_max")
+                            || type_content.contains("mtktscpu")
+                            || type_content.contains("cpu-1-")
+                            || type_content.contains("cpu-0-0-usr")
+                        {
                             let temp_path = path.join("temp");
                             if temp_path.exists() {
                                 return Ok(temp_path.to_str().unwrap().to_string());
@@ -148,7 +164,9 @@ impl SysPathExist {
             mtk_feas_exist: Self::path_exists("/sys/module/mtk_fpsgo/parameters/perfmgr_enable"),
             walt_exist: Self::path_exists("/proc/sys/walt"),
             stune_exist: Self::path_exists("/dev/stune"),
-            hi6220_ufs_exist: Self::path_exists("/sys/bus/platform/devices/hi6220-ufs/ufs_clk_gate_disable"),
+            hi6220_ufs_exist: Self::path_exists(
+                "/sys/bus/platform/devices/hi6220-ufs/ufs_clk_gate_disable",
+            ),
             cpuctl_top_app_exist: Self::path_exists("/dev/cpuctl/top-app"),
             cpuctl_foreground_exist: Self::path_exists("/dev/cpuctl/foreground"),
             cpuctl_background_exist: Self::path_exists("/dev/cpuctl/background"),
@@ -158,7 +176,9 @@ impl SysPathExist {
             cpuset_system_background_exist: Self::path_exists("/dev/cpuset/system-background"),
             cpuset_restricted_exist: Self::path_exists("/dev/cpuset/restricted"),
             cpuset_root_exist: Self::path_exists("/dev/cpuset"),
-            cpuidle_governor_exist: Self::path_exists("/sys/devices/system/cpu/cpuidle/current_governor"),
+            cpuidle_governor_exist: Self::path_exists(
+                "/sys/devices/system/cpu/cpuidle/current_governor",
+            ),
             sda_scheduler_exist: Self::path_exists("/sys/block/sda/queue/scheduler"),
         }
     }
@@ -186,7 +206,11 @@ impl FastWriter {
         let file = OpenOptions::new().write(true).open(path_ref)
             .map_err(|e| log::error!("{}", t_with_args("sysfs-open-failed", &fluent_args!("path" => path_ref.display().to_string(), "error" => e.to_string()))))
             .ok();
-        Self { file, buf: [0u8; 20], path: path_ref.to_path_buf() }
+        Self {
+            file,
+            buf: [0u8; 20],
+            path: path_ref.to_path_buf(),
+        }
     }
 
     fn try_unmount(path: &Path) {
@@ -196,41 +220,61 @@ impl FastWriter {
                 if ret != 0 {
                     let errno = std::io::Error::last_os_error();
                     if errno.raw_os_error() != Some(libc::EINVAL)
-                        && errno.raw_os_error() != Some(libc::ENOENT) {
-                        log::debug!("{}", t_with_args("sysfs-umount2-failed", &fluent_args!("path" => path_str, "error" => errno.to_string())));
+                        && errno.raw_os_error() != Some(libc::ENOENT)
+                    {
+                        log::debug!(
+                            "{}",
+                            t_with_args(
+                                "sysfs-umount2-failed",
+                                &fluent_args!("path" => path_str, "error" => errno.to_string())
+                            )
+                        );
                     }
                 }
             }
         }
     }
 
-    pub fn re_unmount(&self) { Self::try_unmount(&self.path); }
+    pub fn re_unmount(&self) {
+        Self::try_unmount(&self.path);
+    }
 
     pub fn write_value_force(&mut self, value: u32) -> bool {
         self.do_write(value)
     }
 
-    pub fn is_valid(&self) -> bool { self.file.is_some() }
+    pub fn is_valid(&self) -> bool {
+        self.file.is_some()
+    }
 
     fn do_write(&mut self, value: u32) -> bool {
         if let Some(file) = &mut self.file {
             let len = Self::u32_to_buf(value, &mut self.buf);
             let _ = file.seek(SeekFrom::Start(0));
             match file.write_all(&self.buf[..len]) {
-                Ok(()) => {
-                    true
-                }
+                Ok(()) => true,
                 Err(e) => {
                     // EINVAL(22): 内核拒绝该频率 (热限频 / 范围收窄)
                     // EBUSY(16): sysfs 节点短暂被占用
                     // 两者均为预期内的瞬态错误，降级为 debug 并且不缓存，下次 tick 自动重试
                     match e.raw_os_error() {
                         Some(libc::EINVAL) | Some(libc::EBUSY) => {
-                            log::debug!("{}", t_with_args("sysfs-write-freq-skipped", &fluent_args!("freq" => value.to_string(), "path" => format!("{:?}", self.path), "error" => e.to_string())));
+                            log::debug!(
+                                "{}",
+                                t_with_args(
+                                    "sysfs-write-freq-skipped",
+                                    &fluent_args!("freq" => value.to_string(), "path" => format!("{:?}", self.path), "error" => e.to_string())
+                                )
+                            );
                         }
                         _ => {
-                            log::warn!("{}", t_with_args("sysfs-write-freq-failed",
-                                &fluent_args!("freq" => value.to_string(), "error" => e.to_string())));
+                            log::warn!(
+                                "{}",
+                                t_with_args(
+                                    "sysfs-write-freq-failed",
+                                    &fluent_args!("freq" => value.to_string(), "error" => e.to_string())
+                                )
+                            );
                         }
                     }
                     // 写入失败不更新 last_value，确保下次 tick 会重试
@@ -243,9 +287,17 @@ impl FastWriter {
     }
 
     fn u32_to_buf(mut v: u32, buf: &mut [u8; 20]) -> usize {
-        if v == 0 { buf[0] = b'0'; buf[1] = b'\n'; return 2; }
+        if v == 0 {
+            buf[0] = b'0';
+            buf[1] = b'\n';
+            return 2;
+        }
         let mut pos = 18;
-        while v > 0 { buf[pos] = b'0' + (v % 10) as u8; v /= 10; pos -= 1; }
+        while v > 0 {
+            buf[pos] = b'0' + (v % 10) as u8;
+            v /= 10;
+            pos -= 1;
+        }
         let start = pos + 1;
         let digit_len = 19 - start;
         buf.copy_within(start..19, 0);
@@ -259,7 +311,9 @@ impl FastWriter {
 // ════════════════════════════════════════════════════════════════
 
 /// Serde 默认值辅助函数：始终返回 true
-pub fn default_true() -> bool { true }
+pub fn default_true() -> bool {
+    true
+}
 
 /// 读取文件内容并解析为 i32
 pub fn read_i32_from_file(path: &str) -> Result<i32> {
@@ -270,7 +324,10 @@ pub fn read_i32_from_file(path: &str) -> Result<i32> {
 
 /// 获取与 BPF ktime_get_ns() 绝对对齐的单调时钟时间 (纳秒)
 pub fn get_ktime_ns() -> u64 {
-    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
     (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }
@@ -292,7 +349,13 @@ where
             })
         }
         Err(_) => {
-            log::warn!("{}", t_with_args("config-not-found", &fluent_args!("path" => path_ref.display().to_string())));
+            log::warn!(
+                "{}",
+                t_with_args(
+                    "config-not-found",
+                    &fluent_args!("path" => path_ref.display().to_string())
+                )
+            );
             Ok(T::default())
         }
     }

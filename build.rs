@@ -1,6 +1,6 @@
-use std::process::Command;
 use std::env;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// 构建 yumi-ebpf BPF 程序，参照 frame-analyzer 的 build_ebpf()
 fn build_ebpf() -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -12,24 +12,34 @@ fn build_ebpf() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let tools_bin = tools_dir.join("bin");
 
     // 监控 ebpf crate 变化
-    println!("cargo:rerun-if-changed={}", ebpf_dir.join("Cargo.toml").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        ebpf_dir.join("Cargo.toml").display()
+    );
     println!("cargo:rerun-if-changed={}", ebpf_dir.join("src").display());
 
     // 1. 安装 bpf-linker（参照 frame-analyzer install_ebpf_linker）
     Command::new("cargo")
         .args([
-            "install", "bpf-linker", "--force",
-            "--root", tools_dir.to_str().unwrap(),
-            "--target-dir", tools_dir.to_str().unwrap(),
+            "install",
+            "bpf-linker",
+            "--force",
+            "--root",
+            tools_dir.to_str().unwrap(),
+            "--target-dir",
+            tools_dir.to_str().unwrap(),
         ])
         .env_remove("RUSTUP_TOOLCHAIN")
         .status()?;
 
     // 2. 编译 BPF 程序（在 yumi-ebpf 目录中，避免 workspace 干扰）
     let mut ebpf_args = vec![
-        "--target", "bpfel-unknown-none",
-        "-Z", "build-std=core",
-        "--target-dir", target_dir.to_str().unwrap(),
+        "--target",
+        "bpfel-unknown-none",
+        "-Z",
+        "build-std=core",
+        "--target-dir",
+        target_dir.to_str().unwrap(),
     ];
 
     #[cfg(not(debug_assertions))]

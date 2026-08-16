@@ -15,25 +15,25 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::sync::{Arc, Mutex, RwLock, mpsc};
+use anyhow::Result;
+use std::fs;
+use std::sync::{mpsc, Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Instant;
-use std::fs;
-use anyhow::Result;
 
 pub mod config;
-pub mod scheduler;
-pub mod fas;
 pub mod cpu_load_governor;
+pub mod fas;
+pub mod scheduler;
 
-use crate::i18n::{t, load_language, t_with_args};
-use crate::fluent_args; 
-use crate::utils; 
-use crate::common::DaemonEvent; 
+use crate::common;
+use crate::common::DaemonEvent;
+use crate::fluent_args;
+use crate::i18n::{load_language, t, t_with_args};
+use crate::logger;
+use crate::utils;
 use config::Config;
 use scheduler::CpuScheduler;
-use crate::logger;
-use crate::common;
 
 /// CPU 频率策略簇信息
 pub struct CpuPolicy {
@@ -78,39 +78,65 @@ fn read_boost_frequencies(pid: i32) -> Vec<u32> {
 
 /// 通过 sysfs 探测指定 policy 的 capacity 值
 pub(super) fn probe_policy_capacity(policy_id: i32) -> Option<u32> {
-    let related_str = fs::read_to_string(
-        format!("/sys/devices/system/cpu/cpufreq/policy{}/related_cpus", policy_id))
-        .or_else(|_| fs::read_to_string(
-            format!("/sys/devices/system/cpu/cpufreq/policy{}/affected_cpus", policy_id)))
-        .ok()?;
+    let related_str = fs::read_to_string(format!(
+        "/sys/devices/system/cpu/cpufreq/policy{}/related_cpus",
+        policy_id
+    ))
+    .or_else(|_| {
+        fs::read_to_string(format!(
+            "/sys/devices/system/cpu/cpufreq/policy{}/affected_cpus",
+            policy_id
+        ))
+    })
+    .ok()?;
     let first_cpu: u32 = related_str.split_whitespace().next()?.parse().ok()?;
-    fs::read_to_string(format!("/sys/devices/system/cpu/cpu{}/cpu_capacity", first_cpu))
-        .ok()?.trim().parse::<u32>().ok()
+    fs::read_to_string(format!(
+        "/sys/devices/system/cpu/cpu{}/cpu_capacity",
+        first_cpu
+    ))
+    .ok()?
+    .trim()
+    .parse::<u32>()
+    .ok()
 }
 
 /// 根据 CPU capacity 自动计算每个 cluster 的权重
 pub(super) fn auto_compute_capacity_weights(policies: &[CpuPolicy]) -> Option<Vec<(i32, f32)>> {
-    let caps: Vec<(i32, u32)> = policies.iter()
+    let caps: Vec<(i32, u32)> = policies
+        .iter()
         .filter(|p| p.id != -1)
         .filter_map(|p| probe_policy_capacity(p.id).map(|c| (p.id, c)))
         .collect();
-    if caps.is_empty() || caps.iter().any(|&(_, c)| c == 0) { return None; }
+    if caps.is_empty() || caps.iter().any(|&(_, c)| c == 0) {
+        return None;
+    }
     let min_cap = caps.iter().map(|&(_, c)| c).min().unwrap() as f32;
-    Some(caps.iter().map(|&(pid, cap)| {
-        let r = cap as f32 / min_cap;
-        (pid, if r <= 1.01 { 1.0 } else { 1.0 + (r - 1.0).sqrt() })
-    }).collect())
+    Some(
+        caps.iter()
+            .map(|&(pid, cap)| {
+                let r = cap as f32 / min_cap;
+                (
+                    pid,
+                    if r <= 1.01 {
+                        1.0
+                    } else {
+                        1.0 + (r - 1.0).sqrt()
+                    },
+                )
+            })
+            .collect(),
+    )
 }
 
 pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let root = common::get_module_root();
     let config_path = root.join("config/config.yaml");
-    let config_dir = root.join("config"); 
+    let config_dir = root.join("config");
 
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
     let shared_config = Arc::new(RwLock::new(config));
-    let shared_mode_name = Arc::new(Mutex::new("balance".to_string())); 
+    let shared_mode_name = Arc::new(Mutex::new("balance".to_string()));
     let sys_path_exist = Arc::new(utils::SysPathExist::new());
 
     // ==========================================
@@ -118,13 +144,19 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     // ==========================================
     let config_clone = shared_config.clone();
     let sys_path_clone = sys_path_exist.clone();
-    
+
     thread::Builder::new()
         .name("config_watcher".to_string())
         .spawn(move || {
             loop {
                 if let Err(e) = utils::watch_path(&config_dir) {
-                    log::error!("{}", t_with_args("config-watch-error", &fluent_args!("error" => e.to_string())));
+                    log::error!(
+                        "{}",
+                        t_with_args(
+                            "config-watch-error",
+                            &fluent_args!("error" => e.to_string())
+                        )
+                    );
                     // 退避后再重试，避免持续错误时忙循环刷 CPU
                     thread::sleep(std::time::Duration::from_secs(2));
                     continue;
@@ -132,27 +164,42 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 log::info!("{}", t("config-reloading"));
 
                 let old_lang = config_clone.read().unwrap().meta.language.clone();
-                
+
                 match Config::from_file(config_path.to_str().unwrap()) {
                     Ok(new_config) => {
                         logger::update_level(&new_config.meta.loglevel);
                         *config_clone.write().unwrap() = new_config;
-                        
+
                         let new_lang = config_clone.read().unwrap().meta.language.clone();
-                        if old_lang != new_lang { load_language(&new_lang); }
+                        if old_lang != new_lang {
+                            load_language(&new_lang);
+                        }
 
                         log::info!("{}", t("config-reloaded-success"));
 
-                        let scheduler = CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
+                        let scheduler =
+                            CpuScheduler::new(config_clone.clone(), sys_path_clone.clone());
                         if let Err(e) = scheduler.apply_system_tweaks() {
-                            log::error!("{}", t_with_args("config-apply-tweaks-failed", &fluent_args!("error" => e.to_string())));
+                            log::error!(
+                                "{}",
+                                t_with_args(
+                                    "config-apply-tweaks-failed",
+                                    &fluent_args!("error" => e.to_string())
+                                )
+                            );
                         }
                     }
-                    Err(load_err) => log::error!("{}", t_with_args("config-reload-fail", &fluent_args!("error" => load_err.to_string()))),
+                    Err(load_err) => log::error!(
+                        "{}",
+                        t_with_args(
+                            "config-reload-fail",
+                            &fluent_args!("error" => load_err.to_string())
+                        )
+                    ),
                 }
             }
         })?;
-    
+
     log::info!("{}", t("main-config-watch-thread-create"));
 
     // ==========================================

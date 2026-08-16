@@ -21,4 +21,4 @@ mod monitor;
 
 pub use config::TouchBoostConfig;
 pub use controller::TouchBoostController;
-pub use monitor::{TouchMonitor, TouchEvent};
+pub use monitor::{TouchEvent, TouchMonitor};

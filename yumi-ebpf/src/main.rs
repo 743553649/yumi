@@ -132,12 +132,16 @@ fn try_handle_sched_switch(ctx: &TracePointContext) -> Result<u32, i64> {
             if prev_tid == 0 {
                 // Idle 时间
                 if let Some(idle_ptr) = CORE_IDLE_TIME.get_ptr_mut(ZERO_KEY) {
-                    unsafe { *idle_ptr += delta; }
+                    unsafe {
+                        *idle_ptr += delta;
+                    }
                 }
             } else {
                 // Busy 时间
                 if let Some(busy_ptr) = CORE_BUSY_TIME.get_ptr_mut(ZERO_KEY) {
-                    unsafe { *busy_ptr += delta; }
+                    unsafe {
+                        *busy_ptr += delta;
+                    }
                 }
 
                 // 线程级累计
@@ -165,7 +169,9 @@ fn try_handle_sched_switch(ctx: &TracePointContext) -> Result<u32, i64> {
 /// 向 HashMap 累加 delta（查找然后 +=，不存在则 insert）
 fn add_to_hash(map: &HashMap<u32, u64>, key: u32, delta: u64) {
     if let Some(ptr) = map.get_ptr_mut(&key) {
-        unsafe { *ptr += delta; }
+        unsafe {
+            *ptr += delta;
+        }
     } else {
         let _ = map.insert(&key, &delta, 0);
     }
@@ -174,7 +180,9 @@ fn add_to_hash(map: &HashMap<u32, u64>, key: u32, delta: u64) {
 /// 更新 PerCpuArray 中 key 对应的值
 fn update_percpu<T: Copy>(map: &PerCpuArray<T>, key: &u32, val: &T) {
     if let Some(ptr) = map.get_ptr_mut(*key) {
-        unsafe { *ptr = *val; }
+        unsafe {
+            *ptr = *val;
+        }
     }
 }
 

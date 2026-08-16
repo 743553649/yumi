@@ -1,0 +1,530 @@
+diff --git a/README.md b/README.md
+index 1008726..a4ac2ac 100644
+--- a/README.md
++++ b/README.md
+@@ -114,7 +114,7 @@ yumi 内置三层智能省电联动架构，在用户不操作手机时自动压
+ │  └────────┬─────────┘                                │
+ │           ▼                                          │
+ │  ┌──────────────────┐  CPU 空闲 → 降频/深度休眠       │
+-│  │ IdleDive         │  (检测 CPU idle >12%)          │
++│  │ IdleDive         │  (检测 CPU 利用率 <12%)         │
+ │  └────────┬─────────┘                                │
+ │           ▼                                          │
+ │  ┌──────────────────┐  用户触摸 → 立即恢复正常频率    │
+@@ -125,8 +125,8 @@ yumi 内置三层智能省电联动架构，在用户不操作手机时自动压
+ 
+ | 模块 | 触发条件 | 效果 | 配置文件 |
+ | :--- | :--- | :--- | :--- |
+-| **StillDive** | 亮屏、CPU 负载 <8% 持续 10 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
+-| **IdleDive** | CPU idle >12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
++| **StillDive** | 亮屏、前台 app CPU 利用率 <5% 持续 30 个 tick | perf_ceil 锁死 30%，省电约 15~20% | `config.yaml` 中 `StillDive` 节 |
++| **IdleDive** | CPU 平均利用率 <12% 持续 500ms | 切换到低功耗 idle governor，延迟从 100μs 提升到 800~1500μs | `module/config/idle_dive.yaml` |
+ | **TouchBoost** | 用户触摸屏幕 | boost 频率拉满，100ms 后恢复，防止卡顿 | `module/config/touch_boost.yaml` |
+ 
+ **关键配置参数：**
+@@ -136,9 +136,9 @@ StillDive 在 `config.yaml` 中配置：
+ ```yaml
+ StillDive:
+   enabled: true
+-  enter_threshold: 0.08    # 进入下潜的 CPU 利用率阈值
+-  enter_ticks: 10          # 连续多少个 tick 满足条件才进入
+-  exit_threshold: 0.20     # 退出下潜的 CPU 利用率阈值
++  enter_threshold: 0.05    # 前台 app 总 CPU 利用率阈值
++  enter_ticks: 30          # 连续多少个 tick 满足条件才进入（30 tick ≈ 6秒）
++  exit_threshold: 0.15     # 退出下潜的前台 app CPU 利用率阈值
+   exit_boost_ticks: 5      # 退出后 boost 持续 tick 数
+   perf_ceil: 0.30          # 下潜时的性能上限
+   smoothing_up: 0.05       # 升频平滑系数（越小越平滑）
+diff --git "a/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md" "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md"
+index 37b3f46..4cd388c 100644
+--- "a/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md"
++++ "b/docs/CPU\351\235\231\346\255\242\344\270\213\346\275\234-\344\270\200\346\255\245\345\210\260\344\275\215\347\273\274\345\220\210\346\226\271\346\241\210.md"
+@@ -79,9 +79,9 @@ pub struct StillDiveConfig {
+ ```
+ 
+ 默认值函数：
+-- `sd_enter_thresh() -> 0.08` — 所有核心 max util < 8%
+-- `sd_enter_ticks() -> 10` — 持续 10 tick (2s)
+-- `sd_exit_thresh() -> 0.20` — 任意核心 util > 20% 退出
++- `sd_enter_thresh() -> 0.05` — 前台 app 总 CPU 利用率 < 5%
++- `sd_enter_ticks() -> 30` — 持续 30 tick (6s)
++- `sd_exit_thresh() -> 0.15` — 前台 app CPU 利用率 > 15% 退出
+ - `sd_exit_boost() -> 5` — 退出后 5 tick (1s) 升频助力
+ - `sd_perf_ceil() -> 0.30` — 下潜时 perf 上限 30%
+ - `sd_smoothing_up() -> 0.05` — 下潜时升频极慢
+@@ -111,7 +111,7 @@ pub struct CpuLoadGovernor {
+ 
+ ```
+ 1. 如果 still_dive 存在且 enabled:
+-   a. 计算 core_utils 最大 util
++   a. 计算前台 app 总 CPU 利用率（foreground_max_util）
+    b. 未下潜:
+       - max ≤ enter_threshold → still_low_ticks++
+       - max > enter_threshold → still_low_ticks = 0
+@@ -208,9 +208,9 @@ function:
+ 
+ StillDive:
+   enabled: true
+-  enter_threshold: 0.08
+-  enter_ticks: 10
+-  exit_threshold: 0.20
++  enter_threshold: 0.05
++  enter_ticks: 30
++  exit_threshold: 0.15
+   exit_boost_ticks: 5
+   perf_ceil: 0.30
+   smoothing_up: 0.05
+diff --git a/module/config/config.yaml b/module/config/config.yaml
+index 5665bdb..1ac3344 100644
+--- a/module/config/config.yaml
++++ b/module/config/config.yaml
+@@ -24,9 +24,9 @@ CpuIdle:
+ 
+ StillDive:
+   enabled: true
+-  enter_threshold: 0.20
+-  enter_ticks: 10
+-  exit_threshold: 0.25
++  enter_threshold: 0.05
++  enter_ticks: 30
++  exit_threshold: 0.15
+   exit_boost_ticks: 5
+   perf_ceil: 0.30
+   smoothing_up: 0.05
+diff --git a/src/idle_dive/controller.rs b/src/idle_dive/controller.rs
+index d377b9d..05b7c12 100644
+--- a/src/idle_dive/controller.rs
++++ b/src/idle_dive/controller.rs
+@@ -37,6 +37,7 @@ pub struct IdleDiveController {
+     latency_writer: LatencyWriter,
+     dive_timer: Instant,
+     exit_timer: Instant,
++    last_doze_exit: Instant,
+     disabled: bool,
+ }
+ 
+@@ -52,6 +53,7 @@ impl IdleDiveController {
+             latency_writer,
+             dive_timer: Instant::now(),
+             exit_timer: Instant::now(),
++            last_doze_exit: Instant::now(),
+             disabled: false,
+         })
+     }
+@@ -63,6 +65,7 @@ impl IdleDiveController {
+             latency_writer: LatencyWriter::disabled(),
+             dive_timer: Instant::now(),
+             exit_timer: Instant::now(),
++            last_doze_exit: Instant::now(),
+             disabled: true,
+         }
+     }
+@@ -95,6 +98,9 @@ impl IdleDiveController {
+ 
+     pub fn enter_doze(&mut self) {
+         if self.disabled { return; }
++        if self.last_doze_exit.elapsed().as_millis() < 500 {
++            return;
++        }
+         self.transition_to(IdleDiveState::DozeDiving);
+     }
+ 
+@@ -102,6 +108,7 @@ impl IdleDiveController {
+         if self.disabled { return; }
+         if self.state == IdleDiveState::DozeDiving {
+             self.transition_to(IdleDiveState::Normal);
++            self.last_doze_exit = Instant::now();
+         }
+     }
+ 
+@@ -121,36 +128,29 @@ impl IdleDiveController {
+     fn transition_to(&mut self, new_state: IdleDiveState) {
+         if self.state == new_state { return; }
+ 
++        let (governor, latency_us) = match new_state {
++            IdleDiveState::Normal => (&self.config.governors.normal, self.config.params.normal_latency_us),
++            IdleDiveState::Diving => (&self.config.governors.diving, self.config.params.diving_latency_us),
++            IdleDiveState::DozeDiving => (&self.config.governors.doze, self.config.params.doze_latency_us),
++        };
++
+         match new_state {
+-            IdleDiveState::Normal => {
+-                info!("{}", t("idle-dive-exit"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.normal) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.normal_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "normal", "error" => e.to_string())));
+-                }
+-                self.dive_timer = Instant::now();
+-            }
+-            IdleDiveState::Diving => {
+-                info!("{}", t("idle-dive-enter"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.diving) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.diving_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "diving", "error" => e.to_string())));
+-                }
+-                self.exit_timer = Instant::now();
+-            }
+-            IdleDiveState::DozeDiving => {
+-                info!("{}", t("idle-dive-enter-dozed"));
+-                if let Err(e) = self.latency_writer.set_governor(&self.config.governors.doze) {
+-                    warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+-                }
+-                if let Err(e) = self.latency_writer.set_latency(self.config.params.doze_latency_us) {
+-                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => "doze", "error" => e.to_string())));
+-                }
+-            }
++            IdleDiveState::Normal => info!("{}", t("idle-dive-exit")),
++            IdleDiveState::Diving => info!("{}", t("idle-dive-enter")),
++            IdleDiveState::DozeDiving => info!("{}", t("idle-dive-enter-dozed")),
++        }
++
++        if let Err(e) = self.latency_writer.set_governor(governor) {
++            warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!("state" => format!("{:?}", new_state).to_lowercase(), "error" => e.to_string())));
++        }
++        if let Err(e) = self.latency_writer.set_latency(latency_us) {
++            warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!("state" => format!("{:?}", new_state).to_lowercase(), "error" => e.to_string())));
++        }
++
++        if new_state == IdleDiveState::Normal {
++            self.dive_timer = Instant::now();
++        } else if new_state == IdleDiveState::Diving {
++            self.exit_timer = Instant::now();
+         }
+ 
+         self.state = new_state;
+diff --git a/src/idle_dive/latency.rs b/src/idle_dive/latency.rs
+index 7441754..d93f558 100644
+--- a/src/idle_dive/latency.rs
++++ b/src/idle_dive/latency.rs
+@@ -17,6 +17,7 @@
+ 
+ use std::fs;
+ use std::os::unix::io::RawFd;
++use std::path::PathBuf;
+ use anyhow::Result;
+ use log::warn;
+ 
+@@ -25,8 +26,8 @@ use crate::fluent_args;
+ 
+ pub struct LatencyWriter {
+     pm_qos_fd: Option<RawFd>,
+-    governor_paths: Vec<String>,
+-    latency_paths: Vec<String>,
++    governor_paths: Vec<PathBuf>,
++    latency_paths: Vec<PathBuf>,
+ }
+ 
+ impl LatencyWriter {
+@@ -43,16 +44,16 @@ impl LatencyWriter {
+                         let base = entry.path();
+                         let gov_path = base.join("current_governor_ro");
+                         if gov_path.exists() {
+-                            governor_paths.push(gov_path.to_string_lossy().to_string());
++                            governor_paths.push(gov_path);
+                         } else {
+                             let gov_path_rw = base.join("current_governor");
+                             if gov_path_rw.exists() {
+-                                governor_paths.push(gov_path_rw.to_string_lossy().to_string());
++                                governor_paths.push(gov_path_rw);
+                             }
+                         }
+                         let lat_path = base.join("current_latency_us");
+                         if lat_path.exists() {
+-                            latency_paths.push(lat_path.to_string_lossy().to_string());
++                            latency_paths.push(lat_path);
+                         }
+                     }
+                 }
+@@ -98,18 +99,23 @@ impl LatencyWriter {
+     }
+ 
+     pub fn set_governor(&self, governor: &str) -> Result<()> {
++        if self.governor_paths.is_empty() { return Ok(()); }
++        let mut any_ok = false;
+         for path in &self.governor_paths {
+             if let Err(e) = crate::utils::write_to_file(path, governor.as_bytes()) {
+-                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
+-                    "path" => path.clone(),
++                warn!("{}", t_with_args("idle-dive-set-governor-failed", &fluent_args!(
++                    "path" => path.display().to_string(),
+                     "error" => e.to_string()
+                 )));
++            } else {
++                any_ok = true;
+             }
+         }
+-        Ok(())
++        if any_ok { Ok(()) } else { Err(anyhow::anyhow!("all governor writes failed")) }
+     }
+ 
+     pub fn set_latency(&self, latency_us: i32) -> Result<()> {
++        let mut pm_qos_ok = self.pm_qos_fd.is_none();
+         if let Some(fd) = self.pm_qos_fd {
+             let value = latency_us.to_ne_bytes();
+             unsafe {
+@@ -119,24 +125,35 @@ impl LatencyWriter {
+                     value.len(),
+                 );
+                 if ret < 0 {
+-                    warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
++                    warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!(
+                         "path" => "/dev/cpu_dma_latency".to_string(),
+                         "error" => std::io::Error::last_os_error().to_string()
+                     )));
++                } else {
++                    pm_qos_ok = true;
+                 }
+             }
+         }
+ 
++        let mut any_sysfs_ok = false;
+         for path in &self.latency_paths {
+             if let Err(e) = crate::utils::write_to_file(path, latency_us.to_string().as_bytes()) {
+-                warn!("{}", t_with_args("sysfs-open-failed", &fluent_args!(
+-                    "path" => path.clone(),
++                warn!("{}", t_with_args("idle-dive-set-latency-failed", &fluent_args!(
++                    "path" => path.display().to_string(),
+                     "error" => e.to_string()
+                 )));
++            } else {
++                any_sysfs_ok = true;
+             }
+         }
+ 
+-        Ok(())
++        if self.latency_paths.is_empty() {
++            if pm_qos_ok { Ok(()) } else { Err(anyhow::anyhow!("all latency writes failed")) }
++        } else if pm_qos_ok || any_sysfs_ok {
++            Ok(())
++        } else {
++            Err(anyhow::anyhow!("all latency writes failed"))
++        }
+     }
+ }
+ 
+diff --git a/src/scheduler/config.rs b/src/scheduler/config.rs
+index 848a9eb..c4135d7 100644
+--- a/src/scheduler/config.rs
++++ b/src/scheduler/config.rs
+@@ -183,9 +183,9 @@ pub struct StillDiveConfig {
+     #[serde(default = "sd_smoothing_up")] pub smoothing_up: f32,
+ }
+ 
+-fn sd_enter_thresh() -> f32 { 0.20 }
+-fn sd_enter_ticks() -> u32 { 10 }
+-fn sd_exit_thresh() -> f32 { 0.25 }
++fn sd_enter_thresh() -> f32 { 0.05 }
++fn sd_enter_ticks() -> u32 { 30 }
++fn sd_exit_thresh() -> f32 { 0.15 }
+ fn sd_exit_boost() -> u32 { 5 }
+ fn sd_perf_ceil() -> f32 { 0.30 }
+ fn sd_smoothing_up() -> f32 { 0.05 }
+@@ -217,7 +217,7 @@ impl StillDiveConfig {
+         if self.exit_threshold <= self.enter_threshold {
+             self.exit_threshold = (self.enter_threshold + 0.05).min(1.0);
+         }
+-        if self.enter_ticks == 0 { self.enter_ticks = sd_enter_ticks(); }
++        if self.enter_ticks == 0 { self.enter_ticks = 30; }
+         if self.exit_boost_ticks > 100 { self.exit_boost_ticks = 100; }
+     }
+ }
+diff --git a/src/scheduler/cpu_load_governor.rs b/src/scheduler/cpu_load_governor.rs
+index 276598d..aeda5aa 100644
+--- a/src/scheduler/cpu_load_governor.rs
++++ b/src/scheduler/cpu_load_governor.rs
+@@ -102,6 +102,25 @@ impl ClusterState {
+     }
+ }
+ 
++struct StillDiveRuntime {
++    config: StillDiveConfig,
++    mode: bool,
++    low_ticks: u32,
++    exit_boost: u32,
++}
++
++impl StillDiveRuntime {
++    fn new(config: StillDiveConfig) -> Self {
++        Self { config, mode: false, low_ticks: 0, exit_boost: 0 }
++    }
++
++    fn reset(&mut self) {
++        self.mode = false;
++        self.low_ticks = 0;
++        self.exit_boost = 0;
++    }
++}
++
+ // ════════════════════════════════════════════════════════════════
+ //  CpuLoadGovernor — 主控制器
+ // ════════════════════════════════════════════════════════════════
+@@ -112,10 +131,7 @@ pub struct CpuLoadGovernor {
+     cfg: CpuLoadGovernorConfig,
+     active: bool,
+     log_counter: u32,
+-    still_dive: Option<StillDiveConfig>,
+-    still_mode: bool,
+-    still_low_ticks: u32,
+-    still_exit_boost: u32,
++    still_dive: Option<StillDiveRuntime>,
+ }
+ 
+ impl CpuLoadGovernor {
+@@ -127,9 +143,6 @@ impl CpuLoadGovernor {
+             active: false,
+             log_counter: 0,
+             still_dive: None,
+-            still_mode: false,
+-            still_low_ticks: 0,
+-            still_exit_boost: 0,
+         }
+     }
+ 
+@@ -141,10 +154,7 @@ impl CpuLoadGovernor {
+         self.release();
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
+-        self.still_dive = still_dive;
+-        if let Some(ref mut sd) = self.still_dive {
+-            sd.normalize();
+-        }
++        self.still_dive = still_dive.map(|c| { let mut c = c; c.normalize(); StillDiveRuntime::new(c) });
+ 
+         let clusters = crate::scheduler::get_cpu_policies();
+ 
+@@ -274,18 +284,15 @@ impl CpuLoadGovernor {
+         self.clusters.clear();
+         self.active = false;
+         self.log_counter = 0;
+-        self.still_mode = false;
+-        self.still_low_ticks = 0;
+-        self.still_exit_boost = 0;
++        if let Some(ref mut sd) = self.still_dive {
++            sd.reset();
++        }
+     }
+ 
+     pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig, still_dive: Option<StillDiveConfig>) {
+         self.cfg = gov_cfg.clone();
+         self.normalize_cfg();
+-        self.still_dive = still_dive;
+-        if let Some(ref mut sd) = self.still_dive {
+-            sd.normalize();
+-        }
++        self.still_dive = still_dive.map(|c| { let mut c = c; c.normalize(); StillDiveRuntime::new(c) });
+         debug!("{}", t_with_args("clg-config-reloaded", &fluent_args!(
+             "up" => format!("{:.2}", self.cfg.up_threshold),
+             "down" => format!("{:.2}", self.cfg.down_threshold),
+@@ -350,49 +357,57 @@ impl CpuLoadGovernor {
+         all_ok
+     }
+ 
+-    pub fn on_load_update(&mut self, core_utils: &[f32]) {
++    pub fn on_load_update(&mut self, core_utils: &[f32], foreground_max_util: f32) {
+         if !self.active { return; }
+ 
+-        if let Some(ref sd) = self.still_dive {
+-            let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
+-
+-            if !self.still_mode {
+-                if max_util <= sd.enter_threshold {
+-                    self.still_low_ticks += 1;
++        if let Some(ref mut sd) = self.still_dive {
++            if !sd.mode {
++                if foreground_max_util <= sd.config.enter_threshold {
++                    sd.low_ticks += 1;
+                 } else {
+-                    self.still_low_ticks = 0;
++                    sd.low_ticks = 0;
+                 }
+-                if self.still_low_ticks >= sd.enter_ticks {
+-                    self.still_mode = true;
++                if sd.low_ticks >= sd.config.enter_ticks {
++                    sd.mode = true;
+                     log::info!("{}", t_with_args("clg-still-enter", &fluent_args!(
+-                        "ceil" => format!("{:.0}%", sd.perf_ceil * 100.0)
++                        "ceil" => format!("{:.0}%", sd.config.perf_ceil * 100.0)
+                     )));
+                 }
+             } else {
+-                if max_util > sd.exit_threshold {
+-                    self.still_mode = false;
+-                    self.still_exit_boost = sd.exit_boost_ticks;
++                if foreground_max_util > sd.config.exit_threshold {
++                    sd.mode = false;
++                    sd.exit_boost = sd.config.exit_boost_ticks;
+                     log::info!("{}", t_with_args("clg-still-exit", &fluent_args!(
+-                        "boost" => sd.exit_boost_ticks.to_string()
++                        "boost" => sd.config.exit_boost_ticks.to_string()
+                     )));
+                 }
+             }
+ 
+-            if self.still_exit_boost > 0 {
+-                self.still_exit_boost -= 1;
++            if sd.exit_boost > 0 {
++                sd.exit_boost -= 1;
+             }
+         }
+ 
+-        let effective_perf_ceil = if self.still_mode {
+-            self.still_dive.as_ref().unwrap().perf_ceil
++        let effective_perf_ceil = if let Some(ref sd) = self.still_dive {
++            if sd.mode { sd.config.perf_ceil } else { self.cfg.perf_ceil }
+         } else {
+             self.cfg.perf_ceil
+         };
+-        let effective_perf_floor = if self.still_mode { 0.0 } else { self.cfg.perf_floor };
+-        let effective_smoothing_up = if self.still_mode {
+-            self.still_dive.as_ref().unwrap().smoothing_up
+-        } else if self.still_exit_boost > 0 {
+-            1.0
++        let effective_perf_floor = if let Some(ref sd) = self.still_dive {
++            if sd.mode { 0.0 } else { self.cfg.perf_floor }
++        } else {
++            self.cfg.perf_floor
++        };
++        let effective_smoothing_up = if let Some(ref sd) = self.still_dive {
++            if sd.mode {
++                sd.config.smoothing_up
++            } else if sd.exit_boost > 0 {
++                let base = self.cfg.smoothing_up;
++                let progress = 1.0 - (sd.exit_boost as f32 / sd.config.exit_boost_ticks.max(1) as f32);
++                base + (1.0 - base) * progress
++            } else {
++                self.cfg.smoothing_up
++            }
+         } else {
+             self.cfg.smoothing_up
+         };
+@@ -488,10 +503,9 @@ impl CpuLoadGovernor {
+                 )));
+             }
+             if let Some(ref sd) = self.still_dive {
+-                let max_util = core_utils.iter().cloned().fold(0.0_f32, f32::max);
+-                debug!("[StillDive] max_util={:.1}% threshold={:.0}% mode={} ticks={}/{}",
+-                    max_util * 100.0, sd.enter_threshold * 100.0,
+-                    self.still_mode, self.still_low_ticks, sd.enter_ticks);
++                debug!("[StillDive] fg_util={:.1}% threshold={:.0}% mode={} ticks={}/{}",
++                    foreground_max_util * 100.0, sd.config.enter_threshold * 100.0,
++                    sd.mode, sd.low_ticks, sd.config.enter_ticks);
+             }
+         }
+     }
+diff --git a/src/scheduler/mod.rs b/src/scheduler/mod.rs
+index 8b095e1..e04cd74 100644
+--- a/src/scheduler/mod.rs
++++ b/src/scheduler/mod.rs
+@@ -424,7 +424,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
+                         }
+                         // 如果 CLG 处于活动状态（包含日常模式或息屏 Doze 模式），全权投喂
+                         if cpu_governor.is_active() {
+-                            cpu_governor.on_load_update(&core_utils);
++                            cpu_governor.on_load_update(&core_utils, foreground_max_util);
+                         }
+                         if !core_utils.is_empty() {
+                             let avg = core_utils.iter().sum::<f32>() / core_utils.len() as f32;

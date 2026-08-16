@@ -35,10 +35,18 @@ pub struct IdleDiveConfig {
     pub params: IdleDiveParams,
 }
 
-fn d_dive_threshold() -> f32 { 0.12 }
-fn d_exit_threshold() -> f32 { 0.18 }
-fn d_dive_delay_ms() -> u64 { 500 }
-fn d_exit_delay_ms() -> u64 { 500 }
+fn d_dive_threshold() -> f32 {
+    0.12
+}
+fn d_exit_threshold() -> f32 {
+    0.18
+}
+fn d_dive_delay_ms() -> u64 {
+    500
+}
+fn d_exit_delay_ms() -> u64 {
+    500
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct IdleDiveGovernors {
@@ -90,14 +98,22 @@ impl Default for IdleDiveConfig {
 
 impl IdleDiveConfig {
     pub fn normalize(&mut self) {
-        if !self.dive_threshold.is_finite() { self.dive_threshold = d_dive_threshold(); }
-        if !self.exit_threshold.is_finite() { self.exit_threshold = d_exit_threshold(); }
+        if !self.dive_threshold.is_finite() {
+            self.dive_threshold = d_dive_threshold();
+        }
+        if !self.exit_threshold.is_finite() {
+            self.exit_threshold = d_exit_threshold();
+        }
         self.dive_threshold = self.dive_threshold.clamp(0.0, 1.0);
         self.exit_threshold = self.exit_threshold.clamp(0.0, 1.0);
         if self.exit_threshold <= self.dive_threshold {
             self.exit_threshold = (self.dive_threshold + 0.05).min(1.0);
         }
-        if self.dive_delay_ms == 0 { self.dive_delay_ms = d_dive_delay_ms(); }
-        if self.exit_delay_ms == 0 { self.exit_delay_ms = d_exit_delay_ms(); }
+        if self.dive_delay_ms == 0 {
+            self.dive_delay_ms = d_dive_delay_ms();
+        }
+        if self.exit_delay_ms == 0 {
+            self.exit_delay_ms = d_exit_delay_ms();
+        }
     }
 }
