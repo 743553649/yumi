@@ -105,7 +105,7 @@ impl IdleDiveController {
         if self.disabled {
             return;
         }
-        if self.last_doze_exit.elapsed().as_millis() < 500 {
+        if self.last_doze_exit.elapsed().as_millis() < self.config.doze_debounce_ms as u128 {
             return;
         }
         self.transition_to(IdleDiveState::DozeDiving);

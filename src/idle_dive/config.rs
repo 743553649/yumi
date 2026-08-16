@@ -29,6 +29,8 @@ pub struct IdleDiveConfig {
     pub dive_delay_ms: u64,
     #[serde(default = "d_exit_delay_ms")]
     pub exit_delay_ms: u64,
+    #[serde(default = "d_doze_debounce_ms")]
+    pub doze_debounce_ms: u64,
     #[serde(default)]
     pub governors: IdleDiveGovernors,
     #[serde(default)]
@@ -45,6 +47,9 @@ fn d_dive_delay_ms() -> u64 {
     500
 }
 fn d_exit_delay_ms() -> u64 {
+    500
+}
+fn d_doze_debounce_ms() -> u64 {
     500
 }
 
@@ -90,6 +95,7 @@ impl Default for IdleDiveConfig {
             exit_threshold: d_exit_threshold(),
             dive_delay_ms: d_dive_delay_ms(),
             exit_delay_ms: d_exit_delay_ms(),
+            doze_debounce_ms: d_doze_debounce_ms(),
             governors: IdleDiveGovernors::default(),
             params: IdleDiveParams::default(),
         }
@@ -114,6 +120,9 @@ impl IdleDiveConfig {
         }
         if self.exit_delay_ms == 0 {
             self.exit_delay_ms = d_exit_delay_ms();
+        }
+        if self.doze_debounce_ms == 0 {
+            self.doze_debounce_ms = d_doze_debounce_ms();
         }
     }
 }
