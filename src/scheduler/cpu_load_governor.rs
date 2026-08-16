@@ -15,6 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::time::Instant;
+
 use crate::scheduler::config::CpuLoadGovernorConfig;
 use crate::scheduler::config::StillDiveConfig;
 use crate::utils::FastWriter;
@@ -114,7 +116,10 @@ struct StillDiveRuntime {
     low_ticks: u32,
     high_ticks: u32,
     exit_boost: u32,
-    log_cooldown: u32,
+    last_log_time: Instant,
+    cached_ceil: f32,
+    cached_floor: f32,
+    cached_smoothing_up: f32,
 }
 
 impl StillDiveRuntime {
@@ -125,7 +130,10 @@ impl StillDiveRuntime {
             low_ticks: 0,
             high_ticks: 0,
             exit_boost: 0,
-            log_cooldown: 0,
+            last_log_time: Instant::now(),
+            cached_ceil: 0.0,
+            cached_floor: 0.0,
+            cached_smoothing_up: 0.0,
         }
     }
 
@@ -134,31 +142,28 @@ impl StillDiveRuntime {
         self.low_ticks = 0;
         self.high_ticks = 0;
         self.exit_boost = 0;
-        self.log_cooldown = 0;
+        self.last_log_time = Instant::now();
+        self.cached_ceil = 0.0;
+        self.cached_floor = 0.0;
+        self.cached_smoothing_up = 0.0;
     }
 
-    fn effective_params(
-        &self,
-        base_ceil: f32,
-        base_floor: f32,
-        base_smoothing_up: f32,
-    ) -> (f32, f32, f32) {
-        let ceil = if self.mode {
-            self.config.perf_ceil
+    fn update_cache(&mut self, base_ceil: f32, base_floor: f32, base_smoothing_up: f32) {
+        if self.mode {
+            self.cached_ceil = self.config.perf_ceil;
+            self.cached_floor = 0.0;
+            self.cached_smoothing_up = self.config.smoothing_up;
         } else {
-            base_ceil
-        };
-        let floor = if self.mode { 0.0 } else { base_floor };
-        let smoothing_up = if self.mode {
-            self.config.smoothing_up
-        } else if self.exit_boost > 0 {
-            let progress =
-                self.exit_boost as f32 / self.config.exit_boost_ticks.max(1) as f32;
-            base_smoothing_up + (1.0 - base_smoothing_up) * progress
-        } else {
-            base_smoothing_up
-        };
-        (ceil, floor, smoothing_up)
+            self.cached_ceil = base_ceil;
+            self.cached_floor = base_floor;
+            self.cached_smoothing_up = if self.exit_boost > 0 {
+                let progress =
+                    self.exit_boost as f32 / self.config.exit_boost_ticks.max(1) as f32;
+                base_smoothing_up + (1.0 - base_smoothing_up) * progress
+            } else {
+                base_smoothing_up
+            };
+        }
     }
 }
 
@@ -505,11 +510,12 @@ impl CpuLoadGovernor {
             return;
         }
 
-        if let Some(ref mut sd) = self.still_dive {
-            if sd.log_cooldown > 0 {
-                sd.log_cooldown -= 1;
-            }
-
+        if let (Some(ref mut sd), base_ceil, base_floor, base_smoothing_up) = (
+            self.still_dive.as_mut(),
+            self.cfg.perf_ceil,
+            self.cfg.perf_floor,
+            self.cfg.smoothing_up,
+        ) {
             if !sd.mode {
                 if foreground_max_util <= sd.config.enter_threshold {
                     sd.low_ticks += 1;
@@ -520,7 +526,8 @@ impl CpuLoadGovernor {
                     sd.mode = true;
                     sd.high_ticks = 0;
                     sd.low_ticks = 0;
-                    if sd.log_cooldown == 0 {
+                    sd.update_cache(base_ceil, base_floor, base_smoothing_up);
+                    if sd.last_log_time.elapsed().as_secs() >= 1 {
                         log::info!(
                             "{}",
                             t_with_args(
@@ -530,7 +537,7 @@ impl CpuLoadGovernor {
                                 )
                             )
                         );
-                        sd.log_cooldown = 10;
+                        sd.last_log_time = Instant::now();
                     }
                 }
             } else {
@@ -541,7 +548,8 @@ impl CpuLoadGovernor {
                         sd.high_ticks = 0;
                         sd.low_ticks = 0;
                         sd.exit_boost = sd.config.exit_boost_ticks;
-                        if sd.log_cooldown == 0 {
+                        sd.update_cache(base_ceil, base_floor, base_smoothing_up);
+                        if sd.last_log_time.elapsed().as_secs() >= 1 {
                             log::info!(
                                 "{}",
                                 t_with_args(
@@ -551,7 +559,7 @@ impl CpuLoadGovernor {
                                     )
                                 )
                             );
-                            sd.log_cooldown = 10;
+                            sd.last_log_time = Instant::now();
                         }
                     }
                 } else {
@@ -561,8 +569,9 @@ impl CpuLoadGovernor {
         }
 
         let (effective_perf_ceil, effective_perf_floor, effective_smoothing_up) =
-            if let Some(ref sd) = self.still_dive {
-                sd.effective_params(self.cfg.perf_ceil, self.cfg.perf_floor, self.cfg.smoothing_up)
+            if let Some(ref mut sd) = self.still_dive {
+                sd.update_cache(self.cfg.perf_ceil, self.cfg.perf_floor, self.cfg.smoothing_up);
+                (sd.cached_ceil, sd.cached_floor, sd.cached_smoothing_up)
             } else {
                 (self.cfg.perf_ceil, self.cfg.perf_floor, self.cfg.smoothing_up)
             };
