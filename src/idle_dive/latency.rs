@@ -20,9 +20,12 @@ use log::{debug, warn};
 use std::fs;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use crate::fluent_args;
 use crate::i18n::t_with_args;
+
+const WARN_RESET_SECS: u64 = 60;
 
 pub struct LatencyWriter {
     pm_qos_fd: Option<RawFd>,
@@ -30,6 +33,8 @@ pub struct LatencyWriter {
     latency_paths: Vec<PathBuf>,
     warned_governor: bool,
     warned_latency: bool,
+    last_warn_governor: Instant,
+    last_warn_latency: Instant,
 }
 
 impl LatencyWriter {
@@ -72,6 +77,8 @@ impl LatencyWriter {
             latency_paths,
             warned_governor: false,
             warned_latency: false,
+            last_warn_governor: Instant::now(),
+            last_warn_latency: Instant::now(),
         })
     }
 
@@ -82,6 +89,8 @@ impl LatencyWriter {
             latency_paths: Vec::new(),
             warned_governor: false,
             warned_latency: false,
+            last_warn_governor: Instant::now(),
+            last_warn_latency: Instant::now(),
         }
     }
 
@@ -114,6 +123,12 @@ impl LatencyWriter {
         if self.governor_paths.is_empty() {
             return Ok(());
         }
+
+        // 定期重置 warn 标志，允许再次发出 warn 日志
+        if self.warned_governor && self.last_warn_governor.elapsed().as_secs() >= WARN_RESET_SECS {
+            self.warned_governor = false;
+        }
+
         let mut any_ok = false;
         for path in &self.governor_paths {
             if let Err(e) = crate::utils::write_to_file_nochmod(path, governor.as_bytes()) {
@@ -140,6 +155,7 @@ impl LatencyWriter {
                         )
                     );
                     self.warned_governor = true;
+                    self.last_warn_governor = Instant::now();
                 }
             } else {
                 any_ok = true;
@@ -153,6 +169,11 @@ impl LatencyWriter {
     }
 
     pub fn set_latency(&mut self, latency_us: i32) -> Result<()> {
+        // 定期重置 warn 标志，允许再次发出 warn 日志
+        if self.warned_latency && self.last_warn_latency.elapsed().as_secs() >= WARN_RESET_SECS {
+            self.warned_latency = false;
+        }
+
         let mut pm_qos_ok = self.pm_qos_fd.is_none();
         if let Some(fd) = self.pm_qos_fd {
             let value = latency_us.to_ne_bytes();
@@ -182,6 +203,7 @@ impl LatencyWriter {
                             )
                         );
                         self.warned_latency = true;
+                        self.last_warn_latency = Instant::now();
                     }
                 } else {
                     pm_qos_ok = true;
@@ -217,6 +239,7 @@ impl LatencyWriter {
                         )
                     );
                     self.warned_latency = true;
+                    self.last_warn_latency = Instant::now();
                 }
             } else {
                 any_sysfs_ok = true;
