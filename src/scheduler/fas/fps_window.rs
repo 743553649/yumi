@@ -109,3 +109,160 @@ impl FpsWindow {
         self.push_count = 0;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-4;
+
+    #[test]
+    fn test_new_initial_state() {
+        let window = FpsWindow::new();
+        assert_eq!(window.count(), 0);
+        assert!((window.mean()).abs() < EPSILON);
+        assert!((window.stddev()).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_push_partial_fill() {
+        let mut window = FpsWindow::new();
+
+        for i in 0..10 {
+            window.push(60.0 + i as f32);
+        }
+
+        assert_eq!(window.count(), 10);
+        // 均值应该是 (60+61+...+69)/10 = 64.5
+        assert!((window.mean() - 64.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_push_overflow_overwrite() {
+        let mut window = FpsWindow::new();
+
+        // 推入 130 个值，窗口只能容纳 120
+        for i in 0..130 {
+            window.push(i as f32);
+        }
+
+        assert_eq!(window.count(), 120);
+        // 最旧的 10 个值 (0-9) 被丢弃，窗口包含 10-129
+        let expected_mean: f32 = (10..130).map(|x| x as f32).sum::<f32>() / 120.0;
+        assert!((window.mean() - expected_mean).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_mean_empty_window() {
+        let window = FpsWindow::new();
+        assert!((window.mean()).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_recent_mean_exceeds_length() {
+        let mut window = FpsWindow::new();
+
+        // 只推入 5 个值
+        for i in 0..5 {
+            window.push(60.0 + i as f32);
+        }
+
+        // 请求最近 200 个，但只有 5 个
+        let recent = window.recent_mean(200);
+        // 应该只取 5 个：64, 63, 62, 61, 60 (倒序)
+        let expected = (60.0 + 61.0 + 62.0 + 63.0 + 64.0) / 5.0;
+        assert!((recent - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_recent_mean_order() {
+        let mut window = FpsWindow::new();
+
+        // 推入不同的值
+        window.push(10.0);
+        window.push(20.0);
+        window.push(30.0);
+
+        // 最近 1 个应该是 30.0
+        let recent1 = window.recent_mean(1);
+        assert!((recent1 - 30.0).abs() < EPSILON);
+
+        // 最近 2 个应该是 (30 + 20) / 2 = 25.0
+        let recent2 = window.recent_mean(2);
+        assert!((recent2 - 25.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_stddev_all_same() {
+        let mut window = FpsWindow::new();
+
+        // 推入 120 个相同的值
+        for _ in 0..120 {
+            window.push(60.0);
+        }
+
+        assert!((window.stddev()).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_stddev_less_than_two() {
+        let mut window = FpsWindow::new();
+
+        // 只有 1 个值
+        window.push(60.0);
+        assert!((window.stddev()).abs() < EPSILON);
+
+        // 0 个值
+        let window2 = FpsWindow::new();
+        assert!((window2.stddev()).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_clear_resets_all() {
+        let mut window = FpsWindow::new();
+
+        // 推入一些值
+        for i in 0..50 {
+            window.push(60.0 + i as f32);
+        }
+
+        // 清空
+        window.clear();
+
+        assert_eq!(window.count(), 0);
+        assert!((window.mean()).abs() < EPSILON);
+        assert_eq!(window.pos, 0);
+    }
+
+    #[test]
+    fn test_float_precision_compensation() {
+        let mut window = FpsWindow::new();
+
+        // 推入 10000 个相同的值（会触发多次 recalculate）
+        for _ in 0..10000 {
+            window.push(60.0);
+        }
+
+        // 均值应该仍然是 60.0，没有明显漂移
+        assert!((window.mean() - 60.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_circular_buffer_wrap() {
+        let mut window = FpsWindow::new();
+
+        // 推入 119 个值，pos = 119
+        for i in 0..119 {
+            window.push(i as f32);
+        }
+        assert_eq!(window.pos, 119);
+
+        // 再推入一个，pos 应该回绕到 0
+        window.push(119.0);
+        assert_eq!(window.pos, 0);
+
+        // 继续推入
+        window.push(120.0);
+        assert_eq!(window.pos, 1);
+    }
+}

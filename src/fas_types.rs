@@ -528,3 +528,150 @@ impl Default for FasRulesConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-6;
+
+    #[test]
+    fn test_default_values() {
+        let config = FasRulesConfig::default();
+        assert!((config.perf_floor - 0.22).abs() < EPSILON);
+        assert!((config.perf_ceil - 1.0).abs() < EPSILON);
+        assert!((config.perf_init - 0.45).abs() < EPSILON);
+        assert!((config.perf_cold_boot - 0.85).abs() < EPSILON);
+        assert_eq!(config.fps_gears, vec![30.0, 60.0, 90.0, 120.0, 144.0]);
+        assert!((config.pid.kp - 0.05).abs() < EPSILON);
+        assert!((config.pid.ki - 0.01).abs() < EPSILON);
+        assert!((config.pid.kd - 0.006).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_nan_inf_fallback() {
+        let mut config = FasRulesConfig::default();
+        config.perf_floor = f32::NAN;
+        config.perf_ceil = f32::INFINITY;
+        config.perf_init = f32::NEG_INFINITY;
+        config.pid.kp = f32::NAN;
+
+        config.normalize();
+
+        assert!((config.perf_floor - 0.22).abs() < EPSILON);
+        assert!((config.perf_ceil - 1.0).abs() < EPSILON);
+        assert!((config.perf_init - 0.45).abs() < EPSILON);
+        assert!((config.pid.kp - 0.05).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_perf_floor_greater_than_ceil() {
+        let mut config = FasRulesConfig::default();
+        config.perf_floor = 0.9;
+        config.perf_ceil = 0.3;
+
+        config.normalize();
+
+        // floor 应该被修正为等于 ceil
+        assert!((config.perf_floor - 0.3).abs() < EPSILON);
+        assert!((config.perf_ceil - 0.3).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_perf_init_clamp() {
+        let mut config = FasRulesConfig::default();
+        config.perf_floor = 0.2;
+        config.perf_ceil = 0.8;
+        config.perf_init = 1.5;
+
+        config.normalize();
+
+        // init 应该被 clamp 到 [floor, ceil]
+        assert!((config.perf_init - 0.8).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_fps_gears_filter() {
+        let mut config = FasRulesConfig::default();
+        config.fps_gears = vec![30.0, 0.0, f32::NAN, 60.0, -1.0, 120.0];
+
+        config.normalize();
+
+        // 应该只保留 30, 60, 120
+        assert_eq!(config.fps_gears, vec![30.0, 60.0, 120.0]);
+    }
+
+    #[test]
+    fn test_normalize_fps_gears_empty_fallback() {
+        let mut config = FasRulesConfig::default();
+        config.fps_gears = vec![0.0, f32::NAN, -1.0]; // 全部非法
+
+        config.normalize();
+
+        // 应该回退到默认档位
+        assert_eq!(config.fps_gears, vec![30.0, 60.0, 90.0, 120.0, 144.0]);
+    }
+
+    #[test]
+    fn test_normalize_loading_bounds_no_reversal() {
+        let mut config = FasRulesConfig::default();
+        config.loading_perf_floor = 0.8;
+        config.loading_perf_ceiling = 0.3;
+
+        config.normalize();
+
+        // floor 应该被修正为等于 ceiling
+        assert!((config.loading_perf_floor - 0.3).abs() < EPSILON);
+        assert!((config.loading_perf_ceiling - 0.3).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_normalize_fast_decay_step_constraint() {
+        let mut config = FasRulesConfig::default();
+        config.fast_decay_max_step = 0.1;
+        config.fast_decay_min_step = 0.08; // > 0.1 * 0.6 = 0.06
+
+        config.normalize();
+
+        // min 应该被修正为 max * 0.6
+        assert!((config.fast_decay_min_step - 0.06).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_migrate_legacy_margins() {
+        let mut config = FasRulesConfig::default();
+        config.per_app_margins.insert("com.test.app".to_string(), 4.0);
+
+        config.migrate_legacy_margins();
+
+        // 应该迁移到 per_app_profiles
+        let profile = config.per_app_profiles.get("com.test.app").unwrap();
+        assert_eq!(profile.fps_margin, Some(4.0));
+        assert!(config.per_app_margins.is_empty());
+    }
+
+    #[test]
+    fn test_serde_missing_fields_defaults() {
+        // 模拟一个只有部分字段的 YAML
+        let yaml = r#"
+fps_margin: 5.0
+perf_floor: 0.3
+"#;
+
+        let config: FasRulesConfig = serde_yaml::from_str(yaml).unwrap();
+        assert!((config.fps_margin - 5.0).abs() < EPSILON);
+        assert!((config.perf_floor - 0.3).abs() < EPSILON);
+
+        // 其他字段应该使用默认值
+        assert_eq!(config.fps_gears, vec![30.0, 60.0, 90.0, 120.0, 144.0]);
+        assert!((config.perf_ceil - 1.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_pid_coefficients_default() {
+        let pid = PidCoefficients::default();
+        assert!((pid.kp - 0.05).abs() < EPSILON);
+        assert!((pid.ki - 0.01).abs() < EPSILON);
+        assert!((pid.kd - 0.006).abs() < EPSILON);
+    }
+}

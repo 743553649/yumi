@@ -156,3 +156,195 @@ pub(super) fn fps_norm(target_fps: f32) -> f32 {
 pub(super) fn scale_frames(base: u32, target_fps: f32) -> u32 {
     ((base as f32 * target_fps / 60.0).max(base as f32 * 0.4)) as u32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPSILON: f32 = 1e-6;
+
+    #[test]
+    fn test_new_initial_values() {
+        let pid = PidController::new(0.05, 0.01, 0.006);
+        assert!((pid.base_kp - 0.05).abs() < EPSILON);
+        assert!((pid.base_ki - 0.01).abs() < EPSILON);
+        assert!((pid.base_kd - 0.006).abs() < EPSILON);
+        assert!((pid.kp - 0.05).abs() < EPSILON);
+        assert!((pid.ki - 0.01).abs() < EPSILON);
+        assert!((pid.kd - 0.006).abs() < EPSILON);
+        assert!((pid.integral).abs() < EPSILON);
+        assert!((pid.prev_error).abs() < EPSILON);
+        assert!((pid.filtered_deriv).abs() < EPSILON);
+        assert!((pid.integral_limit - 0.15).abs() < EPSILON);
+        assert!((pid.adapted_fps - 60.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_adapt_invalid_input_defense() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        let original_kp = pid.kp;
+        let original_ki = pid.ki;
+        let original_kd = pid.kd;
+
+        // 0 应该被忽略
+        pid.adapt_to_target_fps(0.0);
+        assert!((pid.kp - original_kp).abs() < EPSILON);
+
+        // 负数应该被忽略
+        pid.adapt_to_target_fps(-1.0);
+        assert!((pid.kp - original_kp).abs() < EPSILON);
+
+        // NaN 应该被忽略
+        pid.adapt_to_target_fps(f32::NAN);
+        assert!((pid.kp - original_kp).abs() < EPSILON);
+
+        // Inf 应该被忽略
+        pid.adapt_to_target_fps(f32::INFINITY);
+        assert!((pid.kp - original_kp).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_adapt_change_threshold() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        let original_fps = pid.adapted_fps;
+
+        // 变化小于 0.5fps 不应该触发重新计算
+        pid.adapt_to_target_fps(60.3);
+        assert!((pid.adapted_fps - original_fps).abs() < EPSILON);
+
+        // 变化大于 0.5fps 应该触发重新计算
+        pid.adapt_to_target_fps(61.0);
+        assert!((pid.adapted_fps - 61.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_adapt_60_to_120_scaling() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        pid.adapt_to_target_fps(120.0);
+
+        // kp: 线性缩放 (120/60 = 2.0)
+        let expected_kp = 0.05 * 2.0;
+        assert!((pid.kp - expected_kp).abs() < 0.001);
+
+        // ki: sqrt 缩放 (sqrt(2) ≈ 1.414)
+        let expected_ki = 0.01 * (2.0_f32).sqrt();
+        assert!((pid.ki - expected_ki).abs() < 0.001);
+
+        // kd: 0.3 次幂缩放 (2^0.3 ≈ 1.231)
+        let expected_kd = 0.006 * (2.0_f32).powf(0.3);
+        assert!((pid.kd - expected_kd).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_negative_error_integral() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        let initial_integral = pid.integral;
+
+        // 负误差应该积分积累
+        pid.compute(-0.1, -0.1, 1.0, 0.5);
+        assert!(pid.integral > initial_integral);
+    }
+
+    #[test]
+    fn test_compute_positive_error_integral_decay() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+
+        // 先积累一些负误差
+        pid.compute(-0.5, -0.5, 1.0, 0.5);
+        let integral_before = pid.integral;
+
+        // 正误差应该衰减积分
+        pid.compute(0.1, 0.1, 1.0, 0.5);
+        assert!(pid.integral < integral_before);
+    }
+
+    #[test]
+    fn test_compute_fg_util_gain() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        let mut pid2 = PidController::new(0.05, 0.01, 0.006);
+
+        // 低 fg_util 应该产生较小的 P 项增益
+        let output_low_util = pid.compute(-0.1, -0.1, 1.0, 0.15);
+        let output_high_util = pid2.compute(-0.1, -0.1, 1.0, 0.5);
+
+        // 低利用率时输出应该更小（P项被衰减）
+        assert!(output_low_util.abs() < output_high_util.abs());
+    }
+
+    #[test]
+    fn test_reset_clears_state() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+
+        // 先积累一些状态
+        pid.compute(-0.5, -0.5, 1.0, 0.5);
+        pid.compute(0.1, 0.1, 1.0, 0.5);
+
+        // reset 应该清零
+        pid.reset();
+        assert!((pid.integral).abs() < EPSILON);
+        assert!((pid.prev_error).abs() < EPSILON);
+        assert!((pid.filtered_deriv).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_update_coefficients_triggers_rescale() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+        pid.adapt_to_target_fps(120.0);
+
+        // 更新系数
+        pid.update_coefficients(0.1, 0.02, 0.012);
+
+        // 应该按当前 fps (120) 重新缩放
+        let expected_kp = 0.1 * 2.0; // 120/60 = 2.0
+        assert!((pid.kp - expected_kp).abs() < 0.001);
+        assert!((pid.base_kp - 0.1).abs() < EPSILON);
+
+        // 状态应该被重置
+        assert!((pid.integral).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_fps_norm_boundary() {
+        // target_fps = 1 应该返回 sqrt(60)
+        let result = fps_norm(1.0);
+        let expected = (60.0_f32).sqrt();
+        assert!((result - expected).abs() < 0.001);
+
+        // target_fps = 0 应该返回 sqrt(60) (max(0, 1.0) = 1.0)
+        let result = fps_norm(0.0);
+        assert!((result - expected).abs() < 0.001);
+
+        // target_fps = 60 应该返回 1.0
+        let result = fps_norm(60.0);
+        assert!((result - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_scale_frames_minimum() {
+        // base=100, fps=30 → 100*30/60=50, 100*0.4=40, max(50,40)=50
+        let result = scale_frames(100, 30.0);
+        assert_eq!(result, 50);
+
+        // base=100, fps=15 → 100*15/60=25, 100*0.4=40, max(25,40)=40
+        let result = scale_frames(100, 15.0);
+        assert_eq!(result, 40);
+
+        // base=100, fps=60 → 100*60/60=100
+        let result = scale_frames(100, 60.0);
+        assert_eq!(result, 100);
+    }
+
+    #[test]
+    fn test_integral_limit_clamping() {
+        let mut pid = PidController::new(0.05, 0.01, 0.006);
+
+        // 连续负误差应该被限幅
+        for _ in 0..100 {
+            pid.compute(-1.0, -1.0, 1.0, 0.5);
+        }
+
+        // 积分应该被限制在 integral_limit 范围内
+        assert!(pid.integral <= pid.integral_limit + EPSILON);
+        assert!(pid.integral >= -pid.integral_limit - EPSILON);
+    }
+}

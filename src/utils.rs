@@ -360,3 +360,64 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_u32_to_buf_zero() {
+        let mut buf = [0u8; 20];
+        let len = FastWriter::u32_to_buf(0, &mut buf);
+        assert_eq!(len, 2);
+        assert_eq!(&buf[..2], b"0\n");
+    }
+
+    #[test]
+    fn test_u32_to_buf_one() {
+        let mut buf = [0u8; 20];
+        let len = FastWriter::u32_to_buf(1, &mut buf);
+        assert_eq!(len, 2);
+        assert_eq!(&buf[..2], b"1\n");
+    }
+
+    #[test]
+    fn test_u32_to_buf_large_number() {
+        let mut buf = [0u8; 20];
+        let len = FastWriter::u32_to_buf(1234567890, &mut buf);
+        assert_eq!(len, 11); // 10 digits + newline
+        assert_eq!(&buf[..11], b"1234567890\n");
+    }
+
+    #[test]
+    fn test_u32_to_buf_max() {
+        let mut buf = [0u8; 20];
+        let len = FastWriter::u32_to_buf(u32::MAX, &mut buf);
+        assert_eq!(len, 11); // 10 digits + newline
+        assert_eq!(&buf[..11], b"4294967295\n");
+    }
+
+    #[test]
+    fn test_u32_to_buf_100() {
+        let mut buf = [0u8; 20];
+        let len = FastWriter::u32_to_buf(100, &mut buf);
+        assert_eq!(len, 4); // 3 digits + newline
+        assert_eq!(&buf[..4], b"100\n");
+    }
+
+    #[test]
+    fn test_default_true() {
+        assert!(default_true());
+    }
+
+    #[test]
+    fn test_get_ktime_ns_monotonic() {
+        let t1 = get_ktime_ns();
+        // 做一些工作
+        for _ in 0..1000 {
+            let _ = std::hint::black_box(1 + 1);
+        }
+        let t2 = get_ktime_ns();
+        assert!(t2 >= t1, "ktime should be monotonic: t1={}, t2={}", t1, t2);
+    }
+}

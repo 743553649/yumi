@@ -77,3 +77,37 @@ jobs:
         with:
           name: yumi-${{ github.sha }}
           path: output/
+
+  build-test-tool:
+    name: Build Test Tool
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r29
+
+      - name: Setup cargo-ndk
+        run: |
+          echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+          cargo install cargo-ndk
+
+      - name: Build yumi-test for Android
+        run: cargo ndk -t arm64-v8a build -p yumi-test --release
+
+      - name: Upload Test Tool
+        uses: actions/upload-artifact@v7
+        with:
+          name: yumi-test-${{ github.sha }}
+          path: target/aarch64-linux-android/release/yumi-test

@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask", "yumi-ebpf"]
+members = ["xtask", "yumi-ebpf", "yumi-test"]
 
 [package]
 name = "yumi"
@@ -45,6 +45,10 @@ glob = "0.3.3"
 fluent = "0.17.0"
 fluent-bundle = "0.16.0"
 intl-memoizer = "0.5.3"
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_approx_eq = "1.1"
 
 [profile.release]
 strip = true
